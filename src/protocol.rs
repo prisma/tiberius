@@ -8,6 +8,7 @@ use {TdsError, TdsResult, FromUint, DRIVER_VERSION};
 
 /// The amount of bytes a packet header consists of
 pub const HEADER_BYTES: usize = 8;
+pub const ALL_HEADERS_LEN_TX: usize = 22;
 
 /// serialize a simple message that only translates to ONE packet
 pub trait SerializeMessage {
@@ -72,7 +73,7 @@ pub struct PacketHeader {
 }
 
 impl PacketHeader {
-    fn new(length: usize, id: u8) -> PacketHeader {
+    pub fn new(length: usize, id: u8) -> PacketHeader {
         assert!(length <= u16::max_value() as usize);
         PacketHeader {
             ty: PacketType::TDSv7Login,
@@ -405,7 +406,7 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
 
         let mut data_offset = cursor.position() as usize + var_data.len() * 2*2 + 6;
 
-        for (i, elem) in var_data.into_iter().enumerate() {
+        for (i, _) in var_data.into_iter().enumerate() {
             // write the client ID (created from the MAC address)
             if i == 9 {
                 try!(cursor.write_u32::<LittleEndian>(0)); //TODO:
@@ -491,17 +492,19 @@ pub enum AllHeaderTy {
 
 /// build an SQL batch packet
 pub fn build_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::Result<Vec<u8>> {
-    let all_headers_len: u32 = 22;
-    let mut vec = vec![0u8; HEADER_BYTES + all_headers_len as usize];
+    let vec = vec![0u8; HEADER_BYTES + ALL_HEADERS_LEN_TX as usize];
     let mut cursor = Cursor::new(vec);
     cursor.set_position(8);
-    try!(cursor.write_u32::<LittleEndian>(all_headers_len));
-    try!(cursor.write_u32::<LittleEndian>(all_headers_len - 4));
+
+    // TODO: move this out
+    try!(cursor.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32));
+    try!(cursor.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32 - 4));
     try!(cursor.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16));
     // transaction descriptor
     try!(cursor.write_u64::<LittleEndian>(0));
     // outstanding requests (TransactionDescrHeader)
     try!(cursor.write_u32::<LittleEndian>(1));
+
     // the SQL query (after ALL_HEADERS)
     for byte in query.encode_utf16() {
         try!(cursor.write_u16::<LittleEndian>(byte));

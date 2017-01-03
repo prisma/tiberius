@@ -3,18 +3,22 @@
 use std::collections::VecDeque;
 use std::cmp;
 use std::fmt;
-use std::io::{self, Write};
+use std::io::{self, Cursor, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::str;
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Sink, StartSend, Poll};
 use tokio_core::io::Io;
 use protocol::{self, PacketHeader, PacketStatus, PacketType};
 use tokens::{TdsResponseToken, Tokens, TokenColMetaData};
 use {FromUint, TdsError};
 
+pub enum TokenWriteState {
+    RpcRequest { param_idx: usize, last_pos: usize },
+    _EnsureAtleast2Variants
+}
 
 pub struct TdsTransport<I: Io> {
     io: I,
@@ -29,6 +33,8 @@ pub struct TdsTransport<I: Io> {
     next_packet_id: u8,
     pub packet_size: usize,
     pub last_meta: Option<Arc<TokenColMetaData>>,
+    /// last serialization state
+    pub write_state: Option<TokenWriteState>,
 }
 
 impl<I: Io> Deref for TdsTransport<I> {
@@ -49,6 +55,10 @@ pub trait ReadSize<R: io::Read> {
     fn read_size(&mut R) -> io::Result<usize>;
 }
 
+pub trait WriteSize<W: io::Write> {
+    fn write_size(&mut W, size: usize) -> io::Result<()>;
+}
+
 /// B_VARCHAR
 impl<R: io::Read> ReadSize<R> for u8 {
      fn read_size(reader: &mut R) -> io::Result<usize> {
@@ -61,6 +71,12 @@ impl<R: io::Read> ReadSize<R> for u16 {
     fn read_size(reader: &mut R) -> io::Result<usize> {
          Ok(try!(reader.read_u16::<LittleEndian>()) as usize)
      }
+}
+
+impl<W: io::Write> WriteSize<W> for u16 {
+    fn write_size(writer: &mut W, size: usize) -> io::Result<()> {
+        Ok(try!(writer.write_u16::<LittleEndian>(size as u16)))
+    }
 }
 
 /// TdsBuf/TdsBufMut inspired by tokio's EasyBuf
@@ -227,6 +243,7 @@ impl<I: Io> TdsTransport<I> {
             next_packet_id: 0,
             packet_size: packet_size,
             last_meta: None,
+            write_state: None,
         }
     }
 
@@ -252,12 +269,13 @@ impl<I: Io> TdsTransport<I> {
                     return Ok(Async::NotReady);
                 }
 
-                let token = Tokens::from_u8(match self.read_u8() {
+                let raw_token = match self.read_u8() {
                     Err(ref e) if e.kind() == ::std::io::ErrorKind::UnexpectedEof && self.completed => {
                         return Ok(Async::Ready(None));
                     },
-                    x => try!(x)
-                });
+                    x => try!(x),
+                };
+                let token = Tokens::from_u8(raw_token.clone());
 
                 // read the associated length for a token, if available
                 let min_len = if let Some(ref token) = token {
@@ -274,7 +292,7 @@ impl<I: Io> TdsTransport<I> {
 
                 match token {
                     Some(token) => Ok(Async::Ready(Some(try_ready!(self.parse_token(token, min_len))))),
-                    None => panic!("invalid token received"),
+                    None => panic!("invalid token received 0x{:x}", raw_token),
                 }
             })();
             let ret = match ret {
@@ -360,7 +378,7 @@ impl<I: Io> Sink for TdsTransport<I> {
     type SinkError = io::Error;
 
     /// this is never used
-    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+    fn start_send(&mut self, _: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
         unimplemented!()
     }
 
@@ -371,7 +389,7 @@ impl<I: Io> Sink for TdsTransport<I> {
             }
             let mut front_consumed = false;
             if let Some(ref mut front) = self.wr.front_mut() {
-                let bytes = try!(self.io.write(&front.1[front.0..]));
+                let bytes = try_nb!(self.io.write(&front.1[front.0..]));
                 front.0 += bytes;
                 if front.0 >= front.1.len() {
                     front_consumed = true;
@@ -384,4 +402,54 @@ impl<I: Io> Sink for TdsTransport<I> {
         }
         Ok(Async::Ready(()))
     }
+}
+
+pub fn write_varchar<S: WriteSize<Vec<u8>>>(target: &mut Cursor<Vec<u8>>, str_: &str, mut last_pos: usize) -> io::Result<(usize, usize)> {
+    let size_hint = mem::size_of::<S>();
+    let mut written_size = 0;
+    if last_pos < size_hint {
+        let mut buf: Vec<u8> = Vec::with_capacity(size_hint);
+        try!(S::write_size(&mut buf, str_.len()));
+        let (left_bytes, written_bytes) = try!(write_bytes_fragment(target, &buf, last_pos));
+        if left_bytes > 0 {
+            return Ok((left_bytes, written_bytes));
+        }
+        written_size += written_bytes;
+        last_pos = size_hint;
+    }
+    let (left_bytes, written_bytes) = try!(write_varchar_fragment(target, str_, last_pos - size_hint));
+    Ok((left_bytes, written_bytes + written_size))
+}
+
+pub fn write_varchar_fragment(target: &mut Cursor<Vec<u8>>, str_: &str, last_pos: usize) -> io::Result<(usize, usize)> {
+    let start_delta = (last_pos % 2 > 0) as usize;
+    let writeable_bytes = cmp::min(str_.len() * 2, target.get_ref().capacity() - target.get_ref().len());
+    let end_delta = (writeable_bytes % 2 > 0) as usize;
+    let count = writeable_bytes / 2 + end_delta;
+    let old_pos = target.position();
+
+    for (i, chr) in str_.encode_utf16().skip(last_pos / 2 - start_delta).take(count).enumerate() {
+        let mut buf = [0u8; 2];
+        LittleEndian::write_u16(&mut buf, chr);
+        let read_buf = match i {
+            0 if start_delta > 0 => &buf[1..],
+            x if x == count - 1 && end_delta > 0 => &buf[0..1],
+            _ => &buf[0..]
+        };
+        try!(target.write(read_buf));
+    }
+    let written_bytes = (target.position() - old_pos) as usize;
+    Ok((2*str_.len() - last_pos - written_bytes, written_bytes))
+}
+
+pub fn write_bytes_fragment(target: &mut Cursor<Vec<u8>>, bytes: &[u8], last_pos: usize) -> io::Result<(usize, usize)> {
+    let writeable_size = cmp::min(target.get_ref().capacity() - target.get_ref().len(), bytes.len() - last_pos);
+    let written_bytes = try!(target.write(&bytes[last_pos..last_pos+writeable_size]));
+    Ok((bytes.len() - last_pos - written_bytes, written_bytes))
+}
+
+pub fn write_u16_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: u16, last_pos: usize) -> io::Result<(usize, usize)> {
+    let mut buf = [0u8; 2];
+    B::write_u16(&mut buf, value);
+    write_bytes_fragment(target, &buf, last_pos)
 }

@@ -16,7 +16,7 @@ use std::convert::From;
 use std::net::SocketAddr;
 use std::ops::Deref;
 use std::io;
-use futures::{Async, BoxFuture, Future, Poll, Stream, Sink};
+use futures::{Async, BoxFuture, Future, Poll, Sink};
 use tokio_core::io::Io;
 use tokio_core::net::TcpStream;
 use tokio_core::reactor::Handle;
@@ -227,7 +227,7 @@ impl<T: Io> Future for SqlConnectionNew<T> {
                         },
                         Some(TdsResponseToken::Done(done)) => {
                             // the connection is ready 2 go, we're done with our initialization
-                            assert_eq!(done.status, 0);
+                            assert_eq!(done.status, tokens::DoneStatus::empty());
                             break;
                         },
                         Some(x) => trace!("init/got token {:?}", x),
@@ -303,10 +303,7 @@ impl<I: Io> SqlConnection<I> {
     }
 
     pub fn prepare<'c, 'a, S>(&'c self, stmt: S) -> LazyPreparedStatement<'c, 'a, I> where S: Into<Cow<'a, str>> {
-        LazyPreparedStatement {
-            conn: self,
-            sql: stmt.into(),
-        }
+        LazyPreparedStatement::new(self, stmt.into())
     }
 }
 
@@ -324,14 +321,28 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let client = connect(lp.handle(), &addr);
         let mut c1 = lp.run(client).unwrap();
-        let query = c1.query("select TOP 5000 test_num FROM test.dbo.test_ints").unwrap();
+        let stmt = c1.prepare("select test_num FROM test.dbo.test_ints WHERE test_num < @P1;");
+
+        for g in 0..2 {
+            let mut i = 0;
+            let mut results = lp.run(stmt.query(&[&5i32]).and_then(|result| {
+                i += 1;
+                println!("rows: {}", i);
+                result.for_each(|x| {
+                    let val: i32 = x.get("test_num");
+                    println!("row: {:?}", val);
+                    Ok(())
+                })
+            }).for_each(|_| Ok(())));
+        }
+
+        /*let query = c1.query("select TOP 5000 test_num FROM test.dbo.test_ints").unwrap();
         println!("rows: ");
         let future = query.for_each(|x| {
             let val: i32 = x.get("test_num");
             println!("row: {:?}", val);
             Ok(())
-        });
-        lp.run(future).unwrap();
+        });*/
         println!("end");
     }
 }

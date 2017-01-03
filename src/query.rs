@@ -22,15 +22,14 @@ impl<'a, I: Io> Stream for QueryStream<'a, I> {
             loop {
                 let token = try_ready!(inner.transport.read_token());
                 match token {
-                    Some(TdsResponseToken::ColMetaData(meta)) => {
-                    },
+                    Some(TdsResponseToken::ColMetaData(_)) => (),
                     Some(TdsResponseToken::Row(row)) => {
                         return Ok(Async::Ready(Some(QueryRow(row))));
                     },
-                    Some(TdsResponseToken::Done(done)) => {
+                    Some(TdsResponseToken::Done(_)) | Some(TdsResponseToken::DoneInProc(_)) => {
                         break;
                     },
-                    _ => unreachable!(),
+                    x => panic!("query: unexpected token: {:?}", x),
                 }
             }
         }
@@ -60,7 +59,7 @@ pub trait QueryIdx: Sized {
 impl<'a> QueryIdx for &'a str {
     fn to_idx(&self, row: &QueryRow) -> Option<usize> {
         for (i, column) in row.0.meta.columns.iter().enumerate() {
-            if &column.name.as_str() == self {
+            if &column.col_name.as_str() == self {
                 return Some(i)
             }
         }
@@ -69,7 +68,7 @@ impl<'a> QueryIdx for &'a str {
 }
 
 impl QueryIdx for usize {
-    fn to_idx(&self, row: &QueryRow) -> Option<usize> {
+    fn to_idx(&self, _: &QueryRow) -> Option<usize> {
         Some(*self)
     }
 }
