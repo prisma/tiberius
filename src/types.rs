@@ -1,12 +1,14 @@
 ///! type converting, mostly translating the types received from the database into rust types
 use std::borrow::Cow;
 use std::cmp;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use encoding::{self, DecoderTrap, Encoding};
 use futures::{Async, Poll};
 use tokio_core::io::Io;
 use tokens::BaseMetaDataColumn;
 use transport::{self, TdsBuf, TdsTransport};
+use collation;
 use {FromUint, TdsResult, TdsError};
 
 #[derive(Copy, Clone, Debug)]
@@ -73,10 +75,34 @@ pub enum VarLenType {
 uint_to_enum!(VarLenType, Guid, Intn, Bitn, Decimaln, Numericn, Floatn, Money, Datetimen, Daten, Timen, Datetime2, DatetimeOffsetn,
     BigVarBin, BigVarChar, BigBinary, BigChar, NVarchar, NChar, Xml, Udt, Text, Image, NText, SSVariant);
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
+pub struct Collation {
+    /// LCID ColFlags Version
+    info: u32,
+    /// Sortid
+    sort_id: u8,
+}
+
+impl Collation {
+    /// return the locale id part of the LCID (the specification here uses ambiguous terms)
+    pub fn lcid(&self) -> u16 {
+        (self.info & 0xffff) as u16
+    }
+
+    /// return an encoding for a given collation
+    pub fn encoding(&self) -> Option<&'static Encoding> {
+        if self.sort_id == 0 {
+            collation::lcid_to_encoding(self.lcid())
+        } else {
+            collation::sortid_to_encoding(self.sort_id)
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum TypeInfo {
     FixedLen(FixedLenType),
-    VarLenSized(VarLenType, usize)
+    VarLenSized(VarLenType, usize, Option<Collation>),
 }
 
 #[derive(Debug)]
@@ -95,8 +121,17 @@ impl TypeInfo {
             return Ok(Async::Ready(TypeInfo::FixedLen(ty)))
         }
         if let Some(ty) = VarLenType::from_u8(ty) {
+            // TODO: add .size() / .has_collation() to VarLenType (?)
             let vty = match ty {
-                VarLenType::Intn => TypeInfo::VarLenSized(ty, try!(trans.read_u8()) as usize),
+                VarLenType::Intn => TypeInfo::VarLenSized(ty, try!(trans.read_u8()) as usize, None),
+                VarLenType::NVarchar | VarLenType::BigVarChar => {
+                    let size = try!(trans.read_u16::<LittleEndian>()) as usize;
+                    let collation = Collation {
+                        info: try!(trans.read_u32::<LittleEndian>()),
+                        sort_id: try!(trans.read_u8()),
+                    };
+                    TypeInfo::VarLenSized(ty, size, Some(collation))
+                },
                 _ => unimplemented!()
             };
             return Ok(Async::Ready(vty))
@@ -106,24 +141,37 @@ impl TypeInfo {
 }
 
 impl<'a> ColumnData<'a> {
-    pub fn parse<I: Io>(trans: &mut TdsTransport<I>, meta: &BaseMetaDataColumn) -> TdsResult<ColumnData<'a>> {
-        Ok(match meta.ty {
+    pub fn parse<I: Io>(trans: &mut TdsTransport<I>, meta: &BaseMetaDataColumn) -> Poll<ColumnData<'a>, TdsError> {
+        Ok(Async::Ready(match meta.ty {
             TypeInfo::FixedLen(ref fixed_ty) => {
                 match *fixed_ty {
                     FixedLenType::Int4 => ColumnData::I32(try!(trans.read_i32::<LittleEndian>())),
                     _ => panic!("unsupported fixed type decoding: {:?}", fixed_ty)
                 }
             },
-            TypeInfo::VarLenSized(ref ty, ref len) => {
-                match (*ty, *len) {
-                    (VarLenType::Intn, 4) => {
-                        assert_eq!(try!(trans.read_u8()), 4);
-                        ColumnData::I32(try!(trans.read_i32::<LittleEndian>()))
+            TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
+                match *ty {
+                    VarLenType::Intn => {
+                        assert!(collation.is_none());
+                        match *len {
+                            4 => {
+                                assert_eq!(try!(trans.read_u8()), 4);
+                                ColumnData::I32(try!(trans.read_i32::<LittleEndian>()))
+                            },
+                            _ => unimplemented!()
+                        }
+                    },
+                    VarLenType::NVarchar => ColumnData::BString(try_ready!(trans.read_varchar::<u16>(true))),
+                    VarLenType::BigVarChar => {
+                        let bytes = try_ready!(trans.read_varbyte::<u16>());
+                        let encoder = try!(collation.as_ref().unwrap().encoding().ok_or(TdsError::Encoding("encoding: unspported encoding".into())));
+                        let str_: String = try!(encoder.decode(bytes.as_ref(), DecoderTrap::Strict).map_err(TdsError::Encoding));
+                        ColumnData::String(str_.into())
                     },
                     _ => unimplemented!()
                 }
             },
-        })
+        }))
     }
 
     pub fn serialize(&self, target: &mut Cursor<Vec<u8>>, last_pos: usize) -> TdsResult<Option<usize>> {
@@ -186,15 +234,25 @@ impl<'a> ColumnData<'a> {
     }
 }
 
-pub trait FromColumnData: Sized {
-    fn from_column_data(data: &ColumnData) -> TdsResult<Self>;
+pub trait FromColumnData<'a>: Sized {
+    fn from_column_data(data: &'a ColumnData) -> TdsResult<Self>;
 }
 
-impl FromColumnData for i32 {
+impl<'a> FromColumnData<'a> for i32 {
     fn from_column_data(data: &ColumnData) -> TdsResult<i32> {
         match *data {
             ColumnData::I32(value) => Ok(value),
             _ => Err(TdsError::Conversion("cannot interpret the given column data as an i32 value".into()))
+        }
+    }
+}
+
+impl<'a> FromColumnData<'a> for &'a str {
+    fn from_column_data(data: &'a ColumnData) -> TdsResult<&'a str> {
+        match *data {
+            ColumnData::BString(ref buf) => Ok(buf.as_str()),
+            ColumnData::String(ref buf) => Ok(buf),
+            _ => Err(TdsError::Conversion("cannot interpret the given column data as a string value".into()))
         }
     }
 }

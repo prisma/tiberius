@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
+extern crate encoding;
 #[macro_use]
 extern crate futures;
 #[macro_use]
@@ -67,6 +68,7 @@ macro_rules! uint_to_enum {
     }
 }
 
+mod collation;
 mod transport;
 mod ntlm;
 mod protocol;
@@ -98,6 +100,7 @@ pub enum TdsError {
     Io(io::Error),
     /// An error occurred on the protocol level
     Protocol(Cow<'static, str>),
+    Encoding(Cow<'static, str>),
     Conversion(Cow<'static, str>),
     Utf8(std::str::Utf8Error),
     Utf16(std::string::FromUtf16Error),
@@ -321,7 +324,17 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let client = connect(lp.handle(), &addr);
         let mut c1 = lp.run(client).unwrap();
-        let stmt = c1.prepare("select test_num FROM test.dbo.test_ints WHERE test_num < @P1;");
+
+        let query = c1.query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
+        println!("rows: ");
+        let future = query.for_each(|x| {
+            let val: &str = x.get(0);
+            println!("row: {:?}", val);
+            Ok(())
+        });
+        lp.run(future).unwrap();
+
+        /*let stmt = c1.prepare("select test_num FROM test.dbo.test_ints WHERE test_num < @P1;");
 
         for g in 0..2 {
             let mut i = 0;
@@ -334,7 +347,7 @@ mod tests {
                     Ok(())
                 })
             }).for_each(|_| Ok(())));
-        }
+        }*/
 
         /*let query = c1.query("select TOP 5000 test_num FROM test.dbo.test_ints").unwrap();
         println!("rows: ");

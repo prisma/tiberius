@@ -75,7 +75,7 @@ impl QueryIdx for usize {
 
 impl QueryRow {
     /// attempt to get a column's value for a given column index
-    pub fn try_get<I: QueryIdx, R: FromColumnData>(&self, idx: I) -> TdsResult<Option<R>> {
+    pub fn try_get<'a, I: QueryIdx, R: FromColumnData<'a>>(&'a self, idx: I) -> TdsResult<Option<R>> {
         let idx = match idx.to_idx(self) {
             Some(x) => x,
             None => return Ok(None),
@@ -86,7 +86,7 @@ impl QueryRow {
     }
 
     /// retrieve a column's value for a given column index
-    pub fn get<I: QueryIdx, R: FromColumnData>(&self, idx: I) -> R {
+    pub fn get<'a, I: QueryIdx, R: FromColumnData<'a>>(&'a self, idx: I) -> R {
         self.try_get(idx)
             .unwrap()
             .unwrap()

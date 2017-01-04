@@ -116,13 +116,13 @@ impl<I: Io> ParseToken<I> for TokenEnvChange {
         let ty = try!(trans.read_u8());
         let token = match EnvChangeTy::from_u8(ty) {
             Some(EnvChangeTy::Database) => {
-                let new_value = try_ready!(trans.read_varchar::<u8>());
-                let old_value = try_ready!(trans.read_varchar::<u8>());
+                let new_value = try_ready!(trans.read_varchar::<u8>(false));
+                let old_value = try_ready!(trans.read_varchar::<u8>(false));
                 TokenEnvChange::Database(new_value, old_value)
             },
             Some(EnvChangeTy::PacketSize) => {
-                let new_value = try_ready!(trans.read_varchar::<u8>());
-                let old_value = try_ready!(trans.read_varchar::<u8>());
+                let new_value = try_ready!(trans.read_varchar::<u8>(false));
+                let old_value = try_ready!(trans.read_varchar::<u8>(false));
                 let new_size = try!(new_value.as_str().parse::<u32>());
                 let old_size = try!(old_value.as_str().parse::<u32>());
                 trans.packet_size = new_size as usize;
@@ -159,9 +159,9 @@ impl<I: Io> ParseToken<I> for TokenInfo {
             number: try!(trans.read_u32::<LittleEndian>()),
             state: try!(trans.read_u8()),
             class: try!(trans.read_u8()),
-            message: try_ready!(trans.read_varchar::<u16>()),
-            server: try_ready!(trans.read_varchar::<u8>()),
-            procedure: try_ready!(trans.read_varchar::<u8>()),
+            message: try_ready!(trans.read_varchar::<u16>(false)),
+            server: try_ready!(trans.read_varchar::<u8>(false)),
+            procedure: try_ready!(trans.read_varchar::<u8>(false)),
             line: try!(trans.read_u32::<LittleEndian>()),
         };
         Ok(Async::Ready(TdsResponseToken::Info(token)))
@@ -201,7 +201,7 @@ impl<I: Io> ParseToken<I> for TokenLoginAck {
         let token = TokenLoginAck {
             interface: try!(trans.read_u8()),
             tds_version: try!(FeatureLevel::from_u32(try!(trans.read_u32::<BigEndian>())).ok_or(TdsError::Protocol("loginack: invalid tds version".into()))),
-            prog_name: try_ready!(trans.read_varchar::<u8>()),
+            prog_name: try_ready!(trans.read_varchar::<u8>(false)),
             version: try!(trans.read_u32::<LittleEndian>()),
         };
         Ok(Async::Ready(TdsResponseToken::LoginAck(token)))
@@ -306,7 +306,7 @@ impl MetaDataColumn {
     fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<MetaDataColumn, TdsError> {
         let meta = MetaDataColumn {
             base: try_ready!(BaseMetaDataColumn::parse(trans)),
-            col_name: try_ready!(trans.read_varchar::<u8>()),
+            col_name: try_ready!(trans.read_varchar::<u8>(false)),
         };
         Ok(Async::Ready(meta))
     }
@@ -357,7 +357,7 @@ impl<I: Io> ParseToken<I> for TokenRow {
 
         let mut columns = vec![];
         for column in &col_meta.columns {
-            columns.push(try!(ColumnData::parse(trans, &column.base)));
+            columns.push(try_ready!(ColumnData::parse(trans, &column.base)));
         }
         let token = TokenRow { meta: col_meta, columns: columns };
         Ok(Async::Ready(TdsResponseToken::Row(token)))
@@ -403,7 +403,7 @@ pub struct TokenReturnValue {
 impl<I: Io> ParseToken<I> for TokenReturnValue {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
         let param_ordinal = try!(trans.read_u16::<LittleEndian>());
-        let param_name = try_ready!(trans.read_varchar::<u8>());
+        let param_name = try_ready!(trans.read_varchar::<u8>(false));
         let udf = match try!(trans.read_u8()) {
             0x01 => false,
             0x02 => true,
@@ -414,7 +414,7 @@ impl<I: Io> ParseToken<I> for TokenReturnValue {
             param_ordinal: param_ordinal,
             param_name: param_name,
             udf: udf,
-            value: try!(ColumnData::parse(trans, &meta)),
+            value: try_ready!(ColumnData::parse(trans, &meta)),
             meta: meta,
         };
         Ok(Async::Ready(TdsResponseToken::ReturnValue(token)))

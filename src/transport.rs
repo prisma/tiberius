@@ -142,9 +142,13 @@ impl TdsBuf {
         Ok(ret)
     }
 
-    /// read bytes with 1/2*length prefix and interpret them as UCS-2 encoded string
-    pub fn read_varchar<S: ReadSize<Self>>(&mut self) -> Poll<TdsBuf, TdsError> {
-        let len = try!(S::read_size(self));
+    /// read bytes with an length prefix (which either is in bytes or in bytes/2 [u16 characters]) and interpret them as UCS-2 encoded string
+    pub fn read_varchar<S: ReadSize<Self>>(&mut self, size_in_bytes: bool) -> Poll<TdsBuf, TdsError> {
+        let mut len = try!(S::read_size(self));
+        if size_in_bytes {
+            assert_eq!(len % 2, 0);
+            len /= 2;
+        }
         // this is suboptimal but we need to copy them to be able to interpret these strings properly
         let data: Vec<u16> = try!(vec![0u16; len].into_iter().map(|_| self.read_u16::<LittleEndian>()).collect());
         let bytes = try!(String::from_utf16(&data[..])).into_bytes();;
