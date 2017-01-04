@@ -96,6 +96,11 @@ impl TdsBuf {
         }
     }
 
+    pub fn set_position(&mut self, pos: usize) {
+        self.start = pos;
+        assert!(self.end >= self.start);
+    }
+
     pub fn position(&self) -> usize {
         self.start
     }
@@ -264,10 +269,10 @@ impl<I: Io> TdsTransport<I> {
         Ok(())
     }
 
-    pub fn read_token(&mut self) -> Poll<Option<TdsResponseToken>, TdsError> {
-        let old_pos = self.position();
-
+    /// returns a tuple containing the last_pos (before the current token) and the parsed token := (last_pos, parsed_token)
+    pub fn read_token(&mut self) -> Poll<Option<(usize, TdsResponseToken)>, TdsError> {
         loop {
+            let old_pos = self.position();
             let ret = (|| {
                 if self.requires_more {
                     return Ok(Async::NotReady);
@@ -312,15 +317,18 @@ impl<I: Io> TdsTransport<I> {
                     self.requires_more = false;
                 },
                 // reset the read buffer position
-                ret @ Err(_) => {
+               Err(err) => {
                     self.rd.start = old_pos;
-                    return ret
+                    return Err(err)
                 },
-                x => {
+                Ok(Async::Ready(x)) => {
                     if self.as_ref().is_empty() {
                         self.completed = false;
                     }
-                    return x
+                    return Ok(Async::Ready(match x {
+                        None => None,
+                        Some(x) => Some((old_pos, x)),
+                    }));
                 }
             }
         }

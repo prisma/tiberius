@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use futures::{Async, Poll, Stream};
+use futures::{Async, Future, Poll, Stream};
 use tokio_core::io::Io;
 use query::QueryStream;
 use tokens::{self, DoneStatus, TdsResponseToken, TokenRpcRequest, TokenColMetaData, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, WriteToken};
@@ -173,7 +173,7 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
 
         // receive and handle the result of sp_prepare
         while let PrepState::Reading = self.prep {
-            match try_ready!(trans.read_token()) {
+            match try_ready!(trans.read_token()).map(|x| x.1) {
                 Some(TdsResponseToken::ColMetaData(meta)) => {
                     *self.stmt.map(|stmt| stmt.meta.borrow_mut()).unwrap() = Some(meta.clone());
                 },
@@ -213,7 +213,7 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
         }
 
         while let PrepState::ExecReading = self.prep {
-            match try_ready!(trans.read_token()) {
+            match try_ready!(trans.read_token()).map(|x| x.1) {
                 Some(TdsResponseToken::ColMetaData(meta)) => {
                     assert_eq!(meta.columns.len(), 0);
                     return Ok(Async::Ready(Some(R::from_connection(self.stmt.map(|stmt| stmt.conn).unwrap()))));
@@ -233,6 +233,72 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
         // this stream is done, make sure it cannot be executed again
         self.stmt.take().unwrap();
         Ok(Async::Ready(None))
+    }
+}
+
+impl<'s, 'a, 'b, 'c, I: Io> PreparedStmtStream<'s, 'a, 'b, 'c, I, QueryStream<'c, I>> {
+    /// Only expect 1 result set (e.g. if you're only executing one query)
+    /// and execute a given closure for the results of the first result set
+    ///
+    /// other result sets are silently ignored
+    pub fn for_each_row<F>(self, f: F) -> ForEachRow<'c, I, PreparedStmtStream<'s, 'a, 'b, 'c, I, QueryStream<'c, I>>, F>
+        where F: FnMut(<QueryStream<'c, I> as Stream>::Item) -> Result<(), TdsError>
+    {
+        ForEachRow::new(self, f)
+    }
+}
+
+/// iterate over resultsets and only return the rows of the first one
+/// but handle/consume the entire result set so that we're ready to continue
+/// after the execution of this
+pub struct ForEachRow<'c, I: 'c + Io, S: Stream<Item=QueryStream<'c, I>, Error=<QueryStream<'c, I> as Stream>::Error>, F> {
+    stream: Option<S>,
+    f: F,
+    idx: usize,
+    resultset: Option<QueryStream<'c, I>>,
+}
+
+impl<'c, I: Io, S, F> ForEachRow<'c, I, S, F>
+     where S: Stream<Item=QueryStream<'c, I>, Error=<QueryStream<'c, I> as Stream>::Error>,
+           F: FnMut(<QueryStream<'c, I> as Stream>::Item) -> Result<(), TdsError>
+{
+    pub fn new(stream: S, f: F) -> ForEachRow<'c, I, S, F> {
+        ForEachRow {
+            stream: Some(stream),
+            f: f,
+            idx: 0,
+            resultset: None,
+        }
+    }
+}
+
+impl<'c, I: Io, S, F> Future for ForEachRow<'c, I, S, F>
+    where S: Stream<Item=QueryStream<'c, I>, Error=<QueryStream<'c, I> as Stream>::Error>,
+          F: FnMut(<QueryStream<'c, I> as Stream>::Item) -> Result<(), TdsError>
+{
+    type Item = ();
+    type Error = <QueryStream<'c, I> as Stream>::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let stream = self.stream.as_mut().unwrap();
+        loop {
+            while let Some(ref mut resultset) = self.resultset {
+                match try_ready!(resultset.poll()) {
+                    None => break,
+                    Some(row) => if self.idx == 1 {
+                        try!((self.f)(row))
+                    },
+                }
+            }
+            // ensure we do not poll the same resultset again
+            self.resultset = None;
+            self.resultset = try_ready!(stream.poll());
+            if self.resultset.is_none() {
+                break;
+            }
+            self.idx += 1;
+        }
+        Ok(Async::Ready(()))
     }
 }
 

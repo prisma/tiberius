@@ -80,7 +80,7 @@ mod stmt;
 use transport::TdsTransport;
 use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
 use tokens::TdsResponseToken;
-use query::QueryStream;
+use query::ResultSetStream;
 use stmt::LazyPreparedStatement;
 
 lazy_static! {
@@ -217,7 +217,7 @@ impl<T: Io> Future for SqlConnectionNew<T> {
                 },
                 SqlConnectionNewState::TokenStreamRecv => {
                     let token = try_ready!(self.transport.read_token());
-                    match token {
+                    match token.map(|x| x.1) {
                         Some(TdsResponseToken::SSPI(bytes)) => {
                             assert!(self.sso_client.is_some());
                             match try!(self.sso_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
@@ -300,9 +300,9 @@ impl<I: Io> SqlConnection<I> {
         Ok(())
     }
 
-    pub fn query<'a, Q>(&self, query: Q) -> TdsResult<QueryStream<I>> where Q: Into<Cow<'a, str>> {
+    pub fn query<'a, Q>(&self, query: Q) -> TdsResult<ResultSetStream<I>> where Q: Into<Cow<'a, str>> {
         try!(self.queue_sql_batch(query));
-        Ok(QueryStream { conn: Some(self) })
+        Ok(ResultSetStream { conn: Some(self) })
     }
 
     pub fn prepare<'c, 'a, S>(&'c self, stmt: S) -> LazyPreparedStatement<'c, 'a, I> where S: Into<Cow<'a, str>> {
@@ -327,7 +327,7 @@ mod tests {
 
         let query = c1.query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
         println!("rows: ");
-        let future = query.for_each(|x| {
+        let future = query.for_each_row(|x| {
             let val: &str = x.get(0);
             println!("row: {:?}", val);
             Ok(())
@@ -335,18 +335,13 @@ mod tests {
         lp.run(future).unwrap();
 
         /*let stmt = c1.prepare("select test_num FROM test.dbo.test_ints WHERE test_num < @P1;");
-
         for g in 0..2 {
             let mut i = 0;
-            let mut results = lp.run(stmt.query(&[&5i32]).and_then(|result| {
-                i += 1;
-                println!("rows: {}", i);
-                result.for_each(|x| {
-                    let val: i32 = x.get("test_num");
-                    println!("row: {:?}", val);
-                    Ok(())
-                })
-            }).for_each(|_| Ok(())));
+            lp.run(stmt.query(&[&5i32]).for_each_row(|x| {
+                let val: i32 = x.get("test_num");
+                println!("row: {:?}", val);
+                Ok(())
+            })).unwrap()
         }*/
 
         /*let query = c1.query("select TOP 5000 test_num FROM test.dbo.test_ints").unwrap();
