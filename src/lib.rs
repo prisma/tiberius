@@ -14,12 +14,14 @@ extern crate tokio_core;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::convert::From;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::io;
-use futures::{Async, BoxFuture, Future, Poll, Sink};
+use futures::{Async, BoxFuture, Future, Poll, Sink, failed, finished};
+use futures::future::FromErr;
 use tokio_core::io::Io;
-use tokio_core::net::TcpStream;
+use tokio_core::net::{TcpStream, TcpStreamNew};
 use tokio_core::reactor::Handle;
 
 /// Trait to convert a u8 to a `enum` representation
@@ -133,14 +135,6 @@ impl From<std::string::FromUtf16Error> for TdsError {
 
 pub type TdsResult<T> = Result<T, TdsError>;
 
-/// naive connection function for the SQL client (TCP)
-pub fn connect(handle: Handle, addr: &SocketAddr) -> BoxFuture<SqlConnection<TcpStream>, TdsError> {
-    let addr = addr.clone();
-    TcpStream::connect(&addr, &handle).map_err(|err| err.into()).and_then(|stream| {
-        SqlConnectionFuture(Some(SqlConnectionNew::new(stream)))
-    }).boxed()
-}
-
 /// a connection in a state before any login has happened
 enum SqlConnectionNewState {
     PreLoginSend,
@@ -154,14 +148,16 @@ enum SqlConnectionNewState {
 /// a representation of the initialization state of an SQL connection (pending authentication)
 struct SqlConnectionNew<T: Io> {
     transport: TdsTransport<T>,
+    params: ConnectParams,
     state: SqlConnectionNewState,
     sso_client: Option<ntlm::sso::NtlmSso>,
 }
 
 impl<T: Io> SqlConnectionNew<T> {
-    fn new(transport: T) -> SqlConnectionNew<T> {
+    fn new(transport: T, params: ConnectParams) -> SqlConnectionNew<T> {
         SqlConnectionNew {
             transport: TdsTransport::new(transport),
+            params: params,
             state: SqlConnectionNewState::PreLoginSend,
             sso_client: None,
         }
@@ -200,10 +196,11 @@ impl<T: Io> Future for SqlConnectionNew<T> {
                 SqlConnectionNewState::LoginSend => {
                     let mut login_message = LoginMessage::new();
 
-                    // TODO: make this configurable, just for debug
-                    let (sso_client, buf) = try!(ntlm::sso::NtlmSso::new());
-                    login_message.integrated_security = Some(buf.to_owned());
-                    self.sso_client = Some(sso_client);
+                    if let AuthMethod::SSPI_SSO = self.params.auth {
+                        let (sso_client, buf) = try!(ntlm::sso::NtlmSso::new());
+                        login_message.integrated_security = Some(buf.to_owned());
+                        self.sso_client = Some(sso_client);
+                    }
 
                     try_nb!(self.queue_simple_message(login_message));
                     self.state = SqlConnectionNewState::LoginRecv;
@@ -290,7 +287,170 @@ impl<I: Io> Deref for SqlConnection<I> {
     }
 }
 
-impl<I: Io> SqlConnection<I> {
+/// a variant of Io which can be boxed to allow dynamic dispatch
+pub trait BoxableIo: Io {}
+impl Io for Box<BoxableIo + Send + 'static> {}
+impl<I: Io> BoxableIo for I {}
+
+/// something that can be converted to an underlying IO
+pub trait ToIo<I: BoxableIo + Send + 'static> {
+    type Result: Future<Item=I, Error=TdsError> + Send + 'static;
+
+    fn to_io(self, handle: &Handle) -> Self::Result;
+}
+
+impl<'a> ToIo<TcpStream> for &'a SocketAddr {
+    type Result = FromErr<TcpStreamNew, TdsError>;
+
+    fn to_io(self, handle: &Handle) -> Self::Result {
+        TcpStream::connect(self, handle).from_err::<TdsError, TdsError>()
+    }
+}
+
+enum DynamicConnectionTarget {
+    Tcp(SocketAddr),
+}
+
+impl ToIo<Box<BoxableIo + Send + 'static>> for DynamicConnectionTarget {
+    type Result = BoxFuture<Box<BoxableIo + Send + 'static>, TdsError>;
+
+    fn to_io(self, handle: &Handle) -> Self::Result {
+        match self {
+            DynamicConnectionTarget::Tcp(ref addr) => addr.to_io(handle).map(|x| Box::new(x) as Box<BoxableIo + Send>).boxed(),
+        }
+    }
+}
+
+pub enum AuthMethod {
+    /// single sign on using the local windows credentials (windows-only)
+    #[cfg(windows)]
+    SSPI_SSO,
+    _DUMMY_AUTH_METHOD
+}
+
+/// settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
+pub struct ConnectParams {
+    auth: AuthMethod,
+}
+
+/// a target address and connection settings, all that's required to connect to a SQL server
+pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Send + 'static {
+    params: ConnectParams,
+    target: T,
+    _marker: PhantomData<*const I>,
+}
+
+pub trait ToConnectEndpoint<I, T> where I: BoxableIo + Send + 'static, T: ToIo<I> {
+    fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<I, T>>;
+}
+
+impl<I, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams) where I: BoxableIo + Send + 'static {
+    fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<I, T>> {
+        Ok(ConnectEndpoint {
+            params: self.1,
+            target: self.0,
+            _marker: PhantomData
+        })
+    }
+}
+
+/// parse connection strings
+/// https://msdn.microsoft.com/de-de/library/system.data.sqlclient.sqlconnection.connectionstring(v=vs.110).aspx
+impl<'a> ToConnectEndpoint<Box<BoxableIo + Send + 'static>, DynamicConnectionTarget> for &'a str {
+    fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<Box<BoxableIo + Send + 'static>, DynamicConnectionTarget>>
+    {
+        let mut input = &self[..];
+
+        let mut target: Option<DynamicConnectionTarget> = None;
+        let mut connect_params = ConnectParams {
+            auth: AuthMethod::_DUMMY_AUTH_METHOD
+        };
+
+        while !input.is_empty() {
+            let key_end = input.bytes().position(|x| x == b'=');
+            let (key, key_end) = match key_end {
+                None => return Err(TdsError::Conversion("connection string expected key. expected `=` never found".into())),
+                Some(key_end) => ((&input[..key_end]).to_lowercase(), key_end)
+            };
+            input = &input[key_end+1..];
+            // check if an escaped value (e.g. 'my password contains a;' or 'or a \' #kappa' follows)
+            let escaped = input.starts_with('\'');
+            let end = input.bytes().position(|x| x == b';').unwrap_or(input.len().saturating_sub(1));
+            let mut tmp = None;
+
+            let value = if !escaped {
+                let ret = &input[..end];
+                input = &input[end+1..];
+                ret
+            } else {
+                let mut val = String::with_capacity(end);
+                loop {
+                    let next = match input.bytes().position(|x| x == b'\'' || x == b'\\') {
+                        None => return Err(TdsError::Conversion("connection string: unterminated escape sequence".into())),
+                        Some(next) => next
+                    };
+                    match input.as_bytes()[next] {
+                        b'\'' => {
+                            val.push_str(&input[..next]);
+                            break;
+                        },
+                        b'\\' if next+1 < input.len() && input.as_bytes()[next+1] == b'\'' => {
+                            val.push('\'');
+                            input = &input[1..]; // <=> &[next+2..] effectively
+                        },
+                        b'\\' => val.push('\\'),
+                        _ => unreachable!()
+                    }
+                    input = &input[next+1..];
+                }
+                tmp = Some(val);
+                tmp.as_ref().unwrap()
+            };
+
+            match key.as_str() {
+                "server" => {
+                    if value.starts_with("tcp:") {
+                        let parts: Vec<_> = value[4..].split(",").collect();
+                        assert!(parts.len() <= 2 && !parts.is_empty());
+                        let addr = match (parts[0], parts[1].parse::<u16>()?).to_socket_addrs()?.nth(0) {
+                            None => return Err(TdsError::Conversion("connection string: could not resolve server address".into())),
+                            Some(x) => x,
+                        };
+                        target = Some(DynamicConnectionTarget::Tcp(addr));
+                    }
+                },
+                "integratedsecurity" if ["true", "yes", "sspi"].contains(&value.to_lowercase().as_str()) => {
+                    connect_params.auth = AuthMethod::SSPI_SSO;
+                },
+                _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
+            }
+        }
+        if target.is_none() {
+            return Err(TdsError::Conversion("connection string pointing into the void. no connection endpoint specified.".into()))
+        }
+        let endpoint = ConnectEndpoint {
+            params: connect_params,
+            target: target.unwrap(),
+            _marker: PhantomData,
+        };
+        Ok(endpoint)
+    }
+}
+
+impl<I: Io + Send + 'static> SqlConnection<I> {
+    /// naive connection function for the SQL client
+    fn connect<E, T: ToIo<I>>(handle: Handle, endpoint: E) -> BoxFuture<SqlConnection<I>, TdsError>
+        where E: ToConnectEndpoint<I, T>
+    {
+        let ConnectEndpoint { target, params, .. } = match endpoint.to_connect_endpoint() {
+            Err(x) => return failed(x).boxed(),
+            Ok(x) => x,
+        };
+        target.to_io(&handle).map_err(|err| err.into()).and_then(|stream| {
+            SqlConnectionFuture(Some(SqlConnectionNew::new(stream, params)))
+        }).boxed()
+    }
+
     fn queue_sql_batch<'a, S>(&self, stmt: S) -> TdsResult<()> where S: Into<Cow<'a, str>> {
         let sql = stmt.into();
         let mut inner = self.borrow_mut();
@@ -313,16 +473,21 @@ impl<I: Io> SqlConnection<I> {
 #[cfg(test)]
 mod tests {
     extern crate env_logger;
+    use std::net::SocketAddr;
     use futures::Stream;
     use tokio_core::reactor::Core;
-    use super::{connect};
+    use super::{AuthMethod, ConnectParams, SqlConnection};
 
     #[test]
     fn test() {
         env_logger::init().unwrap();
-        let addr = "127.0.0.1:1433".parse().unwrap();
         let mut lp = Core::new().unwrap();
-        let client = connect(lp.handle(), &addr);
+        /*let addr: SocketAddr = "127.0.0.1:1433".parse().unwrap();
+        let params = ConnectParams {
+            auth: AuthMethod::SSPI_SSO,
+        };
+        let client = SqlConnection::connect(lp.handle(), (&addr, params));*/
+        let client = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
         let mut c1 = lp.run(client).unwrap();
 
         let query = c1.query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
