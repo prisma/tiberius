@@ -329,3 +329,27 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio_core::reactor::Core;
+    use tests::new_connection;
+
+    #[test]
+    fn select_nvarchar_collation_test() {
+        let mut lp = Core::new().unwrap();
+        let mut c1 = new_connection(&mut lp);
+        let query = c1.query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
+        let mut i = 0;
+        {
+            let future = query.for_each_row(|x| {
+                let val: &str = x.get(0);
+                assert_eq!(val, "cześć");
+                i += 1;
+                Ok(())
+            });
+            lp.run(future).unwrap();
+        }
+        assert_eq!(i, 1);
+    }
+}

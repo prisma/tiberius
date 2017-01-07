@@ -480,57 +480,90 @@ mod tests {
     extern crate env_logger;
     use std::net::SocketAddr;
     use futures::Stream;
+    use tokio_core::io::Io;
     use tokio_core::reactor::Core;
-    use super::{AuthMethod, ConnectParams, SqlConnection};
+    use query::ExecFuture;
+    use super::{AuthMethod, BoxableIo, ConnectParams, SqlConnection, TdsError};
 
-    #[test]
-    fn test() {
-        env_logger::init().unwrap();
-        let mut lp = Core::new().unwrap();
+    pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo + Send>> {
+        let _ = env_logger::init();
         /*let addr: SocketAddr = "127.0.0.1:1433".parse().unwrap();
         let params = ConnectParams {
             auth: AuthMethod::SSPI_SSO,
         };
         let client = SqlConnection::connect(lp.handle(), (&addr, params));*/
-        let client = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
-        let mut c1 = lp.run(client).unwrap();
+        let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
+        lp.run(future).unwrap()
+    }
 
-        //let exec = c1.exec("DECLARE @Mojo int").unwrap();
-        let stmt = c1.prepare("DECLARE @Mojo int");
-        let exec = stmt.exec(&[]);
-        let future = exec.and_then(|x| x).for_each(|result| {
-            // This is executed for EACH resultset (e.g. 2 times for 2 sql queries)
-            println!("exec result {:?}", result);
-            Ok(())
-        });
-        lp.run(future).unwrap();
+    #[test]
+    fn simple_select() {
+        let mut lp = Core::new().unwrap();
+        let mut c1 = new_connection(&mut lp);
 
-        /*let query = c1.query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
-        println!("rows: ");
-        let future = query.for_each_row(|x| {
-            let val: &str = x.get(0);
-            println!("row: {:?}", val);
-            Ok(())
-        });
-        lp.run(future).unwrap();*/
+        let limit = 5i32;
+        let post_sql = format!("where II<{}", limit);
+        let sql = (1..2*limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| acc + &format!("union select {} ", x)) + ") U " + &post_sql;
+        let query = c1.query(sql).unwrap();
+        let mut i = 0;
+        {
+            let future = query.for_each_row(|x| {
+                let val: i32 = x.get("II");
+                assert_eq!(val, i);
+                i += 1;
+                Ok(())
+            });
+            lp.run(future).unwrap()
+        }
+        assert_eq!(i, limit);
+    }
 
-        /*let stmt = c1.prepare("select test_num FROM test.dbo.test_ints WHERE test_num < @P1;");
+    #[test]
+    fn prepared_select_reexecute() {
+        let mut lp = Core::new().unwrap();
+        let mut c1 = new_connection(&mut lp);
+
+        let limit = 5i32;
+        let query = (1..2*limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| acc + &format!("union select {} ", x)) + ") U where II<@P1";
+        let stmt = c1.prepare(query);
+        let mut i = 0;
+
         for g in 0..2 {
-            let mut i = 0;
-            lp.run(stmt.query(&[&5i32]).for_each_row(|x| {
-                let val: i32 = x.get("test_num");
-                println!("row: {:?}", val);
+            lp.run(stmt.query(&[&limit]).for_each_row(|x| {
+                let val: i32 = x.get("II");
+                assert_eq!(val, i - g*limit);
+                i += 1;
                 Ok(())
             })).unwrap()
-        }*/
+        }
+        assert_eq!(i, 2*limit);
+    }
 
-        /*let query = c1.query("select TOP 5000 test_num FROM test.dbo.test_ints").unwrap();
-        println!("rows: ");
-        let future = query.for_each(|x| {
-            let val: i32 = x.get("test_num");
-            println!("row: {:?}", val);
-            Ok(())
-        });*/
-        println!("end");
+    fn helper_ddl_exec<'a, I: BoxableIo + 'static, R: Stream<Item=ExecFuture<'a, I>, Error=TdsError>>(exec: R, lp: &mut Core) {
+        let mut i = 0;
+        {
+            let future = exec.and_then(|x| x).for_each(|result| {
+                // This is executed for EACH resultset (e.g. 2 times for 2 sql queries)
+                i += 1;
+                Ok(())
+            });
+            lp.run(future).unwrap();
+        }
+        assert_eq!(i, 1);
+    }
+
+    #[test]
+    fn prepared_ddl_exec() {
+        let mut lp = Core::new().unwrap();
+        let mut c1 = new_connection(&mut lp);
+        let stmt = c1.prepare("DECLARE @Mojo int");
+        helper_ddl_exec(stmt.exec(&[]), &mut lp);
+    }
+
+    #[test]
+    fn ddl_exec() {
+        let mut lp = Core::new().unwrap();
+        let mut c1 = new_connection(&mut lp);
+        helper_ddl_exec(c1.exec("DECLARE @Mojo int").unwrap(), &mut lp);
     }
 }
