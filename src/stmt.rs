@@ -52,13 +52,10 @@ impl<'c, 'a, I: 'c + Io> LazyPreparedStatement<'c, 'a, I> {
     }
 }
 
-enum PrepState<'a, 'b> {
+enum PrepState<'a> {
     Initial,
     Req(TokenRpcRequest<'a>),
     Reading,
-    Prepared,
-    ExecReq(TokenRpcRequest<'b>),
-    ExecReading,
     Done,
 }
 
@@ -68,7 +65,7 @@ pub struct PreparedStmtStream<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtRes
     stmt: Option<&'s LazyPreparedStatement<'c, 'a, I>>,
     params: &'b [&'b ToSql],
 
-    prep: PrepState<'a, 'b>,
+    prep: PrepState<'s>,
 
     already_triggered: bool,
     /// This marker simply is used to allow this struct to be generic over a possible
@@ -88,8 +85,27 @@ impl<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtResult<'c, I>> PreparedStmtS
         }
     }
 
-    fn do_prepare(&mut self) -> TokenRpcRequest<'a> {
+    fn do_prepare_exec(&mut self) -> TokenRpcRequest<'s> {
         let mut param_str = String::with_capacity(10 * self.params.len());
+
+        let mut params_meta = vec![
+            RpcParam {
+                name: Cow::Borrowed("handle"),
+                flags: tokens::RPC_PARAM_BY_REF_VALUE,
+                value: ColumnData::I32(0),
+            },
+            RpcParam {
+                name: Cow::Borrowed("params"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::I32(0),
+            },
+            RpcParam {
+                name: Cow::Borrowed("stmt"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::String(self.stmt.map(|stmt| stmt.sql.clone()).unwrap()),
+            }
+        ];
+
         // determine the types from the given params
         for (i, param) in self.params.iter().enumerate() {
             if i > 0 {
@@ -97,32 +113,24 @@ impl<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtResult<'c, I>> PreparedStmtS
             }
             param_str.push_str(&format!("@P{} ", i + 1));
             param_str.push_str(param.to_sql());
+
+            params_meta.push(RpcParam {
+                name: Cow::Owned(format!("@P{}", i+1)),
+                flags: RpcStatusFlags::empty(),
+                value: param.to_column_data(),
+            });
         }
+        params_meta[1].value = ColumnData::String(param_str.into());
+
         // call sp_prepare to get a handle we can execute
         TokenRpcRequest {
-            proc_id: RpcProcIdValue::Id(RpcProcId::SpPrepare),
+            proc_id: RpcProcIdValue::Id(RpcProcId::SpPrepExec),
             flags: RpcOptionFlags::empty(),
-            params: vec![
-                RpcParam {
-                    name: Cow::Borrowed("handle"),
-                    flags: tokens::RPC_PARAM_BY_REF_VALUE,
-                    value: ColumnData::I32(0),
-                },
-                RpcParam {
-                    name: Cow::Borrowed("params"),
-                    flags: RpcStatusFlags::empty(),
-                    value: ColumnData::String(Cow::Owned(param_str))
-                },
-                RpcParam {
-                    name: Cow::Borrowed("stmt"),
-                    flags: RpcStatusFlags::empty(),
-                    value: ColumnData::String(self.stmt.map(|stmt| stmt.sql.clone()).unwrap()),
-                }
-            ],
+            params: params_meta,
         }
     }
 
-    fn do_exec(&mut self) -> TokenRpcRequest<'b> {
+    fn do_exec(&mut self) -> TokenRpcRequest<'s> {
         let mut params_meta = vec![
             RpcParam {
                 // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
@@ -159,7 +167,7 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
 
         let trans = &mut self.stmt.map(|stmt| stmt.conn.borrow_mut()).unwrap().transport;
 
-        // call sp_prepare, if we don't already have a (valid) handle
+        // call sp_prepare (with valid handle) or sp_prepexec (initializer)
         if let PrepState::Initial = self.prep {
             let already_prepared = self.stmt.map(|stmt| {
                 let handle = stmt.handle.borrow();
@@ -167,9 +175,10 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
                 handle.is_some() && handle.as_ref().map(|handle| handle.signature.iter().cloned().eq(self.params.iter().map(|x| x.to_sql()))).unwrap()
             });
             self.prep = if let Some(true) = already_prepared {
-                PrepState::Prepared
+                PrepState::Req(self.do_exec())
             } else {
-                PrepState::Req(self.do_prepare())
+                *self.stmt.map(|stmt| stmt.handle.borrow_mut()).unwrap() = None;
+                PrepState::Req(self.do_prepare_exec())
             };
         }
 
@@ -184,54 +193,16 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
 
         // receive and handle the result of sp_prepare
         while let PrepState::Reading = self.prep {
-            match try_ready!(trans.read_token()).map(|x| x.1) {
-                Some(TdsResponseToken::ColMetaData(meta)) => {
-                    *self.stmt.map(|stmt| stmt.meta.borrow_mut()).unwrap() = Some(meta.clone());
-                },
-                Some(TdsResponseToken::DoneProc(done)) => {
-                    assert_eq!(done.status, DoneStatus::empty());
-                    self.prep = PrepState::Prepared;
-                },
-                // this simply notifies us that a DoneProc is following (DONE_MORE)
-                Some(TdsResponseToken::DoneInProc(_)) => (),
-                Some(TdsResponseToken::ReturnStatus(status)) => {
-                    assert_eq!(status & 1, 0); // ensure that failure is no part of status
-                },
-                Some(TdsResponseToken::ReturnValue(retval)) => {
-                    assert_eq!(retval.param_name.as_str(), "handle");
-                    *self.stmt.map(|stmt| stmt.handle.borrow_mut()).unwrap() = Some(match retval.value {
-                        ColumnData::I32(val) => StatementHandle {
-                            handle: val,
-                            signature: self.params.iter().map(|x| x.to_sql()).collect(),
-                        },
-                        _ => unreachable!()
-                    });
-                },
-                _ => unimplemented!()
-            }
-        }
-
-        if let PrepState::Prepared = self.prep {
-            self.prep = PrepState::ExecReq(self.do_exec());
-        }
-        let ready = match self.prep {
-            PrepState::ExecReq(ref prep_req) => try_ready!(prep_req.write_token(trans).map(|f| f.map(|_| true))),
-            _ => false
-        };
-
-        if ready {
-            self.prep = PrepState::ExecReading;
-        }
-
-        while let PrepState::ExecReading = self.prep {
             match try_ready!(trans.read_token()) {
                 Some((last_pos, token)) => match token {
                     TdsResponseToken::ColMetaData(meta) => {
-                        self.already_triggered = true;
-                        return Ok(Async::Ready(Some(R::from_connection(self.stmt.map(|stmt| stmt.conn).unwrap()))));
-                    },
-                    TdsResponseToken::ReturnStatus(status) => {
-                        assert_eq!(status, 0);
+                        if !meta.columns.is_empty() {
+                            *self.stmt.map(|stmt| stmt.meta.borrow_mut()).unwrap() = Some(meta.clone());
+                        }
+                        if let Some(_) = self.stmt.map(|stmt| stmt.handle.borrow_mut()) {
+                            self.already_triggered = true;
+                            return Ok(Async::Ready(Some(R::from_connection(self.stmt.map(|stmt| stmt.conn).unwrap()))));
+                        }
                     },
                     TdsResponseToken::DoneProc(done) => {
                         // we've read each query result, we're done with the current sp_exec, this stream may rest
@@ -244,9 +215,24 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
                             return Ok(Async::Ready(Some(R::from_connection(self.stmt.map(|stmt| stmt.conn).unwrap()))));
                         }
                     },
-                    tok => panic!("execreading: unexpected token: {:?}", tok)
+                    // this simply notifies us that a DoneProc is following (DONE_MORE)
+                    TdsResponseToken::DoneInProc(_) => (),
+                    TdsResponseToken::ReturnStatus(status) => {
+                        assert_eq!(status & 1, 0); // ensure that failure is no part of status
+                    },
+                    TdsResponseToken::ReturnValue(retval) => {
+                        assert_eq!(retval.param_name.as_str(), "handle");
+                        *self.stmt.map(|stmt| stmt.handle.borrow_mut()).unwrap() = Some(match retval.value {
+                            ColumnData::I32(val) => StatementHandle {
+                                handle: val,
+                                signature: self.params.iter().map(|x| x.to_sql()).collect(),
+                            },
+                            _ => unreachable!()
+                        });
+                    },
+                    _ => unimplemented!()
                 },
-                None => panic!("execreading: expected token"),
+                _ => unimplemented!()
             }
         }
 

@@ -427,6 +427,7 @@ impl<I: Io> ParseToken<I> for TokenReturnValue {
 pub enum RpcProcId {
     SpPrepare = 11,
     SpExecute = 12,
+    SpPrepExec = 13,
     SpUnprepare = 15,
 }
 
