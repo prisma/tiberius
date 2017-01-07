@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use futures::{Async, Future, Poll, Stream};
 use tokio_core::io::Io;
-use query::QueryStream;
+use query::{QueryStream, ExecFuture};
 use tokens::{self, DoneStatus, TdsResponseToken, TokenRpcRequest, TokenColMetaData, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, WriteToken};
 use types::{ColumnData, ToColumnData};
 use {SqlConnection, StmtResult, TdsError};
@@ -44,12 +44,11 @@ impl<'c, 'a, I: 'c + Io> LazyPreparedStatement<'c, 'a, I> {
 
 impl<'c, 'a, I: 'c + Io> LazyPreparedStatement<'c, 'a, I> {
     pub fn query<'s, 'b>(&'s self, params: &'b [&'b ToSql]) -> PreparedStmtStream<'s, 'a, 'b, 'c, I, QueryStream<'c, I>> {
-        PreparedStmtStream {
-            stmt: Some(self),
-            params: params,
-            prep: PrepState::Initial,
-            _marker: PhantomData,
-        }
+        PreparedStmtStream::new(self, params)
+    }
+
+    pub fn exec<'s, 'b>(&'s self, params: &'b [&'b ToSql]) -> PreparedStmtStream<'s, 'a, 'b, 'c, I, ExecFuture<'c, I>> {
+        PreparedStmtStream::new(self, params)
     }
 }
 
@@ -71,6 +70,7 @@ pub struct PreparedStmtStream<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtRes
 
     prep: PrepState<'a, 'b>,
 
+    already_triggered: bool,
     /// This marker simply is used to allow this struct to be generic over a possible
     /// result, which allows us to share all state logic within this struct
     /// (e.g. we don't need a query specific future)
@@ -78,6 +78,16 @@ pub struct PreparedStmtStream<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtRes
 }
 
 impl<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtResult<'c, I>> PreparedStmtStream<'s, 'a, 'b, 'c, I, R> {
+    fn new(stmt: &'s LazyPreparedStatement<'c, 'a, I>, params: &'b [&'b ToSql]) -> Self {
+        PreparedStmtStream {
+            stmt: Some(stmt),
+            params: params,
+            prep: PrepState::Initial,
+            already_triggered: false,
+            _marker: PhantomData,
+        }
+    }
+
     fn do_prepare(&mut self) -> TokenRpcRequest<'a> {
         let mut param_str = String::with_capacity(10 * self.params.len());
         // determine the types from the given params
@@ -115,7 +125,9 @@ impl<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtResult<'c, I>> PreparedStmtS
     fn do_exec(&mut self) -> TokenRpcRequest<'b> {
         let mut params_meta = vec![
             RpcParam {
-                name: Cow::Borrowed("handle"),
+                // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
+                // not specifying the name is better anyways to reduce overhead on execute
+                name: Cow::Borrowed(""),
                 flags: RpcStatusFlags::empty(),
                 value: ColumnData::I32(self.stmt.map(|stmt| stmt.handle.borrow().as_ref().map(|h| h.handle).unwrap()).unwrap()),
             },
@@ -129,8 +141,7 @@ impl<'s, 'a: 's, 'b: 's, 'c: 's, I: 'c + Io, R: StmtResult<'c, I>> PreparedStmtS
         }
 
         TokenRpcRequest {
-            // as freeTDS, use sp_execute since SpPrepare (as int) seems broken, even microsofts odbc driver seems to use this
-            proc_id: RpcProcIdValue::Name(Cow::Borrowed("sp_execute")),
+            proc_id: RpcProcIdValue::Id(RpcProcId::SpExecute),
             flags: tokens::RPC_NO_META,
             params: params_meta,
         }
@@ -184,7 +195,7 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
                 // this simply notifies us that a DoneProc is following (DONE_MORE)
                 Some(TdsResponseToken::DoneInProc(_)) => (),
                 Some(TdsResponseToken::ReturnStatus(status)) => {
-                    assert_eq!(status, 0);
+                    assert_eq!(status & 1, 0); // ensure that failure is no part of status
                 },
                 Some(TdsResponseToken::ReturnValue(retval)) => {
                     assert_eq!(retval.param_name.as_str(), "handle");
@@ -213,20 +224,29 @@ impl<'s, 'a, 'b, 'c, I: Io, R: StmtResult<'c, I>> Stream for PreparedStmtStream<
         }
 
         while let PrepState::ExecReading = self.prep {
-            match try_ready!(trans.read_token()).map(|x| x.1) {
-                Some(TdsResponseToken::ColMetaData(meta)) => {
-                    assert_eq!(meta.columns.len(), 0);
-                    return Ok(Async::Ready(Some(R::from_connection(self.stmt.map(|stmt| stmt.conn).unwrap()))));
+            match try_ready!(trans.read_token()) {
+                Some((last_pos, token)) => match token {
+                    TdsResponseToken::ColMetaData(meta) => {
+                        self.already_triggered = true;
+                        return Ok(Async::Ready(Some(R::from_connection(self.stmt.map(|stmt| stmt.conn).unwrap()))));
+                    },
+                    TdsResponseToken::ReturnStatus(status) => {
+                        assert_eq!(status, 0);
+                    },
+                    TdsResponseToken::DoneProc(done) => {
+                        // we've read each query result, we're done with the current sp_exec, this stream may rest
+                        assert_eq!(done.status, DoneStatus::empty());
+                        let old = self.already_triggered;
+                        self.already_triggered = false;
+                        self.prep = PrepState::Done;
+                        if !old {
+                            trans.set_position(last_pos); // reinject
+                            return Ok(Async::Ready(Some(R::from_connection(self.stmt.map(|stmt| stmt.conn).unwrap()))));
+                        }
+                    },
+                    tok => panic!("execreading: unexpected token: {:?}", tok)
                 },
-                Some(TdsResponseToken::ReturnStatus(status)) => {
-                    assert_eq!(status, 0);
-                },
-                Some(TdsResponseToken::DoneProc(done)) => {
-                    // we've read each query result, we're done with the current sp_exec, this stream may rest
-                    assert_eq!(done.status, DoneStatus::empty());
-                    break;
-                },
-                tok => panic!("execreading: unexpected token: {:?}", tok)
+                None => panic!("execreading: expected token"),
             }
         }
 

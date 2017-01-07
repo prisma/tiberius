@@ -82,7 +82,7 @@ mod stmt;
 use transport::TdsTransport;
 use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
 use tokens::TdsResponseToken;
-use query::ResultSetStream;
+use query::{ResultSetStream, QueryStream, ExecFuture};
 use stmt::LazyPreparedStatement;
 
 lazy_static! {
@@ -460,9 +460,14 @@ impl<I: Io + Send + 'static> SqlConnection<I> {
         Ok(())
     }
 
-    pub fn query<'a, Q>(&self, query: Q) -> TdsResult<ResultSetStream<I>> where Q: Into<Cow<'a, str>> {
+    pub fn query<'a, Q>(&self, query: Q) -> TdsResult<ResultSetStream<I, QueryStream<I>>> where Q: Into<Cow<'a, str>> {
         try!(self.queue_sql_batch(query));
-        Ok(ResultSetStream { conn: Some(self) })
+        Ok(ResultSetStream::new(self))
+    }
+
+    pub fn exec<'a, Q>(&self, query: Q) -> TdsResult<ResultSetStream<I, ExecFuture<I>>> where Q: Into<Cow<'a, str>> {
+        try!(self.queue_sql_batch(query));
+        Ok(ResultSetStream::new(self))
     }
 
     pub fn prepare<'c, 'a, S>(&'c self, stmt: S) -> LazyPreparedStatement<'c, 'a, I> where S: Into<Cow<'a, str>> {
@@ -490,14 +495,24 @@ mod tests {
         let client = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
         let mut c1 = lp.run(client).unwrap();
 
-        let query = c1.query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
+        //let exec = c1.exec("DECLARE @Mojo int").unwrap();
+        let stmt = c1.prepare("DECLARE @Mojo int");
+        let exec = stmt.exec(&[]);
+        let future = exec.and_then(|x| x).for_each(|result| {
+            // This is executed for EACH resultset (e.g. 2 times for 2 sql queries)
+            println!("exec result {:?}", result);
+            Ok(())
+        });
+        lp.run(future).unwrap();
+
+        /*let query = c1.query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
         println!("rows: ");
         let future = query.for_each_row(|x| {
             let val: &str = x.get(0);
             println!("row: {:?}", val);
             Ok(())
         });
-        lp.run(future).unwrap();
+        lp.run(future).unwrap();*/
 
         /*let stmt = c1.prepare("select test_num FROM test.dbo.test_ints WHERE test_num < @P1;");
         for g in 0..2 {

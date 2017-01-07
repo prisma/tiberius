@@ -194,17 +194,15 @@ impl<'a> ColumnData<'a> {
                 let mut state = cmp::max(last_pos, 1);
                 // type length
                 if state < 3 {
-                    let length = 2*str_.len();
-                    assert!(length < u16::max_value() as usize);
-                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, length as u16, state - 1));
+                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, 8000, state - 1));
                     if left_bytes > 0 {
                         return Ok(Some(state + written_bytes))
                     }
                     state = 3;
                 }
-                // collation
+                // collation (5 bytes)
                 if state < 8 {
-                    // TODO: DO NOT USE A HARDCODED (AND PROBABLY INVALID) COLLATION
+                    // 0 = RAW COLLATION, may have side effects?
                     let collation = [0u8, 0, 0, 0, 0]; // pos: [3,4,5,6,7]
                     let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, &collation, state - 3));
                     if left_bytes > 0 {
@@ -214,7 +212,9 @@ impl<'a> ColumnData<'a> {
                 }
                 // body length
                 if state < 10 {
-                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, 2*str_.len() as u16, state - 8));
+                    assert!(2*str_.len() < u16::max_value() as usize);
+                    let length = 2*str_.len() as u16;
+                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, length, state - 8));
                     if left_bytes > 0 {
                         return Ok(Some(state + written_bytes))
                     }
