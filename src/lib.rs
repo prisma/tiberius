@@ -482,14 +482,22 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         Ok(())
     }
 
-    pub fn simple_query<'a, Q>(self, query: Q) -> TdsResult<ResultSetStream<I, QueryStream<I>>> where Q: Into<Cow<'a, str>> {
-        try!(self.queue_sql_batch(query));
-        Ok(ResultSetStream::new(self))
+    fn simple_exec_internal<'a, Q, R: StmtResult<I>>(self, query: Q) -> ResultSetStream<I, R> where Q: Into<Cow<'a, str>> {
+        let result = self.queue_sql_batch(query);
+
+        let ret = ResultSetStream::new(self);
+        if let Err(err) = result {
+            return ret.error(err)
+        }
+        ret
     }
 
-    pub fn simple_exec<'a, Q>(self, query: Q) -> TdsResult<ResultSetStream<I, ExecFuture<I>>> where Q: Into<Cow<'a, str>> {
-        try!(self.queue_sql_batch(query));
-        Ok(ResultSetStream::new(self))
+    pub fn simple_query<'a, Q>(self, query: Q) -> ResultSetStream<I, QueryStream<I>> where Q: Into<Cow<'a, str>> {
+        self.simple_exec_internal(query)
+    }
+
+    pub fn simple_exec<'a, Q>(self, query: Q) -> ResultSetStream<I, ExecFuture<I>> where Q: Into<Cow<'a, str>> {
+        self.simple_exec_internal(query)
     }
 
     fn do_prepare_exec<'b>(&self, stmt: &Statement, params: &'b [&'b ToSql]) -> TokenRpcRequest<'b> {
@@ -625,7 +633,7 @@ mod tests {
         let limit = 5i32;
         let post_sql = format!("where II<{}", limit);
         let sql = (1..2*limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| acc + &format!("union select {} ", x)) + ") U " + &post_sql;
-        let query = c1.simple_query(sql).unwrap();
+        let query = c1.simple_query(sql);
         let mut i = 0;
         {
             let future = query.for_each_row(|x| {
@@ -683,7 +691,7 @@ mod tests {
     fn ddl_exec() {
         let mut lp = Core::new().unwrap();
         let mut c1 = new_connection(&mut lp);
-        helper_ddl_exec(c1.simple_exec("DECLARE @Mojo int").unwrap(), &mut lp);
+        helper_ddl_exec(c1.simple_exec("DECLARE @Mojo int"), &mut lp);
     }
 
     #[test]
@@ -716,7 +724,7 @@ mod tests {
         let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
 
         let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
-            conn.simple_query("SELECT 1+2").unwrap().for_each_row(|row| {
+            conn.simple_query("SELECT 1+2").for_each_row(|row| {
                 let val: i32 = row.get(0);
                 assert_eq!(val, 3i32);
                 Ok(())

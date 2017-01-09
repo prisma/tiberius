@@ -339,7 +339,7 @@ mod tests {
     fn select_nvarchar_collation_test() {
         let mut lp = Core::new().unwrap();
         let mut c1 = new_connection(&mut lp);
-        let query = c1.simple_query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))").unwrap();
+        let query = c1.simple_query("select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))");
         let mut i = 0;
         {
             let future = query.for_each_row(|x| {

@@ -107,7 +107,13 @@ pub enum TypeInfo {
 
 #[derive(Debug)]
 pub enum ColumnData<'a> {
+    None,
+    I8(i8),
+    I16(i16),
     I32(i32),
+    I64(i64),
+    F32(f32),
+    F64(f64),
     /// owned/borrowed rust string
     String(Cow<'a, str>),
     /// a buffer string which is a reference to a buffer of a received packet
@@ -122,18 +128,23 @@ impl TypeInfo {
         }
         if let Some(ty) = VarLenType::from_u8(ty) {
             // TODO: add .size() / .has_collation() to VarLenType (?)
-            let vty = match ty {
-                VarLenType::Intn => TypeInfo::VarLenSized(ty, try!(trans.read_u8()) as usize, None),
+            let len = match ty {
+                VarLenType::Intn | VarLenType::Floatn => try!(trans.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
-                    let size = try!(trans.read_u16::<LittleEndian>()) as usize;
-                    let collation = Collation {
-                        info: try!(trans.read_u32::<LittleEndian>()),
-                        sort_id: try!(trans.read_u8()),
-                    };
-                    TypeInfo::VarLenSized(ty, size, Some(collation))
+                    try!(trans.read_u16::<LittleEndian>()) as usize
                 },
                 _ => unimplemented!()
             };
+            let collation = match ty {
+                VarLenType::NVarchar | VarLenType::BigVarChar => {
+                    Some(Collation {
+                        info: try!(trans.read_u32::<LittleEndian>()),
+                        sort_id: try!(trans.read_u8()),
+                    })
+                },
+                _ => None
+            };
+            let vty = TypeInfo::VarLenSized(ty, len, collation);
             return Ok(Async::Ready(vty))
         }
         return Err(TdsError::Protocol(format!("invalid or unsupported column type: {:?}", ty).into()))
@@ -153,12 +164,23 @@ impl<'a> ColumnData<'a> {
                 match *ty {
                     VarLenType::Intn => {
                         assert!(collation.is_none());
+                        assert_eq!(try!(trans.read_u8()) as usize, *len);
                         match *len {
-                            4 => {
-                                assert_eq!(try!(trans.read_u8()), 4);
-                                ColumnData::I32(try!(trans.read_i32::<LittleEndian>()))
-                            },
+                            1 => ColumnData::I8(try!(trans.read_i8())),
+                            2 => ColumnData::I16(try!(trans.read_i16::<LittleEndian>())),
+                            4 => ColumnData::I32(try!(trans.read_i32::<LittleEndian>())),
+                            8 => ColumnData::I64(try!(trans.read_i64::<LittleEndian>())),
                             _ => unimplemented!()
+                        }
+                    },
+                    /// 2.2.5.5.1.5 IEEE754
+                    VarLenType::Floatn => {
+                        let len = try!(trans.read_u8());
+                        match len {
+                            0 => ColumnData::None,
+                            4 => ColumnData::F32(try!(trans.read_f32::<LittleEndian>())),
+                            8 => ColumnData::F64(try!(trans.read_f64::<LittleEndian>())),
+                            _ => return Err(TdsError::Protocol(format!("floatn: length of {} is invalid", len).into()))
                         }
                     },
                     VarLenType::NVarchar => ColumnData::BString(try_ready!(trans.read_varchar::<u16>(true))),
@@ -175,26 +197,56 @@ impl<'a> ColumnData<'a> {
     }
 
     pub fn serialize(&self, target: &mut Cursor<Vec<u8>>, last_pos: usize) -> TdsResult<Option<usize>> {
+        // helper to reduce some copy&paste
+        // write progressively
+        macro_rules! serialize_n_helper {
+            ($n_method:ident, $target:expr, $bytes:expr, $last_pos:expr, $val:expr) => {{
+                LittleEndian::$n_method(&mut $bytes[3..], $val);
+                let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment($target, &$bytes, $last_pos));
+                if left_bytes > 0 {
+                    return Ok(Some($last_pos + written_bytes))
+                }
+            }};
+        }
+
         match *self {
-            ColumnData::I32(ref val) => {
-                // write progressively
-                let mut bytes = [VarLenType::Intn as u8, 4, 4, 0, 0, 0, 0];
-                LittleEndian::write_i32(&mut bytes[3..], *val as i32);
+            ColumnData::I8(ref val) => {
+                let bytes = [VarLenType::Intn as u8, 1, 1, *val as u8];
                 let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, &bytes, last_pos));
                 if left_bytes > 0 {
                     return Ok(Some(last_pos + written_bytes))
                 }
             },
+            ColumnData::I16(ref val) => {
+                let mut bytes = [VarLenType::Intn as u8, 2, 2, 0, 0];
+                serialize_n_helper!(write_i16, target, bytes, last_pos, *val)
+            },
+            ColumnData::I32(ref val) => {
+                let mut bytes = [VarLenType::Intn as u8, 4, 4, 0, 0, 0, 0];
+                serialize_n_helper!(write_i32, target, bytes, last_pos, *val)
+            },
+            ColumnData::I64(ref val) => {
+                let mut bytes = [VarLenType::Intn as u8, 8, 8,/**/ 0, 0, 0, 0,/**/ 0, 0, 0, 0];
+                serialize_n_helper!(write_i64, target, bytes, last_pos, *val)
+            },
+            ColumnData::F32(ref val) => {
+                let mut bytes = [VarLenType::Floatn as u8, 4, 4, 0, 0, 0, 0];
+                serialize_n_helper!(write_f32, target, bytes, last_pos, *val);
+            },
+            ColumnData::F64(ref val) => {
+                let mut bytes = [VarLenType::Floatn as u8, 8, 8,/**/ 0, 0, 0, 0,/**/ 0, 0, 0, 0];
+                serialize_n_helper!(write_f64, target, bytes, last_pos, *val);
+            },
             ColumnData::String(ref str_) => {
                 // type
                 if last_pos == 0 {
-                    // TODO: for a certain size we need to send it as BIGNVARCHAR (?)...
+                    // TODO: for a certain size we need to send it as NVARCHAR(N)/NTEXT...
                     try!(target.write_u8(VarLenType::NVarchar as u8)); // pos:0
                 }
                 let mut state = cmp::max(last_pos, 1);
                 // type length
                 if state < 3 {
-                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, 8000, state - 1));
+                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, 8000, state - 1)); // NVARCHAR(4000)
                     if left_bytes > 0 {
                         return Ok(Some(state + written_bytes))
                     }
@@ -238,33 +290,8 @@ pub trait FromColumnData<'a>: Sized {
     fn from_column_data(data: &'a ColumnData) -> TdsResult<Self>;
 }
 
-impl<'a> FromColumnData<'a> for i32 {
-    fn from_column_data(data: &ColumnData) -> TdsResult<i32> {
-        match *data {
-            ColumnData::I32(value) => Ok(value),
-            _ => Err(TdsError::Conversion("cannot interpret the given column data as an i32 value".into()))
-        }
-    }
-}
-
-impl<'a> FromColumnData<'a> for &'a str {
-    fn from_column_data(data: &'a ColumnData) -> TdsResult<&'a str> {
-        match *data {
-            ColumnData::BString(ref buf) => Ok(buf.as_str()),
-            ColumnData::String(ref buf) => Ok(buf),
-            _ => Err(TdsError::Conversion("cannot interpret the given column data as a string value".into()))
-        }
-    }
-}
-
 pub trait ToColumnData {
     fn to_column_data(&self) -> ColumnData;
-}
-
-impl ToColumnData for i32 {
-    fn to_column_data(&self) -> ColumnData {
-        ColumnData::I32(*self)
-    }
 }
 
 /// a type which can be translated as an SQL type (e.g. nvarchar) and is serializable (as `ColumnData`)
@@ -273,9 +300,132 @@ pub trait ToSql : ToColumnData {
     fn to_sql(&self) -> &'static str;
 }
 
-// TODO: will need a macro
-impl ToSql for i32 {
-    fn to_sql(&self) -> &'static str {
-        "int"
+macro_rules! from_column_data {
+    ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
+        $(
+            impl<'a> FromColumnData<'a> for $ty {
+                fn from_column_data(data: &'a ColumnData) -> TdsResult<Self> {
+                    match *data {
+                        $( $pat => Ok($val), )*
+                        _ => Err(TdsError::Conversion(concat!("cannot interpret the given column data as an ", stringify!($ty), "value").into()))
+                    }
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! to_column_data {
+    ($target:ident, $( $ty:ty => $val:expr ),* ) => {
+        $(
+            impl<'a> ToColumnData for $ty {
+                fn to_column_data(&self) -> ColumnData {
+                    let $target = self;
+                    $val
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! to_sql {
+    ($($ty:ty => $sql:expr),*) => {
+        $(
+            impl ToSql for $ty {
+                fn to_sql(&self) -> &'static str {
+                    $sql
+                }
+            }
+        )*
     }
+}
+
+from_column_data!(
+    // integers are auto-castable on receiving
+    i8:         ColumnData::I8(val) => val;
+    i16:        ColumnData::I8(val) => val as _,
+                ColumnData::I16(val) => val;
+    i32:        ColumnData::I8(val) => val as _,
+                ColumnData::I16(val) => val as _,
+                ColumnData::I32(val) => val;
+    i64:        ColumnData::I8(val) => val as _,
+                ColumnData::I16(val) => val as _,
+                ColumnData::I32(val) => val as _,
+                ColumnData::I64(val) => val;
+    f32:        ColumnData::F32(val) => val;
+    f64:        ColumnData::F64(val) => val;
+    &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
+                ColumnData::String(ref buf) => buf
+);
+
+to_column_data!(self_,
+    i8  =>      ColumnData::I8(*self_),
+    i16 =>      ColumnData::I16(*self_),
+    i32 =>      ColumnData::I32(*self_),
+    i64 =>      ColumnData::I64(*self_),
+    f32 =>      ColumnData::F32(*self_),
+    f64 =>      ColumnData::F64(*self_),
+    &'a str =>  ColumnData::String((*self_).into())
+);
+
+to_sql!(
+    i8  => "tinyint",
+    i16 => "smallint",
+    i32 => "int",
+    i64 => "bigint",
+    f32 => "float(24)",
+    f64 => "float(53)"
+);
+
+impl<'a> ToSql for &'a str {
+    fn to_sql(&self) -> &'static str {
+        const max: usize = 1<<30;
+        match self.len() {
+            0...8000 => "NVARCHAR(4000)",
+            8000...max => "NVARCHAR(MAX)",
+            _ => "NTEXT",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio_core::reactor::Core;
+    use futures::Future;
+    use stmt::ForEachRow;
+    use SqlConnection;
+
+    /// prepares a statement which selects a passed value
+    /// this tests serialization of a parameter and deserialization
+    /// atlast it checks if the received value is the same as the sent value
+    macro_rules! test_datatype {
+        ( $($name:ident: $ty:ty => $val:expr),* ) => {
+            $(
+                #[test]
+                fn $name() {
+                    let mut lp = Core::new().unwrap();
+                    let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;")
+                        .map(|conn| (conn.prepare("SELECT @P1"), conn))
+                        .and_then(|(stmt, conn)| {
+                            conn.query(&stmt, &[&$val]).for_each_row(|row| {
+                                assert_eq!(row.get::<_, $ty>(0), $val);
+                                Ok(())
+                            })
+                        });
+                    lp.run(future).unwrap();
+                }
+            )*
+        }
+    }
+
+    test_datatype!(
+        test_i8 :  i8 => 127i8,
+        test_i16: i16 => 16100i16,
+        test_i32: i32 => -4i32,
+        test_i64: i64 => 1i64<<33,
+        test_f32: f32 => 42.42f32,
+        test_f64: f64 => 26.26f64,
+        test_str: &str => "hello world"
+    );
+
 }

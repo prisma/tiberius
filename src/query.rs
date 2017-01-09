@@ -9,6 +9,7 @@ use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
 
 /// a query result consists of multiple query streams (amount of executed queries = amount of results)
 pub struct ResultSetStream<I: BoxableIo, R: StmtResult<I>> {
+    err: Option<TdsError>,
     conn: Option<SqlConnection<I>>,
     receiver: Option<oneshot::Receiver<SqlConnection<I>>>,
     /// whether we already returned a result for the current resultset
@@ -20,12 +21,18 @@ pub struct ResultSetStream<I: BoxableIo, R: StmtResult<I>> {
 impl<I: BoxableIo, R: StmtResult<I>> ResultSetStream<I, R> {
     pub fn new(conn: SqlConnection<I>) -> ResultSetStream<I, R> {
         ResultSetStream {
+            err: None,
             conn: Some(conn),
             receiver: None,
             already_triggered: false,
             done: false,
             _marker: PhantomData,
         }
+    }
+
+    pub fn error(mut self, err: TdsError) -> Self {
+        self.err = Some(err);
+        self
     }
 }
 
@@ -35,6 +42,10 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
     type Error = TdsError;
 
     fn poll(&mut self) -> Poll<StreamEvent<Self::Item, Self::State>, Self::Error> {
+        if let Some(err) = self.err.take() {
+            return Err(err)
+        }
+
         // attempt to receive the connection back to continue receiving further resultsets
         if self.receiver.is_some() {
             self.conn = Some(try_ready!(self.receiver.as_mut().unwrap().poll().map_err(|_| TdsError::Canceled)));
