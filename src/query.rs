@@ -1,24 +1,27 @@
 use std::marker::PhantomData;
-use futures::{Async, Future, Poll, Stream, Sink};
-use tokio_core::io::Io;
+use futures::{self, Async, Future, Poll, Stream, Sink};
+use futures::sync::oneshot;
+use futures_state_stream::{StateStream, StreamEvent};
 use stmt::ForEachRow;
 use tokens::{self, TdsResponseToken, TokenRow};
 use types::FromColumnData;
-use {SqlConnection, StmtResult, TdsError, TdsResult};
+use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
 
 /// a query result consists of multiple query streams (amount of executed queries = amount of results)
-pub struct ResultSetStream<'a, I: 'a + Io, R: StmtResult<'a, I>> {
-    conn: Option<&'a SqlConnection<I>>,
+pub struct ResultSetStream<I: BoxableIo, R: StmtResult<I>> {
+    conn: Option<SqlConnection<I>>,
+    receiver: Option<oneshot::Receiver<SqlConnection<I>>>,
     /// whether we already returned a result for the current resultset
     already_triggered: bool,
     done: bool,
     _marker: PhantomData<*const R>,
 }
 
-impl<'a, I: Io, R: StmtResult<'a, I>> ResultSetStream<'a, I, R> {
-    pub fn new(conn: &'a SqlConnection<I>) -> ResultSetStream<'a, I, R> {
+impl<I: BoxableIo, R: StmtResult<I>> ResultSetStream<I, R> {
+    pub fn new(conn: SqlConnection<I>) -> ResultSetStream<I, R> {
         ResultSetStream {
             conn: Some(conn),
+            receiver: None,
             already_triggered: false,
             done: false,
             _marker: PhantomData,
@@ -26,73 +29,92 @@ impl<'a, I: Io, R: StmtResult<'a, I>> ResultSetStream<'a, I, R> {
     }
 }
 
-impl<'a, I: Io, R: StmtResult<'a, I>> Stream for ResultSetStream<'a, I, R> {
+impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
     type Item = R::Result;
+    type State = SqlConnection<I>;
     type Error = TdsError;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll(&mut self) -> Poll<StreamEvent<Self::Item, Self::State>, Self::Error> {
+        // attempt to receive the connection back to continue receiving further resultsets
+        if self.receiver.is_some() {
+            self.conn = Some(try_ready!(self.receiver.as_mut().unwrap().poll().map_err(|_| TdsError::Canceled)));
+            self.receiver = None;
+        }
+
         assert!(self.conn.is_some());
 
         if !self.done {
-            if let Some(ref mut conn) = self.conn {
-                let mut inner = conn.borrow_mut();
-                try_ready!(inner.transport.poll_complete());
+            let do_ret = match self.conn {
+                None => false,
+                Some(ref mut conn) => {
+                    let mut inner = conn.borrow_mut();
+                    try_ready!(inner.transport.poll_complete());
 
-                if let Some((last_pos, token)) = try_ready!(inner.transport.read_token()) {
-                    match token {
-                        TdsResponseToken::ColMetaData(_) => {
-                            self.already_triggered = true;
-                            return Ok(Async::Ready(Some(R::from_connection(conn))))
-                        },
-                        TdsResponseToken::Done(ref done) => {
-                            assert!(!done.status.contains(tokens::DONE_MORE));
-                            self.done = true;
-                            let old = self.already_triggered;
-                            self.already_triggered = false;
-                            // make sure to return exactly one time for each result set
-                            if !old {
-                                inner.transport.set_position(last_pos); // reinject
-                                return Ok(Async::Ready(Some(R::from_connection(conn))))
-                            }
-                        },
-                        tok => panic!("resultset: unexpected token: {:?}", tok)
+                    match try_ready!(inner.transport.read_token()) {
+                        None => panic!("resultset: expected a token!"),
+                        Some((last_pos, token)) => match token {
+                            TdsResponseToken::ColMetaData(_) => {
+                                self.already_triggered = true;
+                                true
+                            },
+                            TdsResponseToken::Done(ref done) => {
+                                assert!(!done.status.contains(tokens::DONE_MORE));
+                                self.done = true;
+                                let old = self.already_triggered;
+                                self.already_triggered = false;
+                                // make sure to return exactly one time for each result set
+                                if !old {
+                                    inner.transport.set_position(last_pos); // reinject
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
+                            tok => panic!("resultset: unexpected token: {:?}", tok)
+                        }
                     }
                 }
-                if !self.done {
-                    panic!("resultset: expected a token!");
-                }
+            };
+            if do_ret {
+                let conn = self.conn.take().unwrap();
+                let (sender, receiver) = oneshot::channel();
+                self.receiver = Some(receiver);
+                return Ok(Async::Ready(StreamEvent::Next(R::from_connection(conn, sender))))
             }
         }
-        self.conn = None;
-        Ok(Async::Ready(None))
+        let conn = self.conn.take().unwrap();
+        Ok(Async::Ready(StreamEvent::Done(conn)))
     }
 }
 
-impl<'a, I: Io> ResultSetStream<'a, I, QueryStream<'a, I>> {
+impl<'a, I: BoxableIo> ResultSetStream<I, QueryStream<I>> {
     /// Only expect 1 result set (e.g. if you're only executing one query)
     /// and execute a given closure for the results of the first result set
     ///
     /// other result sets are silently ignored
-    pub fn for_each_row<F>(self, f: F) -> ForEachRow<'a, I, ResultSetStream<'a, I, QueryStream<'a, I>>, F>
-        where F: FnMut(<QueryStream<'a, I> as Stream>::Item) -> Result<(), TdsError>
+    pub fn for_each_row<F>(self, f: F) -> ForEachRow<I, ResultSetStream<I, QueryStream<I>>, F>
+        where F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
     {
         ForEachRow::new(self, f)
     }
 }
 
-pub struct QueryStream<'a, I: Io + 'a> {
-    conn: Option<&'a SqlConnection<I>>,
+pub struct QueryStream<I: BoxableIo>(Option<ResultInner<I>>);
+
+struct ResultInner<I: BoxableIo> {
+    conn: SqlConnection<I>,
+    ret_conn: oneshot::Sender<SqlConnection<I>>,
 }
 
-impl<'a, I: Io> Stream for QueryStream<'a, I> {
+impl<'a, I: BoxableIo> Stream for QueryStream<I> {
     type Item = QueryRow;
     type Error = TdsError;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        assert!(self.conn.is_some());
+        assert!(self.0.is_some());
 
-        if let Some(ref mut conn) = self.conn {
-            let mut inner = conn.borrow_mut();
+        if let Some(ref mut inner) = self.0 {
+            let mut inner = inner.conn.borrow_mut();
             try_ready!(inner.transport.poll_complete());
 
             loop {
@@ -115,38 +137,40 @@ impl<'a, I: Io> Stream for QueryStream<'a, I> {
             }
         }
 
-        self.conn = None;
+        let ResultInner { conn, ret_conn } = self.0.take().unwrap();
+        ret_conn.complete(conn);
         Ok(Async::Ready(None))
     }
 }
 
-impl<'a, I: Io> StmtResult<'a, I> for QueryStream<'a, I> {
-    type Result = QueryStream<'a, I>;
+impl<'a, I: BoxableIo> StmtResult<I> for QueryStream<I> {
+    type Result = QueryStream<I>;
 
-    fn from_connection(conn: &'a SqlConnection<I>) -> QueryStream<'a, I> {
-        QueryStream {
-            conn: Some(conn),
-        }
+    fn from_connection(conn: SqlConnection<I>, ret_conn: oneshot::Sender<SqlConnection<I>>) -> QueryStream<I> {
+        QueryStream(Some(ResultInner {
+            conn: conn,
+            ret_conn: ret_conn,
+        }))
     }
 }
 
-pub struct ExecFuture<'a, I: Io + 'a> {
-    conn: Option<&'a SqlConnection<I>>,
+pub struct ExecFuture<I: BoxableIo> {
+    inner: Option<ResultInner<I>>,
     /// whether only a Done token (that was previously injected) is the contents of this stream
     single_token: bool,
 }
 
-impl<'a, I: Io> Future for ExecFuture<'a, I> {
+impl<I: BoxableIo> Future for ExecFuture<I> {
     /// amount of affected rows
     type Item = u64;
     type Error = TdsError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        assert!(self.conn.is_some());
+        assert!(self.inner.is_some());
 
         let mut ret: u64 = 0;
-        if let Some(ref mut conn) = self.conn {
-            let mut inner = conn.borrow_mut();
+        if let Some(ref mut inner) = self.inner {
+            let mut inner = inner.conn.borrow_mut();
             try_ready!(inner.transport.poll_complete());
 
             loop {
@@ -176,17 +200,22 @@ impl<'a, I: Io> Future for ExecFuture<'a, I> {
                 }
             }
         }
-        self.conn = None;
+
+        let ResultInner { conn, ret_conn } = self.inner.take().unwrap();
+        ret_conn.complete(conn);
         return Ok(Async::Ready(ret))
     }
 }
 
-impl<'a, I: Io> StmtResult<'a, I> for ExecFuture<'a, I> {
-    type Result = ExecFuture<'a, I>;
+impl<I: BoxableIo> StmtResult<I> for ExecFuture<I> {
+    type Result = ExecFuture<I>;
 
-    fn from_connection(conn: &'a SqlConnection<I>) -> ExecFuture<'a, I> {
+    fn from_connection(conn: SqlConnection<I>, ret_conn: oneshot::Sender<SqlConnection<I>>) -> ExecFuture<I> {
         ExecFuture {
-            conn: Some(conn),
+            inner: Some(ResultInner {
+                conn: conn,
+                ret_conn: ret_conn,
+            }),
             single_token: true,
         }
     }

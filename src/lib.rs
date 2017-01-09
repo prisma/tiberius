@@ -1,9 +1,12 @@
+//! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
+
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
 extern crate encoding;
 #[macro_use]
 extern crate futures;
+extern crate futures_state_stream;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -18,7 +21,8 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::io;
-use futures::{Async, BoxFuture, Future, Poll, Sink, failed, finished};
+use futures::{Async, BoxFuture, Future, Poll, Sink};
+use futures::sync::oneshot;
 use futures::future::FromErr;
 use tokio_core::io::Io;
 use tokio_core::net::{TcpStream, TcpStreamNew};
@@ -81,9 +85,10 @@ mod stmt;
 
 use transport::TdsTransport;
 use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
-use tokens::TdsResponseToken;
+use types::{ColumnData, ToSql};
+use tokens::{TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, WriteToken};
 use query::{ResultSetStream, QueryStream, ExecFuture};
-use stmt::LazyPreparedStatement;
+use stmt::{Statement, StmtStream};
 
 lazy_static! {
     pub static ref DRIVER_VERSION: u64 = get_driver_version();
@@ -107,6 +112,7 @@ pub enum TdsError {
     Utf8(std::str::Utf8Error),
     Utf16(std::string::FromUtf16Error),
     ParseInt(std::num::ParseIntError),
+    Canceled,
 }
 
 impl From<io::Error> for TdsError {
@@ -146,23 +152,56 @@ enum SqlConnectionNewState {
 }
 
 /// a representation of the initialization state of an SQL connection (pending authentication)
-struct SqlConnectionNew<T: Io> {
-    transport: TdsTransport<T>,
+pub enum SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send + Sized> {
+    Connection(Option<(F, ConnectParams)>),
+    Error(Option<TdsError>),
+    Next(Option<SqlConnectionFuture<I>>),
+}
+
+impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConnectionNew<I, F> {
+    type Item = SqlConnection<I>;
+    type Error = TdsError;
+
+    fn poll(&mut self) -> Poll<Self::Item, TdsError> {
+        loop {
+            *self = match *self {
+                SqlConnectionNew::Connection(ref mut pairs @ Some(_)) => {
+                    let trans = try_ready!(pairs.as_mut().map(|x| &mut x.0).unwrap().poll());
+                    let future = SqlConnectionFuture {
+                        params: pairs.take().map(|x| x.1).unwrap(),
+                        state: SqlConnectionNewState::PreLoginSend,
+                        transport: TdsTransport::new(trans),
+                        sso_client: None,
+                    };
+                    SqlConnectionNew::Next(Some(future))
+                },
+                SqlConnectionNew::Error(ref mut e @ Some(_)) => {
+                    return Err(e.take().unwrap())
+                },
+                SqlConnectionNew::Next(ref mut future @ Some(_)) => {
+                    let _ = try_ready!(future.as_mut().unwrap().poll());
+                    let trans = future.take().unwrap().transport;
+                    let conn = InnerSqlConnection {
+                        transport: trans,
+                    };
+
+                    return Ok(Async::Ready(SqlConnection(RefCell::new(conn))))
+                },
+                _ => panic!("SqlConnectionNew polled multiple times. item already consumed"),
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+pub struct SqlConnectionFuture<I: BoxableIo> {
     params: ConnectParams,
     state: SqlConnectionNewState,
+    transport: TdsTransport<I>,
     sso_client: Option<ntlm::sso::NtlmSso>,
 }
 
-impl<T: Io> SqlConnectionNew<T> {
-    fn new(transport: T, params: ConnectParams) -> SqlConnectionNew<T> {
-        SqlConnectionNew {
-            transport: TdsTransport::new(transport),
-            params: params,
-            state: SqlConnectionNewState::PreLoginSend,
-            sso_client: None,
-        }
-    }
-
+impl<I: BoxableIo> SqlConnectionFuture<I> {
     /// queues a simple message which serializes to ONE packet
     pub fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
         let vec = try!(m.serialize_message(&mut self.transport));
@@ -170,12 +209,13 @@ impl<T: Io> SqlConnectionNew<T> {
     }
 }
 
-impl<T: Io> Future for SqlConnectionNew<T> {
+impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
     type Item = ();
     type Error = TdsError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         trace!("init/poll");
+
         loop {
             match self.state {
                 SqlConnectionNewState::PreLoginSend => {
@@ -245,41 +285,21 @@ impl<T: Io> Future for SqlConnectionNew<T> {
     }
 }
 
-pub struct SqlConnectionFuture<I: Io>(Option<SqlConnectionNew<I>>);
-
-impl<I: Io> Future for SqlConnectionFuture<I> {
-    type Item = SqlConnection<I>;
-    type Error = TdsError;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if let Some(ref mut future) = self.0 {
-            try_ready!(future.poll());
-        }
-
-        let trans = self.0.take().unwrap().transport;
-        let conn = InnerSqlConnection {
-            transport: trans,
-        };
-
-        Ok(Async::Ready(SqlConnection(RefCell::new(conn))))
-    }
-}
-
 /// a type which is constructable from a statement as a statement's result
-pub trait StmtResult<'c, I: 'c + Io> {
+pub trait StmtResult<I: BoxableIo> {
     type Result: Sized;
 
-    fn from_connection(&'c SqlConnection<I>) -> Self::Result;
+    fn from_connection(SqlConnection<I>, oneshot::Sender<SqlConnection<I>>) -> Self::Result;
 }
 
 /// a representation of an authenticated and ready for use SQL connection
-pub struct InnerSqlConnection<I: Io> {
+pub struct InnerSqlConnection<I: BoxableIo> {
     transport: TdsTransport<I>,
 }
 
-pub struct SqlConnection<I: Io>(RefCell<InnerSqlConnection<I>>);
+pub struct SqlConnection<I: BoxableIo>(RefCell<InnerSqlConnection<I>>);
 
-impl<I: Io> Deref for SqlConnection<I> {
+impl<I: BoxableIo> Deref for SqlConnection<I> {
     type Target = RefCell<InnerSqlConnection<I>>;
 
     fn deref(&self) -> &Self::Target {
@@ -288,15 +308,15 @@ impl<I: Io> Deref for SqlConnection<I> {
 }
 
 /// a variant of Io which can be boxed to allow dynamic dispatch
-pub trait BoxableIo: Io {}
-impl Io for Box<BoxableIo + Send + 'static> {}
-impl<I: Io> BoxableIo for I {}
+pub trait BoxableIo: Io + Send {}
+impl Io for Box<BoxableIo> {}
+impl<I: Io + Send> BoxableIo for I {}
 
 /// something that can be converted to an underlying IO
-pub trait ToIo<I: BoxableIo + Send + 'static> {
-    type Result: Future<Item=I, Error=TdsError> + Send + 'static;
+pub trait ToIo<I: BoxableIo + Sized> {
+    type Result: Future<Item=I, Error=TdsError> + Send + Sized + 'static;
 
-    fn to_io(self, handle: &Handle) -> Self::Result;
+    fn to_io(self, handle: &Handle) -> Self::Result where Self: Sized;
 }
 
 impl<'a> ToIo<TcpStream> for &'a SocketAddr {
@@ -311,12 +331,12 @@ enum DynamicConnectionTarget {
     Tcp(SocketAddr),
 }
 
-impl ToIo<Box<BoxableIo + Send + 'static>> for DynamicConnectionTarget {
-    type Result = BoxFuture<Box<BoxableIo + Send + 'static>, TdsError>;
+impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
+    type Result = BoxFuture<Box<BoxableIo>, TdsError>;
 
     fn to_io(self, handle: &Handle) -> Self::Result {
         match self {
-            DynamicConnectionTarget::Tcp(ref addr) => addr.to_io(handle).map(|x| Box::new(x) as Box<BoxableIo + Send>).boxed(),
+            DynamicConnectionTarget::Tcp(ref addr) => addr.to_io(handle).map(|x| Box::new(x) as Box<BoxableIo>).boxed(),
         }
     }
 }
@@ -334,17 +354,17 @@ pub struct ConnectParams {
 }
 
 /// a target address and connection settings, all that's required to connect to a SQL server
-pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Send + 'static {
+pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Sized + 'static {
     params: ConnectParams,
     target: T,
     _marker: PhantomData<*const I>,
 }
 
-pub trait ToConnectEndpoint<I, T> where I: BoxableIo + Send + 'static, T: ToIo<I> {
+pub trait ToConnectEndpoint<I, T> where I: BoxableIo + Sized + 'static, T: ToIo<I> {
     fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<I, T>>;
 }
 
-impl<I, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams) where I: BoxableIo + Send + 'static {
+impl<I: 'static, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams) where I: BoxableIo {
     fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<I, T>> {
         Ok(ConnectEndpoint {
             params: self.1,
@@ -356,8 +376,8 @@ impl<I, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams) where I: Boxa
 
 /// parse connection strings
 /// https://msdn.microsoft.com/de-de/library/system.data.sqlclient.sqlconnection.connectionstring(v=vs.110).aspx
-impl<'a> ToConnectEndpoint<Box<BoxableIo + Send + 'static>, DynamicConnectionTarget> for &'a str {
-    fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<Box<BoxableIo + Send + 'static>, DynamicConnectionTarget>>
+impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str {
+    fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget>>
     {
         let mut input = &self[..];
 
@@ -437,18 +457,16 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo + Send + 'static>, DynamicConnectionTar
     }
 }
 
-impl<I: Io + Send + 'static> SqlConnection<I> {
+impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// naive connection function for the SQL client
-    fn connect<E, T: ToIo<I>>(handle: Handle, endpoint: E) -> BoxFuture<SqlConnection<I>, TdsError>
+    pub fn connect<E, T: ToIo<I>>(handle: Handle, endpoint: E) -> SqlConnectionNew<I, T::Result>
         where E: ToConnectEndpoint<I, T>
     {
         let ConnectEndpoint { target, params, .. } = match endpoint.to_connect_endpoint() {
-            Err(x) => return failed(x).boxed(),
+            Err(x) => return SqlConnectionNew::Error(Some(x)),
             Ok(x) => x,
         };
-        target.to_io(&handle).map_err(|err| err.into()).and_then(|stream| {
-            SqlConnectionFuture(Some(SqlConnectionNew::new(stream, params)))
-        }).boxed()
+        SqlConnectionNew::Connection(Some((target.to_io(&handle), params)))
     }
 
     fn queue_sql_batch<'a, S>(&self, stmt: S) -> TdsResult<()> where S: Into<Cow<'a, str>> {
@@ -457,35 +475,138 @@ impl<I: Io + Send + 'static> SqlConnection<I> {
 
         let batch_packet = try!(protocol::build_sql_batch(&mut inner.transport, &sql));
         try!(inner.transport.queue_vec(batch_packet));
+
+        // attempt to send right now, if it works great, if not ready yet, it will be done later
+        // simply ensures that data is sent as fast as possible
+        let _ = try!(inner.transport.poll_complete());
         Ok(())
     }
 
-    pub fn query<'a, Q>(&self, query: Q) -> TdsResult<ResultSetStream<I, QueryStream<I>>> where Q: Into<Cow<'a, str>> {
+    pub fn simple_query<'a, Q>(self, query: Q) -> TdsResult<ResultSetStream<I, QueryStream<I>>> where Q: Into<Cow<'a, str>> {
         try!(self.queue_sql_batch(query));
         Ok(ResultSetStream::new(self))
     }
 
-    pub fn exec<'a, Q>(&self, query: Q) -> TdsResult<ResultSetStream<I, ExecFuture<I>>> where Q: Into<Cow<'a, str>> {
+    pub fn simple_exec<'a, Q>(self, query: Q) -> TdsResult<ResultSetStream<I, ExecFuture<I>>> where Q: Into<Cow<'a, str>> {
         try!(self.queue_sql_batch(query));
         Ok(ResultSetStream::new(self))
     }
 
-    pub fn prepare<'c, 'a, S>(&'c self, stmt: S) -> LazyPreparedStatement<'c, 'a, I> where S: Into<Cow<'a, str>> {
-        LazyPreparedStatement::new(self, stmt.into())
+    fn do_prepare_exec<'b>(&self, stmt: &Statement, params: &'b [&'b ToSql]) -> TokenRpcRequest<'b> {
+        let mut param_str = String::with_capacity(10 * params.len());
+
+        let mut params_meta = vec![
+            RpcParam {
+                name: Cow::Borrowed("handle"),
+                flags: tokens::RPC_PARAM_BY_REF_VALUE,
+                value: ColumnData::I32(0),
+            },
+            RpcParam {
+                name: Cow::Borrowed("params"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::I32(0),
+            },
+            RpcParam {
+                name: Cow::Borrowed("stmt"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::String(stmt.sql.clone()),
+            }
+        ];
+
+        // determine the types from the given params
+        for (i, param) in params.iter().enumerate() {
+            if i > 0 {
+                param_str.push(',')
+            }
+            param_str.push_str(&format!("@P{} ", i + 1));
+            param_str.push_str(param.to_sql());
+
+            params_meta.push(RpcParam {
+                name: Cow::Owned(format!("@P{}", i+1)),
+                flags: RpcStatusFlags::empty(),
+                value: param.to_column_data(),
+            });
+        }
+        params_meta[1].value = ColumnData::String(param_str.into());
+
+        // call sp_prepare to get a handle we can execute
+        TokenRpcRequest {
+            proc_id: RpcProcIdValue::Id(RpcProcId::SpPrepExec),
+            flags: RpcOptionFlags::empty(),
+            params: params_meta,
+        }
+    }
+
+    fn do_exec<'a>(&self, stmt: &Statement, params: &'a [&'a ToSql]) -> TokenRpcRequest<'a> {
+        let mut params_meta = vec![
+            RpcParam {
+                // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
+                // not specifying the name is better anyways to reduce overhead on execute
+                name: Cow::Borrowed(""),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::I32(stmt.handle.borrow().as_ref().map(|h| h.handle).unwrap()),
+            },
+        ];
+        for (i, param) in params.iter().enumerate() {
+            params_meta.push(RpcParam {
+                name: Cow::Owned(format!("@P{}", i+1)),
+                flags: RpcStatusFlags::empty(),
+                value: param.to_column_data(),
+            });
+        }
+
+        TokenRpcRequest {
+            proc_id: RpcProcIdValue::Id(RpcProcId::SpExecute),
+            flags: tokens::RPC_NO_META,
+            params: params_meta,
+        }
+    }
+
+    fn internal_exec<R: StmtResult<I>>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, R> {
+        // call sp_prepare (with valid handle) or sp_prepexec (initializer)
+        let already_prepared = stmt.handle.borrow().as_ref().map(|handle| {
+            // check if the param-type signature matches, if we have a handle
+            handle.signature.iter().cloned().eq(params.iter().map(|x| x.to_sql()))
+        }).unwrap_or(false);
+        let req = if already_prepared {
+            self.do_exec(stmt, params)
+        } else {
+            *stmt.handle.borrow_mut() = None;
+            self.do_prepare_exec(stmt, params)
+        };
+
+        // write everything (or atleast queue it for write)
+        let result = req.write_token(&mut self.borrow_mut().transport);
+        let ret = StmtStream::new(self, stmt, params);
+        match result {
+            Ok(_) => ret,
+            Err(err) => ret.error(err),
+        }
+    }
+
+    pub fn query<'a>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, QueryStream<I>> {
+        self.internal_exec(stmt, params)
+    }
+
+    pub fn exec<'a>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, ExecFuture<I>> {
+        self.internal_exec(stmt, params)
+    }
+
+    pub fn prepare<S>(&self, stmt: S) -> Statement where S: Into<Cow<'static, str>> {
+        Statement::new(stmt.into())
     }
 }
 
 #[cfg(test)]
 mod tests {
     extern crate env_logger;
-    use std::net::SocketAddr;
-    use futures::Stream;
-    use tokio_core::io::Io;
+    use futures::{Future, Stream};
+    use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
     use query::ExecFuture;
     use super::{AuthMethod, BoxableIo, ConnectParams, SqlConnection, TdsError};
 
-    pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo + Send>> {
+    pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
         let _ = env_logger::init();
         /*let addr: SocketAddr = "127.0.0.1:1433".parse().unwrap();
         let params = ConnectParams {
@@ -504,7 +625,7 @@ mod tests {
         let limit = 5i32;
         let post_sql = format!("where II<{}", limit);
         let sql = (1..2*limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| acc + &format!("union select {} ", x)) + ") U " + &post_sql;
-        let query = c1.query(sql).unwrap();
+        let query = c1.simple_query(sql).unwrap();
         let mut i = 0;
         {
             let future = query.for_each_row(|x| {
@@ -513,12 +634,12 @@ mod tests {
                 i += 1;
                 Ok(())
             });
-            lp.run(future).unwrap()
+            lp.run(future).unwrap();
         }
         assert_eq!(i, limit);
     }
 
-    #[test]
+    /*#[test]
     fn prepared_select_reexecute() {
         let mut lp = Core::new().unwrap();
         let mut c1 = new_connection(&mut lp);
@@ -526,20 +647,18 @@ mod tests {
         let limit = 5i32;
         let query = (1..2*limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| acc + &format!("union select {} ", x)) + ") U where II<@P1";
         let stmt = c1.prepare(query);
-        let mut i = 0;
 
         for g in 0..2 {
             lp.run(stmt.query(&[&limit]).for_each_row(|x| {
                 let val: i32 = x.get("II");
                 assert_eq!(val, i - g*limit);
-                i += 1;
                 Ok(())
             })).unwrap()
         }
         assert_eq!(i, 2*limit);
-    }
+    }*/
 
-    fn helper_ddl_exec<'a, I: BoxableIo + 'static, R: Stream<Item=ExecFuture<'a, I>, Error=TdsError>>(exec: R, lp: &mut Core) {
+    fn helper_ddl_exec<I: BoxableIo, R: StateStream<Item=ExecFuture<I>, State=SqlConnection<I>, Error=TdsError>>(exec: R, lp: &mut Core) {
         let mut i = 0;
         {
             let future = exec.and_then(|x| x).for_each(|result| {
@@ -557,13 +676,52 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let mut c1 = new_connection(&mut lp);
         let stmt = c1.prepare("DECLARE @Mojo int");
-        helper_ddl_exec(stmt.exec(&[]), &mut lp);
+        helper_ddl_exec(c1.exec(&stmt, &[]), &mut lp);
     }
 
     #[test]
     fn ddl_exec() {
         let mut lp = Core::new().unwrap();
         let mut c1 = new_connection(&mut lp);
-        helper_ddl_exec(c1.exec("DECLARE @Mojo int").unwrap(), &mut lp);
+        helper_ddl_exec(c1.simple_exec("DECLARE @Mojo int").unwrap(), &mut lp);
+    }
+
+    #[test]
+    fn todo_doctest() {
+        let mut lp = Core::new().unwrap();
+        let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+
+        let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
+            ::futures::finished((conn.prepare("SELECT @P1 + @P2"), conn))
+        }).and_then(|(stmt, conn)| {
+            fn handle_row(row: ::query::QueryRow) -> ::TdsResult<()> {
+                let val: i32 = row.get(0);
+                assert_eq!(val, 3i32);
+                Ok(())
+            }
+            // TODO: figure out some syntax sugar here, -> doc tests
+            conn
+                .query(&stmt, &[&1i32, &2i32]).for_each_row(handle_row)
+                .map(|conn| (conn, stmt))
+                .and_then(|(conn, stmt)| conn.query(&stmt, &[&2i32, &1i32]).for_each_row(handle_row).map(|conn| (conn, stmt)))
+                .and_then(|(conn, stmt)| conn.query(&stmt, &[&4i32, &-1i32]).for_each_row(handle_row))
+                .map(|x| x.0)
+        });
+        lp.run(future).unwrap();
+    }
+
+    #[test]
+    fn todo_doctest_simple() {
+        let mut lp = Core::new().unwrap();
+        let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+
+        let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
+            conn.simple_query("SELECT 1+2").unwrap().for_each_row(|row| {
+                let val: i32 = row.get(0);
+                assert_eq!(val, 3i32);
+                Ok(())
+            })
+        });
+        lp.run(future).unwrap();
     }
 }

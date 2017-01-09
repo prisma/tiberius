@@ -1,7 +1,7 @@
 ///! type converting, mostly translating the types received from the database into rust types
 use std::borrow::Cow;
 use std::cmp;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use encoding::{self, DecoderTrap, Encoding};
 use futures::{Async, Poll};
@@ -264,5 +264,18 @@ pub trait ToColumnData {
 impl ToColumnData for i32 {
     fn to_column_data(&self) -> ColumnData {
         ColumnData::I32(*self)
+    }
+}
+
+/// a type which can be translated as an SQL type (e.g. nvarchar) and is serializable (as `ColumnData`)
+/// e.g. for usage within a ROW token
+pub trait ToSql : ToColumnData {
+    fn to_sql(&self) -> &'static str;
+}
+
+// TODO: will need a macro
+impl ToSql for i32 {
+    fn to_sql(&self) -> &'static str {
+        "int"
     }
 }

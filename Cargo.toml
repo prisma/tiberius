@@ -16,6 +16,7 @@ lazy_static = "0.2"
 log = "0.3"
 futures = "0.1.7"
 tokio-core = "0.1.1"
+futures-state-stream = "0.1"
 
 [dev-dependencies]
 env_logger = "0.3"

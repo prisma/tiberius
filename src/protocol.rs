@@ -482,6 +482,7 @@ impl SerializeMessage for SspiMessage {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 #[repr(u16)]
 pub enum AllHeaderTy {

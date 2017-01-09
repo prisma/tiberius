@@ -8,7 +8,7 @@ use tokio_core::io::Io;
 use transport::{self, TdsBuf, TdsTransport, TokenWriteState, write_varchar};
 use types::{TypeInfo, ColumnData};
 use protocol::{self, AllHeaderTy, PacketStatus, PacketType, PacketHeader};
-use {TdsError, FromUint};
+use {TdsError, TdsResult, FromUint};
 
 /// read a token from an underlying transport
 pub trait ParseToken<I: Io> {
@@ -16,7 +16,7 @@ pub trait ParseToken<I: Io> {
 }
 
 pub trait WriteToken<I: Io> {
-    fn write_token(&self, &mut TdsTransport<I>) -> Poll<(), TdsError>;
+    fn write_token(&self, &mut TdsTransport<I>) -> TdsResult<()>;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -422,6 +422,7 @@ impl<I: Io> ParseToken<I> for TokenReturnValue {
 }
 
 /// 2.2.6.6 RPC Request
+#[allow(dead_code)]
 #[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum RpcProcId {
@@ -468,7 +469,7 @@ pub struct TokenRpcRequest<'a> {
 }
 
 impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
-    fn write_token(&self, trans: &mut TdsTransport<I>) -> Poll<(), TdsError> {
+    fn write_token(&self, trans: &mut TdsTransport<I>) -> TdsResult<()> {
         // allocate initial cursor
         let mut cursor = Cursor::new({
             let mut vec = Vec::with_capacity(trans.packet_size);
@@ -503,8 +504,8 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
         }
 
         loop {
-            // make sure to not keep around hundreds of packets, send them down the wire once a while
-            try_ready!(trans.poll_complete());
+            // send if possible, but do not let it delay us, make sure to buffer
+            let _ = try!(trans.poll_complete());
 
             // check if we already attempted to complete the current write request
             let (param_idx, last_pos) = match trans.write_state {
@@ -591,17 +592,10 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
             });
         }
 
-        // we're officially done with this token stream, finally FLUSHING
-        let poll_result = trans.poll_complete();
-        match poll_result {
-            Err(_) | Ok(Async::NotReady) => {
-                trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: self.params.len(), last_pos: 0xff });
-                try_ready!(poll_result);
-            },
-            _ => ()
-        }
-
+        // we're officially done with this token stream, flush a last time
         trans.write_state = None;
-        Ok(Async::Ready(()))
+        let _ = try!(trans.poll_complete());
+
+        Ok(())
     }
 }
