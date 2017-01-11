@@ -114,6 +114,7 @@ pub enum ColumnData<'a> {
     I64(i64),
     F32(f32),
     F64(f64),
+    Bit(bool),
     /// owned/borrowed rust string
     String(Cow<'a, str>),
     /// a buffer string which is a reference to a buffer of a received packet
@@ -129,7 +130,7 @@ impl TypeInfo {
         if let Some(ty) = VarLenType::from_u8(ty) {
             // TODO: add .size() / .has_collation() to VarLenType (?)
             let len = match ty {
-                VarLenType::Intn | VarLenType::Floatn => try!(trans.read_u8()) as usize,
+                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn => try!(trans.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
                     try!(trans.read_u16::<LittleEndian>()) as usize
                 },
@@ -162,6 +163,10 @@ impl<'a> ColumnData<'a> {
             },
             TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
                 match *ty {
+                    VarLenType::Bitn => {
+                        assert_eq!(try!(trans.read_u8()) as usize, *len);
+                        ColumnData::Bit(try!(trans.read_u8()) > 0)
+                    },
                     VarLenType::Intn => {
                         assert!(collation.is_none());
                         assert_eq!(try!(trans.read_u8()) as usize, *len);
@@ -210,6 +215,13 @@ impl<'a> ColumnData<'a> {
         }
 
         match *self {
+            ColumnData::Bit(ref val) => {
+                let bytes = [VarLenType::Bitn as u8, 1, 1, *val as u8];
+                let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, &bytes, last_pos));
+                if left_bytes > 0 {
+                    return Ok(Some(last_pos + written_bytes))
+                }
+            },
             ColumnData::I8(ref val) => {
                 let bytes = [VarLenType::Intn as u8, 1, 1, *val as u8];
                 let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, &bytes, last_pos));
@@ -342,16 +354,11 @@ macro_rules! to_sql {
 
 from_column_data!(
     // integers are auto-castable on receiving
+    bool:       ColumnData::Bit(val) => val;
     i8:         ColumnData::I8(val) => val;
-    i16:        ColumnData::I8(val) => val as _,
-                ColumnData::I16(val) => val;
-    i32:        ColumnData::I8(val) => val as _,
-                ColumnData::I16(val) => val as _,
-                ColumnData::I32(val) => val;
-    i64:        ColumnData::I8(val) => val as _,
-                ColumnData::I16(val) => val as _,
-                ColumnData::I32(val) => val as _,
-                ColumnData::I64(val) => val;
+    i16:        ColumnData::I16(val) => val;
+    i32:        ColumnData::I32(val) => val;
+    i64:        ColumnData::I64(val) => val;
     f32:        ColumnData::F32(val) => val;
     f64:        ColumnData::F64(val) => val;
     &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
@@ -359,6 +366,7 @@ from_column_data!(
 );
 
 to_column_data!(self_,
+    bool =>     ColumnData::Bit(*self_),
     i8  =>      ColumnData::I8(*self_),
     i16 =>      ColumnData::I16(*self_),
     i32 =>      ColumnData::I32(*self_),
@@ -369,6 +377,7 @@ to_column_data!(self_,
 );
 
 to_sql!(
+    bool => "bit",
     i8  => "tinyint",
     i16 => "smallint",
     i32 => "int",
@@ -419,6 +428,8 @@ mod tests {
     }
 
     test_datatype!(
+        test_bit_1: bool => true,
+        test_bit_0: bool => false,
         test_i8 :  i8 => 127i8,
         test_i16: i16 => 16100i16,
         test_i32: i32 => -4i32,
