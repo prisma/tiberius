@@ -137,6 +137,17 @@ impl TdsBuf {
         None
     }
 
+    /// attempts to read the amount of bytes required to totally fill the given slice (n=target.len())
+    pub fn read_bytes_to(&mut self, target: &mut [u8]) -> Poll<(), io::Error> {
+        let n = target.len();
+        if self.len() >= n {
+            target.clone_from_slice(&self.as_ref()[..n]);
+            self.start += n;
+            return Ok(Async::Ready(()));
+        }
+        Ok(Async::NotReady)
+    }
+
     /// read bytes with length prefix
     pub fn read_varbyte<S: ReadSize<Self>>(&mut self) -> Poll<TdsBuf, io::Error> {
         let len = try!(S::read_size(self));

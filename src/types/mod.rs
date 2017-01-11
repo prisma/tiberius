@@ -1,6 +1,7 @@
 ///! type converting, mostly translating the types received from the database into rust types
 use std::borrow::Cow;
 use std::cmp;
+use std::fmt;
 use std::io::Cursor;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use encoding::{self, DecoderTrap, Encoding};
@@ -115,10 +116,38 @@ pub enum ColumnData<'a> {
     F32(f32),
     F64(f64),
     Bit(bool),
+    Guid(Cow<'a, Guid>),
     /// owned/borrowed rust string
     String(Cow<'a, str>),
     /// a buffer string which is a reference to a buffer of a received packet
     BString(TdsBuf),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Guid([u8; 16]);
+
+impl Guid {
+    pub fn from_bytes(input_bytes: &[u8]) -> Guid {
+        assert_eq!(input_bytes.len(), 16);
+        let mut bytes = [0u8; 16];
+        bytes.clone_from_slice(input_bytes);
+        Guid(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl fmt::Display for Guid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+            "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            self.0[3], self.0[2], self.0[1], self.0[0], self.0[5], self.0[4],
+            self.0[7], self.0[6], self.0[8], self.0[9], self.0[10], self.0[11],
+            self.0[12], self.0[13], self.0[14], self.0[15]
+        )
+    }
 }
 
 impl TypeInfo {
@@ -130,7 +159,7 @@ impl TypeInfo {
         if let Some(ty) = VarLenType::from_u8(ty) {
             // TODO: add .size() / .has_collation() to VarLenType (?)
             let len = match ty {
-                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn => try!(trans.read_u8()) as usize,
+                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Guid => try!(trans.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
                     try!(trans.read_u16::<LittleEndian>()) as usize
                 },
@@ -188,6 +217,12 @@ impl<'a> ColumnData<'a> {
                             _ => return Err(TdsError::Protocol(format!("floatn: length of {} is invalid", len).into()))
                         }
                     },
+                    VarLenType::Guid => {
+                        assert_eq!(try!(trans.read_u8()) as usize, *len);
+                        let mut data = [0u8; 16];
+                        try_ready!(trans.read_bytes_to(&mut data));
+                        ColumnData::Guid(Cow::Owned(Guid(data)))
+                    },
                     VarLenType::NVarchar => ColumnData::BString(try_ready!(trans.read_varchar::<u16>(true))),
                     VarLenType::BigVarChar => {
                         let bytes = try_ready!(trans.read_varbyte::<u16>());
@@ -201,7 +236,7 @@ impl<'a> ColumnData<'a> {
         }))
     }
 
-    pub fn serialize(&self, target: &mut Cursor<Vec<u8>>, last_pos: usize) -> TdsResult<Option<usize>> {
+    pub fn serialize(&self, target: &mut Cursor<Vec<u8>>, mut last_pos: usize) -> TdsResult<Option<usize>> {
         // helper to reduce some copy&paste
         // write progressively
         macro_rules! serialize_n_helper {
@@ -248,6 +283,17 @@ impl<'a> ColumnData<'a> {
             ColumnData::F64(ref val) => {
                 let mut bytes = [VarLenType::Floatn as u8, 8, 8,/**/ 0, 0, 0, 0,/**/ 0, 0, 0, 0];
                 serialize_n_helper!(write_f64, target, bytes, last_pos, *val);
+            },
+            ColumnData::Guid(ref guid) => {
+                let mut i = 0;
+                for slice in &[&[VarLenType::Guid as u8, 0x10, 0x10], guid.as_bytes()] {
+                    let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, slice, last_pos - i));
+                    last_pos += written_bytes;
+                    if left_bytes > 0 {
+                        return Ok(Some(last_pos))
+                    }
+                    i += slice.len();
+                }
             },
             ColumnData::String(ref str_) => {
                 // type
@@ -343,7 +389,7 @@ macro_rules! to_column_data {
 macro_rules! to_sql {
     ($($ty:ty => $sql:expr),*) => {
         $(
-            impl ToSql for $ty {
+            impl<'a> ToSql for $ty {
                 fn to_sql(&self) -> &'static str {
                     $sql
                 }
@@ -362,7 +408,8 @@ from_column_data!(
     f32:        ColumnData::F32(val) => val;
     f64:        ColumnData::F64(val) => val;
     &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
-                ColumnData::String(ref buf) => buf
+                ColumnData::String(ref buf) => buf;
+    &'a Guid:   ColumnData::Guid(ref guid) => guid
 );
 
 to_column_data!(self_,
@@ -373,7 +420,9 @@ to_column_data!(self_,
     i64 =>      ColumnData::I64(*self_),
     f32 =>      ColumnData::F32(*self_),
     f64 =>      ColumnData::F64(*self_),
-    &'a str =>  ColumnData::String((*self_).into())
+    &'a str =>  ColumnData::String((*self_).into()),
+    Guid     => ColumnData::Guid(Cow::Borrowed(self_)),
+    &'a Guid => ColumnData::Guid(Cow::Borrowed(self_))
 );
 
 to_sql!(
@@ -383,7 +432,9 @@ to_sql!(
     i32 => "int",
     i64 => "bigint",
     f32 => "float(24)",
-    f64 => "float(53)"
+    f64 => "float(53)",
+    Guid =>  "uniqueidentifier",
+    &'a Guid => "uniqueidentifier"
 );
 
 impl<'a> ToSql for &'a str {
@@ -402,6 +453,7 @@ mod tests {
     use tokio_core::reactor::Core;
     use futures::Future;
     use stmt::ForEachRow;
+    use super::Guid;
     use SqlConnection;
 
     /// prepares a statement which selects a passed value
@@ -436,7 +488,9 @@ mod tests {
         test_i64: i64 => 1i64<<33,
         test_f32: f32 => 42.42f32,
         test_f64: f64 => 26.26f64,
-        test_str: &str => "hello world"
+        test_str: &str => "hello world",
+        // TODO: Guid parsing
+        test_guid: &Guid => &Guid::from_bytes(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
     );
 
 }
