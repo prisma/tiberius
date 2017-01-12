@@ -1,5 +1,23 @@
 //! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
-
+//!
+//! # A simple example
+//! **Warning:** Do not use simple_query with user-specified data. Resort to prepared statements for that.
+//!
+//! ```rust
+//! fn main() {
+//!     let mut lp = Core::new().unwrap();
+//!     let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+//!
+//!    let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
+//!        conn.simple_query("SELECT 1+2").for_each_row(|row| {
+//!            let val: i32 = row.get(0);
+//!            assert_eq!(val, 3i32);
+//!            Ok(())
+//!        })
+//!    });
+//!    lp.run(future).unwrap();
+//! }
+//! ```
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
@@ -34,7 +52,7 @@ trait FromUint where Self: Sized {
     fn from_u32(n: u32) -> Option<Self>;
 }
 
-/// if the underlying buffer has not enough content yet, transform that error into a `None`
+/// If the underlying buffer has not enough content yet, transform that error into a `None`
 /// return value
 macro_rules! try_eof {
     ($e:expr) => (match $e {
@@ -80,8 +98,8 @@ mod ntlm;
 mod protocol;
 mod types;
 mod tokens;
-mod query;
-mod stmt;
+pub mod query;
+pub mod stmt;
 
 use transport::TdsTransport;
 use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
@@ -91,6 +109,7 @@ use query::{ResultSetStream, QueryStream, ExecFuture};
 use stmt::{Statement, StmtStream};
 
 lazy_static! {
+    #[doc(hidden)]
     pub static ref DRIVER_VERSION: u64 = get_driver_version();
 }
 
@@ -101,6 +120,7 @@ fn get_driver_version() -> u64 {
         .fold(0u64, |acc, part| acc | (part.1.parse::<u64>().unwrap() << part.0*8))
 }
 
+/// A unified error enum that contains several errors that might occurr during the lifecycle of this driver
 #[derive(Debug)]
 pub enum TdsError {
     /// An error occurred during the attempt of performing I/O
@@ -141,7 +161,8 @@ impl From<std::string::FromUtf16Error> for TdsError {
 
 pub type TdsResult<T> = Result<T, TdsError>;
 
-/// a connection in a state before any login has happened
+/// A connection in a state before any login has happened
+#[doc(hidden)]
 enum SqlConnectionNewState {
     PreLoginSend,
     PreLoginRecv,
@@ -151,7 +172,7 @@ enum SqlConnectionNewState {
     TokenStreamSend,
 }
 
-/// a representation of the initialization state of an SQL connection (pending authentication)
+/// A representation of the initialization state of an SQL connection (pending authentication)
 pub enum SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send + Sized> {
     Connection(Option<(F, ConnectParams)>),
     Error(Option<TdsError>),
@@ -202,7 +223,7 @@ pub struct SqlConnectionFuture<I: BoxableIo> {
 }
 
 impl<I: BoxableIo> SqlConnectionFuture<I> {
-    /// queues a simple message which serializes to ONE packet
+    /// Queues a simple message which serializes to ONE packet
     pub fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
         let vec = try!(m.serialize_message(&mut self.transport));
         self.transport.queue_vec(vec)
@@ -285,18 +306,20 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
     }
 }
 
-/// a type which is constructable from a statement as a statement's result
+/// A type which is constructable from a statement as a statement's result
 pub trait StmtResult<I: BoxableIo> {
     type Result: Sized;
 
     fn from_connection(SqlConnection<I>, oneshot::Sender<SqlConnection<I>>) -> Self::Result;
 }
 
-/// a representation of an authenticated and ready for use SQL connection
+/// A representation of an authenticated and ready for use SQL connection
+#[doc(hidden)]
 pub struct InnerSqlConnection<I: BoxableIo> {
     transport: TdsTransport<I>,
 }
 
+/// A connection to a SQL server with an underlying IO (e.g. socket)
 pub struct SqlConnection<I: BoxableIo>(RefCell<InnerSqlConnection<I>>);
 
 impl<I: BoxableIo> Deref for SqlConnection<I> {
@@ -307,12 +330,12 @@ impl<I: BoxableIo> Deref for SqlConnection<I> {
     }
 }
 
-/// a variant of Io which can be boxed to allow dynamic dispatch
+/// A variant of Io which can be boxed to allow dynamic dispatch
 pub trait BoxableIo: Io + Send {}
 impl Io for Box<BoxableIo> {}
 impl<I: Io + Send> BoxableIo for I {}
 
-/// something that can be converted to an underlying IO
+/// Something that can be converted to an underlying IO
 pub trait ToIo<I: BoxableIo + Sized> {
     type Result: Future<Item=I, Error=TdsError> + Send + Sized + 'static;
 
@@ -341,25 +364,44 @@ impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
     }
 }
 
+/// The authentication method that should be used during authentication
 pub enum AuthMethod {
-    /// single sign on using the local windows credentials (windows-only)
+    /// Single sign on using the local windows credentials (windows-only)
     #[cfg(windows)]
     SSPI_SSO,
     _DUMMY_AUTH_METHOD
 }
 
-/// settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
+/// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
 pub struct ConnectParams {
     auth: AuthMethod,
 }
 
-/// a target address and connection settings, all that's required to connect to a SQL server
+/// A target address and connection settings = all that's required to connect to a SQL server
+///
+/// # Example
+/// This allows to explicitly construct the connection parameters.
+/// This might be useful for connecting to an underlying IO that isn't supported
+/// within a connection string, such as through a custom protocol implementation.
+///
+/// (In theory it's slightly more efficient, since it should require less dynamic dispatch
+///  but is also less flexible because the connection method has to be known at compile time)
+/// ```rust
+/// let addr: SocketAddr = "127.0.0.1:1433".parse().unwrap();
+/// let params = ConnectParams {
+///     auth: AuthMethod::SSPI_SSO,
+/// };
+/// ```
+let client = SqlConnection::connect(lp.handle(), (&addr, params));
 pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Sized + 'static {
     params: ConnectParams,
     target: T,
     _marker: PhantomData<*const I>,
 }
 
+/// Something that's able to construct all that's required to connect to an endpoint
+///
+/// This is for example implemented for a connection string parser
 pub trait ToConnectEndpoint<I, T> where I: BoxableIo + Sized + 'static, T: ToIo<I> {
     fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<I, T>>;
 }
@@ -374,7 +416,7 @@ impl<I: 'static, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams) wher
     }
 }
 
-/// parse connection strings
+/// Parse connection strings
 /// https://msdn.microsoft.com/de-de/library/system.data.sqlclient.sqlconnection.connectionstring(v=vs.110).aspx
 impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str {
     fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget>>
@@ -458,7 +500,7 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
 }
 
 impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
-    /// naive connection function for the SQL client
+    /// Naive connection function for the SQL client
     pub fn connect<E, T: ToIo<I>>(handle: Handle, endpoint: E) -> SqlConnectionNew<I, T::Result>
         where E: ToConnectEndpoint<I, T>
     {
@@ -492,10 +534,23 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         ret
     }
 
+    /// Execute a simple query and return multiple resultsets which consist of multiple rows.
+    /// Usually only one resultset will be interesting for which you can use
+    /// [`for_each_row`](struct.ResultSetStream.html#method.for_each_row)
+    ///
+    /// # Warning
+    /// Do not use this with any user specified input.
+    /// Please resort to prepared statements in order to prevent SQL-Injections.
     pub fn simple_query<'a, Q>(self, query: Q) -> ResultSetStream<I, QueryStream<I>> where Q: Into<Cow<'a, str>> {
         self.simple_exec_internal(query)
     }
 
+    /// Execute a simple SQL-statement and return the affected rows
+    ///
+    /// # Warning
+    /// Do not use this with any user specified input.
+    /// Please resort to prepared statements in order to prevent SQL-Injections.
+    /// You can access each resultset (in most cases only one) using [`for_each`](struct.ResultSetStream.html#method.for_each)
     pub fn simple_exec<'a, Q>(self, query: Q) -> ResultSetStream<I, ExecFuture<I>> where Q: Into<Cow<'a, str>> {
         self.simple_exec_internal(query)
     }
@@ -592,14 +647,26 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
+    /// Execute a prepared statement and return each resultset and their associated rows
+    /// Usually only one resultset will be interesting for which you can use
+    /// [`for_each_row`](struct.StmtStream.html#method.for_each_row)
     pub fn query<'a>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, QueryStream<I>> {
         self.internal_exec(stmt, params)
     }
 
+    /// Execute a prepared statement and return the affected rows for each resultset
+    ///
+    /// You can access each resultset (in most cases only one) using [`for_each`](struct.StmtStream.html#method.for_each)
     pub fn exec<'a>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, ExecFuture<I>> {
         self.internal_exec(stmt, params)
     }
 
+    /// Create a statement associated to a given SQL which can be executed later on
+    ///
+    /// This is a lazy operation and will not do anything until the first call.
+    /// The statement is prepared with the sql-types of the given parameters.
+    /// It will only be reprepared if the given parameter's rust-types resolve to
+    /// different sql-types as given for the first execution.
     pub fn prepare<S>(&self, stmt: S) -> Statement where S: Into<Cow<'static, str>> {
         Statement::new(stmt.into())
     }
@@ -616,11 +683,6 @@ mod tests {
 
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
         let _ = env_logger::init();
-        /*let addr: SocketAddr = "127.0.0.1:1433".parse().unwrap();
-        let params = ConnectParams {
-            auth: AuthMethod::SSPI_SSO,
-        };
-        let client = SqlConnection::connect(lp.handle(), (&addr, params));*/
         let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
         lp.run(future).unwrap()
     }
@@ -714,21 +776,6 @@ mod tests {
                 .and_then(|(conn, stmt)| conn.query(&stmt, &[&2i32, &1i32]).for_each_row(handle_row).map(|conn| (conn, stmt)))
                 .and_then(|(conn, stmt)| conn.query(&stmt, &[&4i32, &-1i32]).for_each_row(handle_row))
                 .map(|x| x.0)
-        });
-        lp.run(future).unwrap();
-    }
-
-    #[test]
-    fn todo_doctest_simple() {
-        let mut lp = Core::new().unwrap();
-        let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
-
-        let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
-            conn.simple_query("SELECT 1+2").for_each_row(|row| {
-                let val: i32 = row.get(0);
-                assert_eq!(val, 3i32);
-                Ok(())
-            })
         });
         lp.run(future).unwrap();
     }

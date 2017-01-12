@@ -1,3 +1,4 @@
+//! Prepared statements
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -11,14 +12,15 @@ use tokens::{self, DoneStatus, TdsResponseToken, TokenColMetaData};
 use types::{ColumnData, ToSql};
 use {BoxableIo, SqlConnection, StmtResult, TdsError};
 
-/// a handle identifying a server-side prepared statement for a specific connection
+/// A handle identifying a server-side prepared statement for a specific connection
 /// and a specific set of parameter types
+#[doc(hidden)]
 pub struct StatementHandle {
     pub handle: i32,
     pub signature: Vec<&'static str>,
 }
 
-/// a prepared statement which is prepared on the first execution
+/// A prepared statement which is prepared on the first execution
 /// (which is a technical requirement since you need to know the types)
 #[derive(Clone)]
 pub struct Statement(Arc<StatementInner>);
@@ -31,6 +33,7 @@ impl Deref for Statement {
     }
 }
 
+#[doc(hidden)]
 pub struct StatementInner {
     pub sql: Cow<'static, str>,
     meta: RefCell<Option<Arc<TokenColMetaData>>>,
@@ -48,7 +51,7 @@ impl Statement {
     }
 }
 
-/// a future which handles the execution of a prepared statement and translates it
+/// A future which handles the execution of a prepared statement and translates it
 /// into the wished result (e.g. QueryStream)
 pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
     err: Option<TdsError>,
@@ -166,7 +169,7 @@ impl<I: BoxableIo> StmtStream<I, QueryStream<I>> {
     /// Only expect 1 result set (e.g. if you're only executing one query)
     /// and execute a given closure for the results of the first result set
     ///
-    /// other result sets are silently ignored
+    /// Other result sets are silently ignored
     pub fn for_each_row<F>(self, f: F) -> ForEachRow<I, StmtStream<I, QueryStream<I>>, F>
         where F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
     {
@@ -174,7 +177,7 @@ impl<I: BoxableIo> StmtStream<I, QueryStream<I>> {
     }
 }
 
-/// iterate over resultsets and only return the rows of the first one
+/// Iterate over resultsets and only return the rows of the first one
 /// but handle/consume the entire result set so that we're ready to continue
 /// after the execution of this
 pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, State=SqlConnection<I>, Error=<QueryStream<I> as Stream>::Error>, F> {

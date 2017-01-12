@@ -1,3 +1,4 @@
+//! Query results and resultsets
 use std::marker::PhantomData;
 use futures::{self, Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
@@ -7,7 +8,7 @@ use tokens::{self, TdsResponseToken, TokenRow};
 use types::FromColumnData;
 use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
 
-/// a query result consists of multiple query streams (amount of executed queries = amount of results)
+/// A query result consists of multiple query streams (amount of executed queries = amount of results)
 pub struct ResultSetStream<I: BoxableIo, R: StmtResult<I>> {
     err: Option<TdsError>,
     conn: Option<SqlConnection<I>>,
@@ -102,7 +103,7 @@ impl<'a, I: BoxableIo> ResultSetStream<I, QueryStream<I>> {
     /// Only expect 1 result set (e.g. if you're only executing one query)
     /// and execute a given closure for the results of the first result set
     ///
-    /// other result sets are silently ignored
+    /// Other result sets are silently ignored
     pub fn for_each_row<F>(self, f: F) -> ForEachRow<I, ResultSetStream<I, QueryStream<I>>, F>
         where F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
     {
@@ -110,6 +111,7 @@ impl<'a, I: BoxableIo> ResultSetStream<I, QueryStream<I>> {
     }
 }
 
+/// A stream of [`Rows`](struct.QueryRow.html) returned for the current resultset
 pub struct QueryStream<I: BoxableIo>(Option<ResultInner<I>>);
 
 struct ResultInner<I: BoxableIo> {
@@ -165,14 +167,15 @@ impl<'a, I: BoxableIo> StmtResult<I> for QueryStream<I> {
     }
 }
 
+/// The result of an execution operation, resolves to the affected rows count for the current resultset
 pub struct ExecFuture<I: BoxableIo> {
     inner: Option<ResultInner<I>>,
-    /// whether only a Done token (that was previously injected) is the contents of this stream
+    /// Whether only a Done token (that was previously injected) is the contents of this stream
     single_token: bool,
 }
 
 impl<I: BoxableIo> Future for ExecFuture<I> {
-    /// amount of affected rows
+    /// Amount of affected rows
     type Item = u64;
     type Error = TdsError;
 
@@ -232,9 +235,14 @@ impl<I: BoxableIo> StmtResult<I> for ExecFuture<I> {
     }
 }
 
+/// A row in one resultset of a query
 #[derive(Debug)]
 pub struct QueryRow(TokenRow);
 
+/// Anything that can be used as an index to get a specific row.
+///
+/// Currently this can either be a numerical index (position) or the
+/// name of the column.
 pub trait QueryIdx: Sized {
     fn to_idx(&self, row: &QueryRow) -> Option<usize>;
 }
@@ -257,7 +265,7 @@ impl QueryIdx for usize {
 }
 
 impl QueryRow {
-    /// attempt to get a column's value for a given column index
+    /// Attempt to get a column's value for a given column index
     pub fn try_get<'a, I: QueryIdx, R: FromColumnData<'a>>(&'a self, idx: I) -> TdsResult<Option<R>> {
         let idx = match idx.to_idx(self) {
             Some(x) => x,
@@ -268,7 +276,13 @@ impl QueryRow {
         R::from_column_data(col_data).map(Some)
     }
 
-    /// retrieve a column's value for a given column index
+    /// Retrieve a column's value for a given column index
+    ///
+    /// # Panics
+    /// This panics if:
+    ///
+    ///     - the requested type conversion (SQL->Rust) is not possible
+    ///     - the given index does exist (does not have a value associated with it)
     pub fn get<'a, I: QueryIdx, R: FromColumnData<'a>>(&'a self, idx: I) -> R {
         self.try_get(idx)
             .unwrap()
