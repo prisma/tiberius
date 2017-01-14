@@ -391,8 +391,8 @@ pub struct ConnectParams {
 /// let params = ConnectParams {
 ///     auth: AuthMethod::SSPI_SSO,
 /// };
+/// let client = SqlConnection::connect(lp.handle(), (&addr, params));
 /// ```
-let client = SqlConnection::connect(lp.handle(), (&addr, params));
 pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Sized + 'static {
     params: ConnectParams,
     target: T,
