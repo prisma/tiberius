@@ -104,6 +104,12 @@ impl Collation {
 pub enum TypeInfo {
     FixedLen(FixedLenType),
     VarLenSized(VarLenType, usize, Option<Collation>),
+    VarLenSizedPrecision {
+        ty: VarLenType,
+        size: usize,
+        precision: u8,
+        scale: u8,
+    }
 }
 
 #[derive(Debug)]
@@ -159,7 +165,7 @@ impl TypeInfo {
         if let Some(ty) = VarLenType::from_u8(ty) {
             // TODO: add .size() / .has_collation() to VarLenType (?)
             let len = match ty {
-                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Guid => try!(trans.read_u8()) as usize,
+                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Decimaln | VarLenType::Numericn | VarLenType::Guid => try!(trans.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
                     try!(trans.read_u16::<LittleEndian>()) as usize
                 },
@@ -174,7 +180,15 @@ impl TypeInfo {
                 },
                 _ => None
             };
-            let vty = TypeInfo::VarLenSized(ty, len, collation);
+            let vty = match ty {
+                VarLenType::Decimaln | VarLenType::Numericn => TypeInfo::VarLenSizedPrecision {
+                    ty: ty,
+                    size: len,
+                    precision: try!(trans.read_u8()),
+                    scale: try!(trans.read_u8()),
+                },
+                _ => TypeInfo::VarLenSized(ty, len, collation),
+            };
             return Ok(Async::Ready(vty))
         }
         return Err(TdsError::Protocol(format!("invalid or unsupported column type: {:?}", ty).into()))
@@ -231,6 +245,59 @@ impl<'a> ColumnData<'a> {
                         ColumnData::String(str_.into())
                     },
                     _ => unimplemented!()
+                }
+            },
+            TypeInfo::VarLenSizedPrecision { ty: ref ty, scale: ref scale, .. } => {
+                match *ty {
+                    // Our representation causes loss of information and is only a very approximate representation
+                    // while decimal on the side of MSSQL is an exact representation
+                    // TODO: better representation
+                    VarLenType::Decimaln | VarLenType::Numericn => {
+                        fn read_d128(buf: &[u8]) -> f64 {
+                            let low_part = LittleEndian::read_u64(&buf[0..]) as f64;
+                            if !buf[8..].iter().any(|x| *x != 0) {
+                                return low_part;
+                            }
+
+                            let high_part = match buf.len() {
+                                12 => LittleEndian::read_u32(&buf[8..]) as f64,
+                                16 => LittleEndian::read_u64(&buf[8..]) as f64,
+                                _ => unreachable!()
+                            };
+
+                            // swap high&low for big endian
+                            #[cfg(target_endian = "big")]
+                            let (low_part, high_part) = (high_part, low_part);
+
+                            let high_part = high_part * (u64::max_value() as f64 + 1.0);
+                            low_part + high_part
+                        }
+
+                        let len = try!(trans.read_u8());
+                        let sign = match try!(trans.read_u8()) {
+                            0 => -1f64,
+                            1 => 1f64,
+                            _ => return Err(TdsError::Protocol("decimal: invalid sign".into())),
+                        };
+                        let value = sign * match len {
+                            5 => try!(trans.read_u32::<LittleEndian>()) as f64,
+                            9 => try!(trans.read_u64::<LittleEndian>()) as f64,
+                            // the following two cases are even more approximate
+                            13 => {
+                                let mut bytes = [0u8; 12]; //u96
+                                try!(trans.read_bytes_to(&mut bytes));
+                                read_d128(&bytes)
+                            },
+                            17 => {
+                                let mut bytes = [0u8; 16]; //u128
+                                try!(trans.read_bytes_to(&mut bytes));
+                                read_d128(&bytes)
+                            },
+                            x => return Err(TdsError::Protocol(format!("decimal/numeric: invalid length of {} received", x).into()))
+                        };
+                        ColumnData::F64(value / 10f64.powi(*scale as i32))
+                    },
+                    _ => unimplemented!(),
                 }
             },
         }))
@@ -493,4 +560,14 @@ mod tests {
         test_guid: &Guid => &Guid::from_bytes(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
     );
 
+    #[test]
+    fn test_decimal_numeric() {
+        let mut lp = Core::new().unwrap();
+        let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;")
+            .and_then(|conn| conn.simple_query("select 18446744073709554899982888888888").for_each_row(|row| {
+                assert_eq!(row.get::<_, f64>(0), 18446744073709554000000000000000f64);
+                Ok(())
+            }));
+        lp.run(future).unwrap();
+    }
 }

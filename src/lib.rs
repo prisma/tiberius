@@ -4,6 +4,13 @@
 //! **Warning:** Do not use simple_query with user-specified data. Resort to prepared statements for that.
 //!
 //! ```rust
+//! extern crate futures;
+//! extern crate tokio_core;
+//! extern crate tiberius;
+//! use futures::Future;
+//! use tokio_core::reactor::Core;
+//! use tiberius::SqlConnection;
+//!
 //! fn main() {
 //!     let mut lp = Core::new().unwrap();
 //!     let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";

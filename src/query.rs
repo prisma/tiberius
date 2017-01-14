@@ -281,8 +281,8 @@ impl QueryRow {
     /// # Panics
     /// This panics if:
     ///
-    ///     - the requested type conversion (SQL->Rust) is not possible
-    ///     - the given index does exist (does not have a value associated with it)
+    /// - the requested type conversion (SQL->Rust) is not possible
+    /// - the given index does exist (does not have a value associated with it)
     pub fn get<'a, I: QueryIdx, R: FromColumnData<'a>>(&'a self, idx: I) -> R {
         self.try_get(idx)
             .unwrap()
