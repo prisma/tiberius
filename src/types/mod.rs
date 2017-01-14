@@ -165,7 +165,8 @@ impl TypeInfo {
         if let Some(ty) = VarLenType::from_u8(ty) {
             // TODO: add .size() / .has_collation() to VarLenType (?)
             let len = match ty {
-                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Decimaln | VarLenType::Numericn | VarLenType::Guid => try!(trans.read_u8()) as usize,
+                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Decimaln |
+                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money => try!(trans.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
                     try!(trans.read_u16::<LittleEndian>()) as usize
                 },
@@ -243,6 +244,19 @@ impl<'a> ColumnData<'a> {
                         let encoder = try!(collation.as_ref().unwrap().encoding().ok_or(TdsError::Encoding("encoding: unspported encoding".into())));
                         let str_: String = try!(encoder.decode(bytes.as_ref(), DecoderTrap::Strict).map_err(TdsError::Encoding));
                         ColumnData::String(str_.into())
+                    },
+                    VarLenType::Money => {
+                        let len = try!(trans.read_u8());
+                        match len {
+                            0 => ColumnData::None,
+                            4 => ColumnData::F64(try!(trans.read_i32::<LittleEndian>()) as f64 / 1e4),
+                            8 => ColumnData::F64({
+                                let high = try!(trans.read_i32::<LittleEndian>()) as i64;
+                                let low = try!(trans.read_u32::<LittleEndian>()) as f64;
+                                ((high << 32) as f64 + low) / 1e4
+                            }),
+                            _ => return Err(TdsError::Protocol(format!("money: length of {} is invalid", len).into()))
+                        }
                     },
                     _ => unimplemented!()
                 }
@@ -566,6 +580,18 @@ mod tests {
         let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;")
             .and_then(|conn| conn.simple_query("select 18446744073709554899982888888888").for_each_row(|row| {
                 assert_eq!(row.get::<_, f64>(0), 18446744073709554000000000000000f64);
+                Ok(())
+            }));
+        lp.run(future).unwrap();
+    }
+
+    #[test]
+    fn test_money() {
+        let mut lp = Core::new().unwrap();
+        let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;")
+            .and_then(|conn| conn.simple_query("select cast(32.32 as smallmoney), cast(3333333 as money)").for_each_row(|row| {
+                assert_eq!(row.get::<_, f64>(0), 32.32f64);
+                assert_eq!(row.get::<_, f64>(1), 3333333f64);
                 Ok(())
             }));
         lp.run(future).unwrap();
