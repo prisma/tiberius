@@ -76,6 +76,8 @@ pub enum VarLenType {
 uint_to_enum!(VarLenType, Guid, Intn, Bitn, Decimaln, Numericn, Floatn, Money, Datetimen, Daten, Timen, Datetime2, DatetimeOffsetn,
     BigVarBin, BigVarChar, BigBinary, BigChar, NVarchar, NChar, Xml, Udt, Text, Image, NText, SSVariant);
 
+const MAX_NVARCHAR_SIZE: usize = 1<<30;
+
 #[derive(Debug)]
 pub struct Collation {
     /// LCID ColFlags Version
@@ -238,7 +240,62 @@ impl<'a> ColumnData<'a> {
                         try_ready!(trans.read_bytes_to(&mut data));
                         ColumnData::Guid(Cow::Owned(Guid(data)))
                     },
-                    VarLenType::NVarchar => ColumnData::BString(try_ready!(trans.read_varchar::<u16>(true))),
+                    VarLenType::NVarchar => {
+                        // check if PLP or normal size
+                        if *len < 0xffff {
+                            if trans.len() < len + 2 {
+                                return Ok(Async::NotReady)
+                            }
+                            let len = trans.read_u16::<LittleEndian>()? as usize;
+                            let data: Vec<u16> = try!(vec![0u16; len/2].into_iter().map(|_| trans.read_u16::<LittleEndian>()).collect());
+                            let str_ = String::from_utf16(&data[..])?;
+                            ColumnData::String(str_.into())
+                        } else {
+                            let plp_len = trans.read_u64::<LittleEndian>()?;
+                            // TODO: memory-wise this is inefficient, since for 2GB of data we need 4 GB of memory (packet buffer & u16 buffer)
+                            // also the u16 buffer is rebuilt EVERY try and not cached accross tries which means we might copy really much
+                            // figurer out how to cache the read state somewhere. that'd also lead to a smaller packet buffer since data is already consumed.
+                            if plp_len < 0xffffffffffffffff {
+                                let capacity = match plp_len {
+                                    0xfffffffffffffffe => 1<<7,
+                                    len if len % 2 == 0 => len/2,
+                                    _ => return Err(TdsError::Protocol("nvarchar: invalid plp length".into())),
+                                };
+                                let mut buffer: Vec<u16> = Vec::with_capacity(capacity as usize);
+                                // leftover byte from the last chunk
+                                let mut leftover: Option<u8> = None;
+
+                                loop {
+                                    let chunk_size = trans.read_u32::<LittleEndian>()?;
+                                    if chunk_size == 0 {
+                                        break;
+                                    }
+                                    buffer.reserve((chunk_size / 2) as usize);
+                                    let mut left_bytes = chunk_size;
+                                    // byte from last chunk
+                                    if let Some(leftover) = leftover {
+                                        let bytes = [leftover, trans.read_u8()?];
+                                        buffer.push(LittleEndian::read_u16(&bytes));
+                                        left_bytes -= 1;
+                                    }
+                                    leftover.take();
+                                    while left_bytes >= 2 {
+                                        buffer.push(trans.read_u16::<LittleEndian>()?);
+                                        left_bytes -= 2;
+                                    }
+                                    // queue the last byte for the next chunk
+                                    if left_bytes > 0 {
+                                        assert_eq!(left_bytes, 1);
+                                        leftover = Some(trans.read_u8()?);
+                                    }
+                                }
+                                let str_ = String::from_utf16(&buffer[..])?;
+                                ColumnData::String(str_.into())
+                            } else {
+                                ColumnData::None
+                            }
+                        }
+                    },
                     VarLenType::BigVarChar => {
                         let bytes = try_ready!(trans.read_varbyte::<u16>());
                         let encoder = try!(collation.as_ref().unwrap().encoding().ok_or(TdsError::Encoding("encoding: unspported encoding".into())));
@@ -317,111 +374,175 @@ impl<'a> ColumnData<'a> {
         }))
     }
 
-    pub fn serialize(&self, target: &mut Cursor<Vec<u8>>, mut last_pos: usize) -> TdsResult<Option<usize>> {
-        // helper to reduce some copy&paste
-        // write progressively
-        macro_rules! serialize_n_helper {
-            ($n_method:ident, $target:expr, $bytes:expr, $last_pos:expr, $val:expr) => {{
-                LittleEndian::$n_method(&mut $bytes[3..], $val);
-                let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment($target, &$bytes, $last_pos));
-                if left_bytes > 0 {
-                    return Ok(Some($last_pos + written_bytes))
-                }
-            }};
+    pub fn serialize(&self, target: &mut Cursor<Vec<u8>>, last_pos: usize) -> TdsResult<Option<usize>> {
+        #[derive(Debug)]
+        enum SerializationStep<'a> {
+            U16(u16),
+            U32(u32),
+            U64(u64),
+            I16(i16),
+            I32(i32),
+            I64(i64),
+            F32(f32),
+            F64(f64),
+            Bytes(&'a [u8]),
+            Varchar(&'a str),
+            PLPSizedVarchar(&'a str),
+            PLPVarcharChunks(&'a str),
         }
 
-        match *self {
-            ColumnData::Bit(ref val) => {
-                let bytes = [VarLenType::Bitn as u8, 1, 1, *val as u8];
-                let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, &bytes, last_pos));
-                if left_bytes > 0 {
-                    return Ok(Some(last_pos + written_bytes))
+        impl<'a> SerializationStep<'a> {
+            fn len(&self) -> usize {
+                match *self {
+                    SerializationStep::U16(_) | SerializationStep::I16(_) => 2,
+                    SerializationStep::U32(_) | SerializationStep::I32(_) | SerializationStep::F32(_) => 4,
+                    SerializationStep::U64(_) | SerializationStep::I64(_) | SerializationStep::F64(_) => 8,
+                    SerializationStep::Bytes(ref bytes) => bytes.len(),
+                    SerializationStep::Varchar(ref bytes) => 2*bytes.len(),
+                    SerializationStep::PLPSizedVarchar(ref str_) => _plp_sized_varchar(str_).iter().fold(0usize, |acc, x| acc + x.len()),
+                    SerializationStep::PLPVarcharChunks(ref str_) => {
+                        let byte_len = 2*str_.len();
+                        (byte_len / 0xffff + (byte_len % 0xffff)) * (4 + 0xffff)
+                    },
                 }
-            },
-            ColumnData::I8(ref val) => {
-                let bytes = [VarLenType::Intn as u8, 1, 1, *val as u8];
-                let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, &bytes, last_pos));
-                if left_bytes > 0 {
-                    return Ok(Some(last_pos + written_bytes))
-                }
-            },
-            ColumnData::I16(ref val) => {
-                let mut bytes = [VarLenType::Intn as u8, 2, 2, 0, 0];
-                serialize_n_helper!(write_i16, target, bytes, last_pos, *val)
-            },
-            ColumnData::I32(ref val) => {
-                let mut bytes = [VarLenType::Intn as u8, 4, 4, 0, 0, 0, 0];
-                serialize_n_helper!(write_i32, target, bytes, last_pos, *val)
-            },
-            ColumnData::I64(ref val) => {
-                let mut bytes = [VarLenType::Intn as u8, 8, 8,/**/ 0, 0, 0, 0,/**/ 0, 0, 0, 0];
-                serialize_n_helper!(write_i64, target, bytes, last_pos, *val)
-            },
-            ColumnData::F32(ref val) => {
-                let mut bytes = [VarLenType::Floatn as u8, 4, 4, 0, 0, 0, 0];
-                serialize_n_helper!(write_f32, target, bytes, last_pos, *val);
-            },
-            ColumnData::F64(ref val) => {
-                let mut bytes = [VarLenType::Floatn as u8, 8, 8,/**/ 0, 0, 0, 0,/**/ 0, 0, 0, 0];
-                serialize_n_helper!(write_f64, target, bytes, last_pos, *val);
-            },
-            ColumnData::Guid(ref guid) => {
-                let mut i = 0;
-                for slice in &[&[VarLenType::Guid as u8, 0x10, 0x10], guid.as_bytes()] {
-                    let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, slice, last_pos - i));
+            }
+
+            fn handle(&self, target: &mut Cursor<Vec<u8>>, i: usize) -> TdsResult<(usize, usize)> {
+               Ok(match *self {
+                    SerializationStep::U16(ref val) => transport::write_u16_fragment::<LittleEndian>(target, *val, i),
+                    SerializationStep::U32(ref val) => transport::write_u32_fragment::<LittleEndian>(target, *val, i),
+                    SerializationStep::U64(ref val) => transport::write_u64_fragment::<LittleEndian>(target, *val, i),
+                    SerializationStep::I16(ref val) => transport::write_u16_fragment::<LittleEndian>(target, *val as u16, i),
+                    SerializationStep::I32(ref val) => transport::write_u32_fragment::<LittleEndian>(target, *val as u32, i),
+                    SerializationStep::I64(ref val) => transport::write_u64_fragment::<LittleEndian>(target, *val as u64, i),
+                    SerializationStep::F32(ref val) => transport::write_f32_fragment::<LittleEndian>(target, *val, i),
+                    SerializationStep::F64(ref val) => transport::write_f64_fragment::<LittleEndian>(target, *val, i),
+                    SerializationStep::Bytes(ref bytes) => transport::write_bytes_fragment(target, bytes, i),
+                    SerializationStep::Varchar(ref bytes) => transport::write_varchar_fragment(target, bytes, i),
+                    SerializationStep::PLPSizedVarchar(ref bytes) => {
+                        let steps = _plp_sized_varchar(bytes);
+                        let total_len = steps.iter().fold(0usize, |acc, x| acc + x.len());
+                        Ok(match try!(handle_steps(target, i, &steps)) {
+                            Some(new_pos) => (total_len - new_pos, new_pos - i),
+                            None => (0, total_len - i)
+                        })
+                    },
+                    SerializationStep::PLPVarcharChunks(_) => {
+                        let mut written_bytes = 0;
+                        let chunk_size = 0xffff + 4;
+                        let mut chunk_idx = i / chunk_size;
+                        let mut chunk_pos = i % chunk_size;
+
+                        let byte_len = match *self {
+                            SerializationStep::PLPVarcharChunks(ref str_) => 2*str_.len(),
+                            _ => unreachable!()
+                        };
+
+                        loop {
+                            let remaining = byte_len.saturating_sub(chunk_idx * 0xffff + chunk_pos.saturating_sub(4));
+                            if remaining == 0 {
+                                break;
+                            }
+                            // write the PLP body length
+                            if chunk_pos < 4 {
+                                let chunk_size = cmp::min(0xffff, remaining);
+                                let (write_pending, wb) = transport::write_u32_fragment::<LittleEndian>(target, chunk_size as u32, chunk_pos)?;
+                                written_bytes += wb;
+                                if write_pending > 0 {
+                                    return Ok((write_pending, written_bytes))
+                                }
+                                chunk_pos = 4;
+                            }
+                            // write the body data
+                            let last_pos = chunk_idx * 0xffff + chunk_pos - 4;
+                            let max_size = 0xffff + 4 - chunk_pos;
+                            let (left_bytes, wb) = match *self {
+                                SerializationStep::PLPVarcharChunks(ref str_) => transport::write_varchar_fragment_limited(target, str_, last_pos, Some(max_size)),
+                                _ => unreachable!(),
+                            }?;
+                            written_bytes += wb;
+                            // only return when we've written less than required to fill the chunk, since that means that the packet is full
+                            if left_bytes > 0 && wb < max_size {
+                                return Ok((left_bytes, written_bytes))
+                            }
+                            // advance
+                            chunk_idx += 1;
+                            chunk_pos = 0;
+                        }
+                        Ok((0, written_bytes))
+                    },
+                }?)
+            }
+        }
+
+        fn _plp_sized_varchar(str_: &str) -> Vec<SerializationStep> {
+            vec![
+                SerializationStep::U64(2*str_.len() as u64),
+                SerializationStep::PLPVarcharChunks(str_),
+                SerializationStep::U32(0) //PLP_TERMINATOR
+            ]
+        }
+
+        fn handle_steps(target: &mut Cursor<Vec<u8>>, mut last_pos: usize, steps: &[SerializationStep]) -> TdsResult<Option<usize>> {
+            let mut i = last_pos;
+            for step in steps {
+                if i < step.len() {
+                    let (left_bytes, written_bytes) = try!(step.handle(target, i));
                     last_pos += written_bytes;
                     if left_bytes > 0 {
                         return Ok(Some(last_pos))
                     }
-                    i += slice.len();
                 }
-            },
-            ColumnData::String(ref str_) => {
-                // type
-                if last_pos == 0 {
-                    // TODO: for a certain size we need to send it as NVARCHAR(N)/NTEXT...
-                    try!(target.write_u8(VarLenType::NVarchar as u8)); // pos:0
-                }
-                let mut state = cmp::max(last_pos, 1);
-                // type length
-                if state < 3 {
-                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, 8000, state - 1)); // NVARCHAR(4000)
-                    if left_bytes > 0 {
-                        return Ok(Some(state + written_bytes))
-                    }
-                    state = 3;
-                }
-                // collation (5 bytes)
-                if state < 8 {
-                    // 0 = RAW COLLATION, may have side effects?
-                    let collation = [0u8, 0, 0, 0, 0]; // pos: [3,4,5,6,7]
-                    let (left_bytes, written_bytes) = try!(transport::write_bytes_fragment(target, &collation, state - 3));
-                    if left_bytes > 0 {
-                        return Ok(Some(state + written_bytes))
-                    }
-                    state = 8;
-                }
-                // body length
-                if state < 10 {
-                    assert!(2*str_.len() < u16::max_value() as usize);
-                    let length = 2*str_.len() as u16;
-                    let (left_bytes, written_bytes) = try!(transport::write_u16_fragment::<LittleEndian>(target, length, state - 8));
-                    if left_bytes > 0 {
-                        return Ok(Some(state + written_bytes))
-                    }
-                    state = 10;
-                }
-                // encoded string pos:>=8
-                if state >= 10 {
-                    let (left_bytes, written_bytes) = try!(transport::write_varchar_fragment(target, str_, state - 10));
-                    if left_bytes > 0 {
-                        return Ok(Some(state + written_bytes))
-                    }
-                }
-            },
+                i = i.saturating_sub(step.len());
+            }
+            Ok(None)
+        }
+
+        match *self {
+            ColumnData::Bit(ref val) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Bitn as u8, 1, 1, *val as u8])
+            ]),
+            ColumnData::I8(ref val) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Intn as u8, 1, 1, *val as u8])
+            ]),
+            ColumnData::I16(ref val) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Intn as u8, 2, 2]),
+                SerializationStep::I16(*val)
+            ]),
+            ColumnData::I32(ref val) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Intn as u8, 4, 4]),
+                SerializationStep::I32(*val)
+            ]),
+            ColumnData::I64(ref val) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Intn as u8, 8, 8]),
+                SerializationStep::I64(*val)
+            ]),
+            ColumnData::F32(ref val) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Floatn as u8, 4, 4]),
+                SerializationStep::F32(*val)
+            ]),
+            ColumnData::F64(ref val) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Floatn as u8, 8, 8]),
+                SerializationStep::F64(*val)
+            ]),
+            ColumnData::Guid(ref guid) => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::Guid as u8, 0x10, 0x10]),
+                SerializationStep::Bytes(guid.as_bytes()),
+            ]),
+            ColumnData::String(ref str_) if str_.len() <= 8000 => handle_steps(target, last_pos, &[
+                SerializationStep::Bytes(&[VarLenType::NVarchar as u8]),
+                SerializationStep::U16(8000),      // NVARCHAR(4000)
+                SerializationStep::Bytes(&[0; 5]), // raw collation
+                SerializationStep::U16(2*str_.len() as u16),
+                SerializationStep::Varchar(str_),
+            ]),
+            ColumnData::String(ref str_) => handle_steps(target, last_pos, &[
+                // length: 0xffff and raw collation
+                SerializationStep::Bytes(&[VarLenType::NVarchar as u8, 0xff, 0xff, 0, 0, 0, 0, 0]),
+                SerializationStep::PLPSizedVarchar(str_)
+            ]),
             _ => unimplemented!()
         }
-        Ok(None)
     }
 }
 
@@ -520,10 +641,9 @@ to_sql!(
 
 impl<'a> ToSql for &'a str {
     fn to_sql(&self) -> &'static str {
-        const max: usize = 1<<30;
         match self.len() {
             0...8000 => "NVARCHAR(4000)",
-            8000...max => "NVARCHAR(MAX)",
+            8000...MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
             _ => "NTEXT",
         }
     }
@@ -536,6 +656,7 @@ mod tests {
     use stmt::ForEachRow;
     use super::Guid;
     use SqlConnection;
+    use std::iter;
 
     /// prepares a statement which selects a passed value
     /// this tests serialization of a parameter and deserialization
@@ -570,6 +691,8 @@ mod tests {
         test_f32: f32 => 42.42f32,
         test_f64: f64 => 26.26f64,
         test_str: &str => "hello world",
+        // test a string which is bigger than nvarchar(8000) and is sent as nvarchar(max) instead
+        test_str_big: &str => iter::repeat("haha").take(2500).collect::<String>().as_str(),
         // TODO: Guid parsing
         test_guid: &Guid => &Guid::from_bytes(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
     );
