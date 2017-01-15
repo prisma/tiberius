@@ -272,8 +272,10 @@ bitflags! {
     pub flags LoginOptionFlags2: u8 {
         /// Set if the change to initial language needs to succeed if the connect is to succeed.
         const OF2_INIT_LANG_FATAL      = 0b00000001,
-        ///  Set if the client is the ODBC driver. This causes the server to set ANSI_DEFAULTS to ON, ...
-        /// (more side effects are documented in the official TDS reference at 2.2.6.4)
+        /// Set if the client is the ODBC driver. This causes the server to set ANSI_DEFAULTS=ON,
+        /// CURSOR_CLOSE_ON_COMMIT, IMPLICIT_TRANSACTIONS=OFF, TEXTSIZE=0x7FFFFFFF (2GB) (TDS 7.2 and earlier)
+        /// TEXTSIZE to infinite (TDS 7.3), and ROWCOUNT to infinite
+        /// (2.2.6.4)
         const OF2_ODBC_DRIVER          = 0b00000010,
         const OF2_TRANS_BOUNDARY       = 0b00000100,
         const OF2_CACHE_CONNECT        = 0b00001000,
@@ -352,7 +354,7 @@ impl<'a> LoginMessage<'a> {
             client_pid: 0,
             connection_id: 0,
             option_flags_1: OF1_USE_DB_NOTIFY | OF1_INITIAL_DB_FATAL,
-            option_flags_2: OF2_INIT_LANG_FATAL,
+            option_flags_2: OF2_INIT_LANG_FATAL | OF2_ODBC_DRIVER,
             integrated_security: None,
             type_flags: LoginTypeFlags::empty(),
             option_flags_3: OF3_SUPPORT_UNKNOWN_COLL,
