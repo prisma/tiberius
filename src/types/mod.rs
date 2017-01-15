@@ -693,6 +693,8 @@ mod tests {
         test_str: &str => "hello world",
         // test a string which is bigger than nvarchar(8000) and is sent as nvarchar(max) instead
         test_str_big: &str => iter::repeat("haha").take(2500).collect::<String>().as_str(),
+        // test a string (1GB in network representation, 512 MB in rust), 16384 plp-chunks (with size 0xffff)
+        test_str_very_big: &str => (0..17).fold("haho".to_owned(), |acc, _| iter::repeat(acc).take(2).collect()).as_str(),
         // TODO: Guid parsing
         test_guid: &Guid => &Guid::from_bytes(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
     );

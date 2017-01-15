@@ -315,7 +315,6 @@ impl MetaDataColumn {
 impl<I: Io> ParseToken<I> for TokenColMetaData {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
         let column_count = try!(trans.read_u16::<LittleEndian>());
-        trace!("COLMETADATA columns {}", column_count);
 
         let mut columns = vec![];
         if column_count > 0 && column_count < 0xffff {
@@ -333,7 +332,6 @@ impl<I: Io> ParseToken<I> for TokenColMetaData {
         let token = Arc::new(TokenColMetaData {
             columns: columns,
         });
-        trace!("COLMETADATA: {:?}", token);
         if !token.columns.is_empty() {
             trans.last_meta = Some(token.clone());
         }

@@ -35,8 +35,6 @@ extern crate futures_state_stream;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate tokio_core;
 
 use std::borrow::Cow;
@@ -242,17 +240,13 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
     type Error = TdsError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        trace!("init/poll");
-
         loop {
             match self.state {
                 SqlConnectionNewState::PreLoginSend => {
-                    trace!("init/send prelogin packet");
                     try_nb!(self.queue_simple_message(PreloginMessage::new()));
                     self.state = SqlConnectionNewState::PreLoginRecv;
                 },
                 SqlConnectionNewState::PreLoginRecv => {
-                    trace!("init/recv prelogin...");
                     try_ready!(self.transport.poll_complete());
                     let header = try_ready!(self.transport.next_packet());
                     assert_eq!(header.ty, PacketType::TabularResult);
@@ -274,7 +268,6 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     self.state = SqlConnectionNewState::LoginRecv;
                 },
                 SqlConnectionNewState::LoginRecv => {
-                    trace!("init/recv login...");
                     try_ready!(self.transport.poll_complete());
                     let header = try_ready!(self.transport.next_packet());
                     assert_eq!(header.ty, PacketType::TabularResult);
@@ -298,7 +291,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                             assert_eq!(done.status, tokens::DoneStatus::empty());
                             break;
                         },
-                        Some(x) => trace!("init/got token {:?}", x),
+                        Some(x) => /*trace!("init/got token {:?}", x)*/(),
                         None => (),
                     }
                 },
@@ -681,7 +674,6 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 
 #[cfg(test)]
 mod tests {
-    extern crate env_logger;
     use futures::{Future, Stream};
     use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
@@ -689,7 +681,6 @@ mod tests {
     use super::{AuthMethod, BoxableIo, ConnectParams, SqlConnection, TdsError};
 
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
-        let _ = env_logger::init();
         let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
         lp.run(future).unwrap()
     }
