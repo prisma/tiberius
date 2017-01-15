@@ -445,13 +445,25 @@ pub fn write_varchar<S: WriteSize<Vec<u8>>>(target: &mut Cursor<Vec<u8>>, str_: 
 }
 
 pub fn write_varchar_fragment(target: &mut Cursor<Vec<u8>>, str_: &str, last_pos: usize) -> io::Result<(usize, usize)> {
-    let start_delta = (last_pos % 2 > 0) as usize;
-    let writeable_bytes = cmp::min(str_.len() * 2, target.get_ref().capacity() - target.get_ref().len());
-    let end_delta = (writeable_bytes % 2 > 0) as usize;
-    let count = writeable_bytes / 2 + end_delta;
-    let old_pos = target.position();
+    write_varchar_fragment_limited(target, str_, last_pos, None)
+}
 
-    for (i, chr) in str_.encode_utf16().skip(last_pos / 2 - start_delta).take(count).enumerate() {
+pub fn write_varchar_fragment_limited(target: &mut Cursor<Vec<u8>>, str_: &str, last_pos: usize, writable_bytes: Option<usize>) -> io::Result<(usize, usize)> {
+    let byte_len = 2*str_.len();
+
+    let left_bytes = byte_len - last_pos;
+    let limit = match writable_bytes {
+        Some(x) => cmp::min(x, left_bytes),
+        None => left_bytes,
+    };
+    let writable_bytes = cmp::min(limit, target.get_ref().capacity() - target.get_ref().len());
+    let old_pos = target.position();
+    // calculate the offsets we need to read the pairs of u16's at appropriate offsets
+    let start_delta = last_pos % 2;
+    let end_delta = (start_delta + writable_bytes) % 2;
+    let count = (writable_bytes + start_delta + end_delta) / 2;
+
+    for (i, chr) in str_.encode_utf16().skip(last_pos / 2).take(count).enumerate() {
         let mut buf = [0u8; 2];
         LittleEndian::write_u16(&mut buf, chr);
         let read_buf = match i {
@@ -461,8 +473,9 @@ pub fn write_varchar_fragment(target: &mut Cursor<Vec<u8>>, str_: &str, last_pos
         };
         try!(target.write(read_buf));
     }
+
     let written_bytes = (target.position() - old_pos) as usize;
-    Ok((2*str_.len() - last_pos - written_bytes, written_bytes))
+    Ok((byte_len - last_pos - written_bytes, written_bytes))
 }
 
 pub fn write_bytes_fragment(target: &mut Cursor<Vec<u8>>, bytes: &[u8], last_pos: usize) -> io::Result<(usize, usize)> {
@@ -474,5 +487,29 @@ pub fn write_bytes_fragment(target: &mut Cursor<Vec<u8>>, bytes: &[u8], last_pos
 pub fn write_u16_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: u16, last_pos: usize) -> io::Result<(usize, usize)> {
     let mut buf = [0u8; 2];
     B::write_u16(&mut buf, value);
+    write_bytes_fragment(target, &buf, last_pos)
+}
+
+pub fn write_u32_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: u32, last_pos: usize) -> io::Result<(usize, usize)> {
+    let mut buf = [0u8; 4];
+    B::write_u32(&mut buf, value);
+    write_bytes_fragment(target, &buf, last_pos)
+}
+
+pub fn write_u64_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: u64, last_pos: usize) -> io::Result<(usize, usize)> {
+    let mut buf = [0u8; 8];
+    B::write_u64(&mut buf, value);
+    write_bytes_fragment(target, &buf, last_pos)
+}
+
+pub fn write_f32_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: f32, last_pos: usize) -> io::Result<(usize, usize)> {
+    let mut buf = [0u8; 4];
+    B::write_f32(&mut buf, value);
+    write_bytes_fragment(target, &buf, last_pos)
+}
+
+pub fn write_f64_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: f64, last_pos: usize) -> io::Result<(usize, usize)> {
+    let mut buf = [0u8; 8];
+    B::write_f64(&mut buf, value);
     write_bytes_fragment(target, &buf, last_pos)
 }

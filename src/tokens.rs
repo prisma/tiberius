@@ -470,13 +470,18 @@ pub struct TokenRpcRequest<'a> {
 
 impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
     fn write_token(&self, trans: &mut TdsTransport<I>) -> TdsResult<()> {
+        fn allocate_cursor(capacity: usize) -> Cursor<Vec<u8>> {
+            let mut cursor = Cursor::new({
+                let mut vec = Vec::with_capacity(capacity);
+                vec.resize(protocol::HEADER_BYTES, 0);
+                vec
+            });
+            cursor.set_position(protocol::HEADER_BYTES as u64);
+            cursor
+        };
+
         // allocate initial cursor
-        let mut cursor = Cursor::new({
-            let mut vec = Vec::with_capacity(trans.packet_size);
-            vec.resize(protocol::HEADER_BYTES, 0);
-            vec
-        });
-        cursor.set_position(protocol::HEADER_BYTES as u64);
+        let mut cursor = allocate_cursor(trans.packet_size);
 
         // write the start of the token stream, only once
         if trans.write_state.is_none() {
@@ -534,15 +539,17 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
                     try!(cursor.write_u8(param.name.len() as u8));
                     last_pos = 1;
                 }
-                let (left_bytes, written_bytes) = try!(transport::write_varchar_fragment(&mut cursor, &param.name, last_pos - 1));
-                if left_bytes > 0 {
-                    trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: i, last_pos: last_pos + written_bytes });
-                    break;
+                if last_pos < 1 + 2*param.name.len() {
+                    let (left_bytes, written_bytes) = try!(transport::write_varchar_fragment(&mut cursor, &param.name, last_pos - 1));
+                    if left_bytes > 0 {
+                        trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: i, last_pos: last_pos + written_bytes });
+                        break;
+                    }
+                    last_pos += written_bytes;
                 }
-                last_pos += written_bytes;
 
                 // status flag
-                if last_pos - 1 - 2*param.name.len() == 0 {
+                if last_pos == 1 + 2*param.name.len() {
                     if trans.packet_size - cursor.get_ref().len() < 1 {
                         trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: i, last_pos: last_pos });
                         break;
@@ -555,8 +562,8 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
                 let ret = try!(param.value.serialize(&mut cursor, fixed_state));
                 if let Some(state) = ret {
                     // cache the new state, packet is exhausted
-                    debug_assert_eq!(trans.packet_size - cursor.get_ref().len(), 0);
-                    let fixed_state = state + 1 + 2*param.name.len();
+                    assert_eq!(trans.packet_size - cursor.get_ref().len(), 0);
+                    let fixed_state = (state - fixed_state) + last_pos;
                     trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: i, last_pos: fixed_state });
                     break;
                 }
@@ -585,11 +592,7 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
                 break;
             }
 
-            cursor = Cursor::new({
-                let mut vec = Vec::with_capacity(trans.packet_size);
-                vec.resize(protocol::HEADER_BYTES, 0);
-                vec
-            });
+            cursor = allocate_cursor(trans.packet_size);
         }
 
         // we're officially done with this token stream, flush a last time
