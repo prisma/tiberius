@@ -387,7 +387,6 @@ impl<'a> ColumnData<'a> {
             F64(f64),
             Bytes(&'a [u8]),
             Varchar(&'a str),
-            PLPSizedVarchar(&'a str),
             PLPVarcharChunks(&'a str),
         }
 
@@ -399,7 +398,6 @@ impl<'a> ColumnData<'a> {
                     SerializationStep::U64(_) | SerializationStep::I64(_) | SerializationStep::F64(_) => 8,
                     SerializationStep::Bytes(ref bytes) => bytes.len(),
                     SerializationStep::Varchar(ref bytes) => 2*bytes.len(),
-                    SerializationStep::PLPSizedVarchar(ref str_) => _plp_sized_varchar(str_).iter().fold(0usize, |acc, x| acc + x.len()),
                     SerializationStep::PLPVarcharChunks(ref str_) => {
                         let byte_len = 2*str_.len();
                         (byte_len / 0xffff + (byte_len % 0xffff)) * (4 + 0xffff)
@@ -419,14 +417,6 @@ impl<'a> ColumnData<'a> {
                     SerializationStep::F64(ref val) => transport::write_f64_fragment::<LittleEndian>(target, *val, i),
                     SerializationStep::Bytes(ref bytes) => transport::write_bytes_fragment(target, bytes, i),
                     SerializationStep::Varchar(ref bytes) => transport::write_varchar_fragment(target, bytes, i),
-                    SerializationStep::PLPSizedVarchar(ref bytes) => {
-                        let steps = _plp_sized_varchar(bytes);
-                        let total_len = steps.iter().fold(0usize, |acc, x| acc + x.len());
-                        Ok(match try!(handle_steps(target, i, &steps)) {
-                            Some(new_pos) => (total_len - new_pos, new_pos - i),
-                            None => (0, total_len - i)
-                        })
-                    },
                     SerializationStep::PLPVarcharChunks(_) => {
                         let mut written_bytes = 0;
                         let chunk_size = 0xffff + 4;
@@ -439,7 +429,8 @@ impl<'a> ColumnData<'a> {
                         };
 
                         loop {
-                            let remaining = byte_len.saturating_sub(chunk_idx * 0xffff + chunk_pos.saturating_sub(4));
+                            let last_pos = chunk_idx * 0xffff + chunk_pos.saturating_sub(4);
+                            let remaining = byte_len.saturating_sub(last_pos);
                             if remaining == 0 {
                                 break;
                             }
@@ -454,8 +445,7 @@ impl<'a> ColumnData<'a> {
                                 chunk_pos = 4;
                             }
                             // write the body data
-                            let last_pos = chunk_idx * 0xffff + chunk_pos - 4;
-                            let max_size = 0xffff + 4 - chunk_pos;
+                            let max_size = cmp::min(0xffff + 4 - chunk_pos, remaining);
                             let (left_bytes, wb) = match *self {
                                 SerializationStep::PLPVarcharChunks(ref str_) => transport::write_varchar_fragment_limited(target, str_, last_pos, Some(max_size)),
                                 _ => unreachable!(),
@@ -473,14 +463,6 @@ impl<'a> ColumnData<'a> {
                     },
                 }?)
             }
-        }
-
-        fn _plp_sized_varchar(str_: &str) -> Vec<SerializationStep> {
-            vec![
-                SerializationStep::U64(2*str_.len() as u64),
-                SerializationStep::PLPVarcharChunks(str_),
-                SerializationStep::U32(0) //PLP_TERMINATOR
-            ]
         }
 
         fn handle_steps(target: &mut Cursor<Vec<u8>>, mut last_pos: usize, steps: &[SerializationStep]) -> TdsResult<Option<usize>> {
@@ -539,7 +521,9 @@ impl<'a> ColumnData<'a> {
             ColumnData::String(ref str_) => handle_steps(target, last_pos, &[
                 // length: 0xffff and raw collation
                 SerializationStep::Bytes(&[VarLenType::NVarchar as u8, 0xff, 0xff, 0, 0, 0, 0, 0]),
-                SerializationStep::PLPSizedVarchar(str_)
+                SerializationStep::U64(2*str_.len() as u64),
+                SerializationStep::PLPVarcharChunks(str_),
+                SerializationStep::U32(0) //PLP_TERMINATOR
             ]),
             _ => unimplemented!()
         }
@@ -693,8 +677,8 @@ mod tests {
         test_str: &str => "hello world",
         // test a string which is bigger than nvarchar(8000) and is sent as nvarchar(max) instead
         test_str_big: &str => iter::repeat("haha").take(2500).collect::<String>().as_str(),
-        // test a string (1GB in network representation, 512 MB in rust), 16384 plp-chunks (with size 0xffff)
-        test_str_very_big: &str => (0..17).fold("haho".to_owned(), |acc, _| iter::repeat(acc).take(2).collect()).as_str(),
+        // test a string (256MB in network representation, 128 MB in rust), 2048 plp-chunks (with size 0xffff)
+        test_str_very_big: &str => (0..24).fold("haho".to_owned(), |acc, _| iter::repeat(acc).take(2).collect()).as_str(),
         // TODO: Guid parsing
         test_guid: &Guid => &Guid::from_bytes(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
     );

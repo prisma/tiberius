@@ -407,9 +407,6 @@ impl<I: Io> Sink for TdsTransport<I> {
 
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
         while !self.wr.is_empty() {
-            if self.io.poll_write().is_not_ready() {
-                return Ok(Async::NotReady)
-            }
             let mut front_consumed = false;
             if let Some(ref mut front) = self.wr.front_mut() {
                 let bytes = try_nb!(self.io.write(&front.1[front.0..]));
@@ -421,8 +418,12 @@ impl<I: Io> Sink for TdsTransport<I> {
             if front_consumed {
                 self.wr.pop_front();
             }
-            try_nb!(self.io.flush());
         }
+
+        if !self.wr.is_empty() {
+            return Ok(Async::NotReady);
+        }
+        try_nb!(self.io.flush());
         Ok(Async::Ready(()))
     }
 }
@@ -456,23 +457,28 @@ pub fn write_varchar_fragment_limited(target: &mut Cursor<Vec<u8>>, str_: &str, 
         Some(x) => cmp::min(x, left_bytes),
         None => left_bytes,
     };
-    let writable_bytes = cmp::min(limit, target.get_ref().capacity() - target.get_ref().len());
+    let mut writable_bytes = cmp::min(limit, target.get_ref().capacity() - target.get_ref().len());
     let old_pos = target.position();
-    // calculate the offsets we need to read the pairs of u16's at appropriate offsets
-    let start_delta = last_pos % 2;
-    let end_delta = (start_delta + writable_bytes) % 2;
-    let count = (writable_bytes + start_delta + end_delta) / 2;
+    let mut start_delta = last_pos%2;
+    let str_pos = last_pos/2 - start_delta;
 
-    for (i, chr) in str_.encode_utf16().skip(last_pos / 2).take(count).enumerate() {
-        let mut buf = [0u8; 2];
+    // UTF8 sequences only are 6 bytes at most
+    // find the first byte index which is a valid char boundary
+    let to_boundary = (0..6).position(|x| str_.is_char_boundary(str_pos - x)).unwrap_or(0);
+
+    let mut buf = [0u8; 2];
+    for chr in str_[str_pos-to_boundary..].encode_utf16().skip(to_boundary/2+start_delta) {
         LittleEndian::write_u16(&mut buf, chr);
-        let read_buf = match i {
-            0 if start_delta > 0 => &buf[1..],
-            x if x == count - 1 && end_delta > 0 => &buf[0..1],
-            _ => &buf[0..]
-        };
-        try!(target.write(read_buf));
+        let end_idx = cmp::min(2, start_delta+writable_bytes);
+        let write_buf = &buf[start_delta..end_idx];
+        try!(target.write(write_buf));
+        writable_bytes -= write_buf.len();
+        if writable_bytes == 0 {
+            break;
+        }
+        start_delta = 0;
     }
+    assert_eq!(writable_bytes, 0);
 
     let written_bytes = (target.position() - old_pos) as usize;
     Ok((byte_len - last_pos - written_bytes, written_bytes))

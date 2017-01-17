@@ -476,7 +476,7 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
             });
             cursor.set_position(protocol::HEADER_BYTES as u64);
             cursor
-        };
+        }
 
         // allocate initial cursor
         let mut cursor = allocate_cursor(trans.packet_size);
