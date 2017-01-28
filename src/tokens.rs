@@ -1,13 +1,12 @@
 ///! token stream definitions
 use std::borrow::Cow;
-use std::io::Cursor;
 use std::sync::Arc;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
-use futures::{Async, Poll, Sink};
+use futures::{Async, Poll};
 use tokio_core::io::Io;
-use transport::{self, TdsBuf, TdsTransport, TokenWriteState, write_varchar};
+use transport::{ReadState, TdsBuf, TdsTransport, PrimitiveWrites};
 use types::{TypeInfo, ColumnData};
-use protocol::{self, AllHeaderTy, PacketStatus, PacketType, PacketHeader};
+use protocol::{self, AllHeaderTy, PacketStatus, PacketType, PacketHeader, PacketWriter};
 use {TdsError, TdsResult, FromUint};
 
 /// read a token from an underlying transport
@@ -51,6 +50,7 @@ pub enum TdsResponseToken {
 }
 
 impl<I: Io> TdsTransport<I> {
+    #[inline]
     pub fn parse_token(&mut self, token: Tokens, min_len: usize) -> Poll<TdsResponseToken, TdsError> {
         match token {
             Tokens::SSPI => {
@@ -353,11 +353,37 @@ impl<I: Io> ParseToken<I> for TokenRow {
             return Err(TdsError::Protocol("missing colmeta data".into()));
         };
 
-        let mut columns = vec![];
-        for column in &col_meta.columns {
-            columns.push(try_ready!(ColumnData::parse(trans, &column.base)));
+        // extract the state for the first Type/ColumnData parse call
+        let mut column_data = match trans.take_read_state() {
+            ReadState::Row(column_data, state) => {
+                *trans.read_state.borrow_mut() = ReadState::Type(state);
+                column_data
+            },
+            _ => unreachable!()
+        };
+
+        for column in &col_meta.columns[column_data.len()..] {
+            match ColumnData::parse(trans, &column.base) {
+                Ok(Async::Ready(coldata)) => {
+                    column_data.push(coldata);
+                    // make sure to not fall behind this column, since parsing it again with data
+                    // that isn't there anymore would be foolish
+                    trans.last_pos = trans.position();
+                    // we don't have a state for the next column yet
+                    *trans.read_state.borrow_mut() = ReadState::None;
+                },
+                ret => {
+                    // reset the read state back to the last state value
+                    *trans.read_state.borrow_mut() = ReadState::Row(column_data, match trans.take_read_state() {
+                        ReadState::Type(tystate) => tystate,
+                        _ => unreachable!()
+                    });
+                    // this closure cannot be executed here since Async::Ready is handled above, only used for type conversion
+                    return ret.map(|_| Async::Ready((None as Option<TdsResponseToken>).unwrap()));
+                }
+            }
         }
-        let token = TokenRow { meta: col_meta, columns: columns };
+        let token = TokenRow { meta: col_meta, columns: column_data };
         Ok(Async::Ready(TdsResponseToken::Row(token)))
     }
 }
@@ -468,134 +494,49 @@ pub struct TokenRpcRequest<'a> {
 
 impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
     fn write_token(&self, trans: &mut TdsTransport<I>) -> TdsResult<()> {
-        fn allocate_cursor(capacity: usize) -> Cursor<Vec<u8>> {
-            let mut cursor = Cursor::new({
-                let mut vec = Vec::with_capacity(capacity);
-                vec.resize(protocol::HEADER_BYTES, 0);
-                vec
-            });
-            cursor.set_position(protocol::HEADER_BYTES as u64);
-            cursor
-        }
+        // build the general header for the packet
+        let header = PacketHeader {
+            ty: PacketType::RPC,
+            status: PacketStatus::NormalMessage,
+            ..PacketHeader::new(0, 0)
+        };
+        let mut writer = PacketWriter::new(trans, header);
 
-        // allocate initial cursor
-        let mut cursor = allocate_cursor(trans.packet_size);
-
-        // write the start of the token stream, only once
-        if trans.write_state.is_none() {
+        {
             // TODO: move this out (ALL_HEADERS)
-            {
-                try!(cursor.write_u32::<LittleEndian>(protocol::ALL_HEADERS_LEN_TX as u32));
-                try!(cursor.write_u32::<LittleEndian>(protocol::ALL_HEADERS_LEN_TX as u32 - 4));
-                try!(cursor.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16));
-                // transaction descriptor
-                try!(cursor.write_u64::<LittleEndian>(0));
-                // outstanding requests (TransactionDescrHeader)
-                try!(cursor.write_u32::<LittleEndian>(1));
-            }
-            match self.proc_id {
-                RpcProcIdValue::Id(ref id) => {
-                    try!(cursor.write_u16::<LittleEndian>(0xffff));
-                    try!(cursor.write_u16::<LittleEndian>(*id as u16));
-                },
-                RpcProcIdValue::Name(ref name) => {
-                    let (left_bytes, _) = try!(write_varchar::<u16>(&mut cursor, name, 0));
-                    assert_eq!(left_bytes, 0);
-                }
-            }
-            try!(cursor.write_u16::<LittleEndian>(self.flags.bits()));
+            try!(writer.write_u32::<LittleEndian>(protocol::ALL_HEADERS_LEN_TX as u32));
+            try!(writer.write_u32::<LittleEndian>(protocol::ALL_HEADERS_LEN_TX as u32 - 4));
+            try!(writer.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16));
+            // transaction descriptor
+            try!(writer.write_u64::<LittleEndian>(0));
+            // outstanding requests (TransactionDescrHeader)
+            try!(writer.write_u32::<LittleEndian>(1));
         }
-
-        loop {
-            // send if possible, but do not let it delay us, make sure to buffer
-            let _ = try!(trans.poll_complete());
-
-            // check if we already attempted to complete the current write request
-            let (param_idx, last_pos) = match trans.write_state {
-                Some(TokenWriteState::RpcRequest { param_idx, last_pos }) => (param_idx, last_pos),
-                None => (0, 0),
-                _ => unreachable!()
-            };
-
-            let mut missing = self.params.len() - param_idx;
-
-            // this should be triggered on flushing after we're done (see "finally FLUSHING" below)
-            if missing == 0 {
-                break;
+        match self.proc_id {
+            RpcProcIdValue::Id(ref id) => {
+                try!(writer.write_u16::<LittleEndian>(0xffff));
+                try!(writer.write_u16::<LittleEndian>(*id as u16));
+            },
+            RpcProcIdValue::Name(ref name) => {
+                //let (left_bytes, _) = try!(write_varchar::<u16>(&mut cursor, name, 0));
+                //assert_eq!(left_bytes, 0);
+                unimplemented!()
             }
+        }
+        try!(writer.write_u16::<LittleEndian>(self.flags.bits()));
 
-            for (i, param) in self.params.iter().enumerate().skip(param_idx) {
-                let mut last_pos = if param_idx == i { last_pos } else { 0 };
-                let remaining = trans.packet_size - cursor.get_ref().len();
-                // the current packet is exhausted, queue it (NormalMessage) and start another one
-                if remaining == 0 {
-                    break;
-                }
+        for (_, param) in self.params.iter().enumerate() {
+            // name
+            try!(writer.write_varchar::<u8>(&param.name));
 
-                // name
-                if last_pos == 0 {
-                    try!(cursor.write_u8(param.name.len() as u8));
-                    last_pos = 1;
-                }
-                if last_pos < 1 + 2*param.name.len() {
-                    let (left_bytes, written_bytes) = try!(transport::write_varchar_fragment(&mut cursor, &param.name, last_pos - 1));
-                    if left_bytes > 0 {
-                        trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: i, last_pos: last_pos + written_bytes });
-                        break;
-                    }
-                    last_pos += written_bytes;
-                }
-
-                // status flag
-                if last_pos == 1 + 2*param.name.len() {
-                    if trans.packet_size - cursor.get_ref().len() < 1 {
-                        trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: i, last_pos: last_pos });
-                        break;
-                    }
-                    try!(cursor.write_u8(param.flags.bits));
-                    last_pos += 1;
-                }
-                // recalculate the position for the value (offset)
-                let fixed_state = last_pos - 2*1 - 2*param.name.len();
-                let ret = try!(param.value.serialize(&mut cursor, fixed_state));
-                if let Some(state) = ret {
-                    // cache the new state, packet is exhausted
-                    assert_eq!(trans.packet_size - cursor.get_ref().len(), 0);
-                    let fixed_state = (state - fixed_state) + last_pos;
-                    trans.write_state = Some(TokenWriteState::RpcRequest { param_idx: i, last_pos: fixed_state });
-                    break;
-                }
-                missing -= 1;
-            }
-
-            // we've filled a packet, queue it
-            let mut buf = cursor.into_inner();
-            let status = if missing == 0 {
-                PacketStatus::EndOfMessage
-            } else {
-                PacketStatus::NormalMessage
-            };
-            // build the header for the packet
-            let header = PacketHeader {
-                ty: PacketType::RPC,
-                status: status,
-                ..PacketHeader::new(buf.len(), trans.next_id())
-            };
-            try!(header.serialize(&mut buf));
-
-            try!(trans.queue_vec(buf));
-
-            // we've sent the final packet, no reason to continue
-            if missing == 0 {
-                break;
-            }
-
-            cursor = allocate_cursor(trans.packet_size);
+            // status flag
+            try!(writer.write_u8(param.flags.bits));
+            // recalculate the position for the value (offset)
+            let ret = try!(param.value.serialize(&mut writer));
         }
 
         // we're officially done with this token stream, flush a last time
-        trans.write_state = None;
-        let _ = try!(trans.poll_complete());
+        try!(writer.finalize());
 
         Ok(())
     }

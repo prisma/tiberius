@@ -1,6 +1,6 @@
 //! Query results and resultsets
 use std::marker::PhantomData;
-use futures::{self, Async, Future, Poll, Stream, Sink};
+use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
 use stmt::ForEachRow;
@@ -62,7 +62,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
                     let mut inner = conn.borrow_mut();
                     try_ready!(inner.transport.poll_complete());
 
-                    match try_ready!(inner.transport.read_token()) {
+                    match try_ready!(inner.transport.next_token()) {
                         None => panic!("resultset: expected a token!"),
                         Some((last_pos, token)) => match token {
                             TdsResponseToken::ColMetaData(_) => {
@@ -131,7 +131,7 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
             try_ready!(inner.transport.poll_complete());
 
             loop {
-                let token = try_ready!(inner.transport.read_token());
+                let token = try_ready!(inner.transport.next_token());
                 match token {
                     None => panic!("query: expected token"),
                     Some((last_pos, token)) => match token {
@@ -188,7 +188,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
             try_ready!(inner.transport.poll_complete());
 
             loop {
-                match try_ready!(inner.transport.read_token()) {
+                match try_ready!(inner.transport.next_token()) {
                     Some((last_pos, token)) => match token {
                         TdsResponseToken::Row(_) => {
                             self.single_token = false;

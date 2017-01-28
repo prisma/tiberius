@@ -274,7 +274,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     self.state = SqlConnectionNewState::TokenStreamRecv;
                 },
                 SqlConnectionNewState::TokenStreamRecv => {
-                    let token = try_ready!(self.transport.read_token());
+                    let token = try_ready!(self.transport.next_token());
                     match token.map(|x| x.1) {
                         Some(TdsResponseToken::SSPI(bytes)) => {
                             assert!(self.sso_client.is_some());
@@ -346,7 +346,7 @@ impl<'a> ToIo<TcpStream> for &'a SocketAddr {
     type Result = FromErr<TcpStreamNew, TdsError>;
 
     fn to_io(self, handle: &Handle) -> Self::Result {
-        TcpStream::connect(self, handle).from_err::<TdsError, TdsError>()
+        TcpStream::connect(self, handle).from_err::<TdsError>()
     }
 }
 
@@ -674,11 +674,11 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 
 #[cfg(test)]
 mod tests {
-    use futures::{Future, Stream};
+    use futures::Future;
     use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
     use query::ExecFuture;
-    use super::{AuthMethod, BoxableIo, ConnectParams, SqlConnection, TdsError};
+    use super::{BoxableIo, SqlConnection, TdsError};
 
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
         let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");

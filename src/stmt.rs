@@ -8,7 +8,7 @@ use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
 use query::QueryStream;
-use tokens::{self, DoneStatus, TdsResponseToken, TokenColMetaData};
+use tokens::{DoneStatus, TdsResponseToken, TokenColMetaData};
 use types::{ColumnData, ToSql};
 use {BoxableIo, SqlConnection, StmtResult, TdsError};
 
@@ -110,7 +110,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
 
         // receive and handle the result of sp_prepare
         while !self.done {
-            let (do_ret, new_pos) = match try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.read_token()) {
+            let (do_ret, new_pos) = match try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.next_token()) {
                 Some((last_pos, token)) => match token {
                     TdsResponseToken::ColMetaData(meta) => {
                         if !meta.columns.is_empty() {

@@ -1,6 +1,9 @@
 //! protocol abstraction, mostly type definitions (meta)
 use std::borrow::Cow;
+use std::cmp;
 use std::io::{self, Cursor, Write};
+use std::mem;
+use futures::Sink;
 use tokio_core::io::Io;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use transport::TdsTransport;
@@ -349,7 +352,7 @@ impl<'a> LoginMessage<'a> {
     pub fn new() -> LoginMessage<'a> {
         LoginMessage {
             tds_version: FeatureLevel::SqlServerN,
-            packet_size: 8192,
+            packet_size: 4096,
             client_prog_ver: 0,
             client_pid: 0,
             connection_id: 0,
@@ -522,4 +525,111 @@ pub fn build_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::R
     let mut buf = cursor.into_inner();
     try!(header.serialize(&mut buf));
     Ok(buf)
+}
+
+/// a writer that splits the written data across multiple packets
+pub struct PacketWriter<'a, I: 'a + Io> {
+    transport: &'a mut TdsTransport<I>,
+    header: PacketHeader,
+    buf: Vec<u8>,
+}
+
+#[inline]
+fn new_packet_buf(capacity: usize) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(capacity);
+    buf.resize(HEADER_BYTES, 0);
+    buf
+}
+
+impl<'a, I: 'a + Io> PacketWriter<'a, I> {
+    pub fn new(transport: &'a mut TdsTransport<I>, header: PacketHeader) -> Self {
+        PacketWriter {
+            header: header,
+            buf: new_packet_buf(transport.packet_size),
+            transport: transport,
+        }
+    }
+
+    pub fn finalize(mut self) -> io::Result<()> {
+        self.header.status = PacketStatus::EndOfMessage;
+        self.flush()
+    }
+}
+
+impl<'a, I: Io> Write for PacketWriter<'a, I> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // fast path for small writes
+        if self.buf.capacity() - self.buf.len() > buf.len() {
+            self.buf.extend_from_slice(buf);
+            return Ok(buf.len());
+        }
+
+        let mut pending = buf;
+        while !pending.is_empty() {
+            let max_bytes = self.buf.capacity() - self.buf.len();
+            let (fitting, next) = pending.split_at(cmp::min(max_bytes, pending.len()));
+            self.buf.extend_from_slice(fitting);
+            if self.buf.capacity() <= self.buf.len() {
+                try!(self.flush());
+            }
+            pending = next;
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut buf = mem::replace(&mut self.buf, new_packet_buf(self.transport.packet_size));
+        if !buf.is_empty() {
+            // update the packet header
+            self.header.id = self.transport.next_id();
+            self.header.length = buf.len() as u16;
+            try!(self.header.serialize(&mut buf));
+            try!(self.transport.queue_vec(buf));
+        }
+        let _ = try!(self.transport.poll_complete());
+        Ok(())
+    }
+}
+
+pub struct PLPChunkWriter<W: Write> {
+    pub target: W,
+    pub buf: Vec<u8>,
+}
+
+impl<W: Write> io::Write for PLPChunkWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // fast path for small writes
+        if self.buf.capacity() - self.buf.len() > buf.len() {
+            self.buf.extend_from_slice(buf);
+            return Ok(buf.len());
+        }
+
+        let mut pending = buf;
+        while !pending.is_empty() {
+            let free_bytes = self.buf.capacity() - self.buf.len();
+            let boundary = cmp::min(pending.len(), free_bytes);
+            let (fitting, next) = pending.split_at(boundary);
+
+            // we can produce a whole chunk => write to the underlying buf
+            if fitting.len() == free_bytes {
+                try!(self.target.write_u32::<LittleEndian>(self.buf.capacity() as u32));
+                try!(self.target.write(&self.buf));
+                try!(self.target.write(fitting));
+                self.buf.truncate(0);
+            } else {
+                self.buf.extend_from_slice(fitting);
+            }
+            pending = next;
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if !self.buf.is_empty() {
+            try!(self.target.write_u32::<LittleEndian>(self.buf.len() as u32));
+            try!(self.target.write(&self.buf));
+            self.buf.truncate(0);
+        }
+        Ok(())
+    }
 }

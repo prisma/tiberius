@@ -1,31 +1,54 @@
 //! low level transport that deals with reading bytes from an underlying Io
 //! handling data split accross packets, etc.
 use std::collections::VecDeque;
+use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
-use std::io::{self, Cursor, Write};
+use std::io::{self, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::str;
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Sink, StartSend, Poll};
 use tokio_core::io::Io;
-use protocol::{self, PacketHeader, PacketStatus, PacketType};
+use protocol::{self, PacketHeader, PacketStatus};
 use tokens::{TdsResponseToken, Tokens, TokenColMetaData};
+use types::ColumnData;
 use {FromUint, TdsError};
 
-pub enum TokenWriteState {
-    RpcRequest { param_idx: usize, last_pos: usize },
-    _EnsureAtleast2Variants
+pub struct NVarcharPLPTyState {
+    pub size: usize,
+    pub bytes: Vec<u16>,
+    pub chunk_left: Option<usize>,
+    pub leftover: Option<u8>,
+}
+
+pub enum ReadTyState {
+    None,
+    NVarcharPLP(NVarcharPLPTyState),
+}
+
+pub enum ReadState {
+    None,
+    Generic(Tokens, Option<usize>),
+    Row(Vec<ColumnData<'static>>, ReadTyState),
+
+    Type(ReadTyState),
 }
 
 pub struct TdsTransport<I: Io> {
     io: I,
     header: Option<PacketHeader>,
-    /// whether the current token stream was read completely (EndOfMessage)
-    completed: bool,
-    requires_more: bool,
+    pub read_state: Rc<RefCell<ReadState>>,
+    /// whether to reset the position, if parsing this token fails (see comment below)
+    pub read_reset: bool,
+    /// the last position which will be resetted to if not enough data is available
+    /// needed for parsers where simply trying until enough data is available is not expensive enough
+    /// that writing a stateful parser would be worth it
+    pub last_pos: usize,
+    packets_left: bool,
     missing: usize,
     hrd: [u8; protocol::HEADER_BYTES],
     pub rd: TdsBuf,
@@ -33,8 +56,6 @@ pub struct TdsTransport<I: Io> {
     next_packet_id: u8,
     pub packet_size: usize,
     pub last_meta: Option<Arc<TokenColMetaData>>,
-    /// last serialization state
-    pub write_state: Option<TokenWriteState>,
 }
 
 impl<I: Io> Deref for TdsTransport<I> {
@@ -71,6 +92,19 @@ impl<R: io::Read> ReadSize<R> for u16 {
     fn read_size(reader: &mut R) -> io::Result<usize> {
          Ok(try!(reader.read_u16::<LittleEndian>()) as usize)
      }
+}
+
+pub struct NoLength;
+impl<W: io::Write> WriteSize<W> for NoLength {
+    fn write_size(_: &mut W, _: usize) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<W: io::Write> WriteSize<W> for u8 {
+    fn write_size(writer: &mut W, size: usize) -> io::Result<()> {
+        Ok(try!(writer.write_u8(size as u8)))
+    }
 }
 
 impl<W: io::Write> WriteSize<W> for u16 {
@@ -173,19 +207,23 @@ impl TdsBuf {
 
     /// get a mutable reference and
     // optionally ensure the underlying buffer has atleast a given length
-    pub fn get_mut(&mut self, required_length: Option<usize>) -> (&mut Vec<u8>, usize) {
+    pub fn get_mut(&mut self, required_length: Option<usize>) -> &mut [u8] {
         // the underlying buffer is only used by us, we can get exclusive access
         if Arc::get_mut(&mut self.buf).is_some() {
             let buf = Arc::get_mut(&mut self.buf).unwrap();
-            buf.drain(..self.start);
-            self.end -= self.start;
-            self.start = 0;
+
+            if self.start > 0 {
+                buf.drain(..self.start);
+                self.end -= self.start;
+                self.start = 0;
+            }
+
             if let Some(min_len) = required_length {
                 if buf.len() < min_len + self.end {
                     buf.resize(min_len + self.end, 0);
                 }
             }
-            return (buf, self.end)
+            return &mut buf[self.end..]
         }
 
         // can't get access, need a new buffer
@@ -206,7 +244,7 @@ impl TdsBuf {
         self.start = 0;
         self.buf = Arc::new(v);
         let new_buf = Arc::get_mut(&mut self.buf).unwrap();
-        (new_buf, self.end)
+        &mut new_buf[self.end..]
     }
 }
 
@@ -219,6 +257,12 @@ impl io::Read for TdsBuf {
         }
         self.start += written;
         Ok(written)
+    }
+
+    #[inline]
+    fn read_exact(&mut self, mut buf: &mut [u8]) -> io::Result<()> {
+        try!(self.read(buf));
+        Ok(())
     }
 }
 
@@ -249,12 +293,14 @@ impl fmt::Debug for TdsBuf {
 
 impl<I: Io> TdsTransport<I> {
     pub fn new(io: I) -> TdsTransport<I> {
-        let packet_size = 8192;
+        let packet_size = 4096;
         TdsTransport {
             io: io,
             header: None,
-            completed: false,
-            requires_more: false,
+            read_reset: true,
+            last_pos: 0,
+            read_state: Rc::new(RefCell::new(ReadState::None)),
+            packets_left: true,
             missing: protocol::HEADER_BYTES,
             hrd: [0; protocol::HEADER_BYTES],
             rd: TdsBuf::with_capacity(packet_size),
@@ -263,7 +309,6 @@ impl<I: Io> TdsTransport<I> {
             next_packet_id: 0,
             packet_size: packet_size,
             last_meta: None,
-            write_state: None,
         }
     }
 
@@ -280,66 +325,88 @@ impl<I: Io> TdsTransport<I> {
         Ok(())
     }
 
-    /// returns a tuple containing the last_pos (before the current token) and the parsed token := (last_pos, parsed_token)
-    pub fn read_token(&mut self) -> Poll<Option<(usize, TdsResponseToken)>, TdsError> {
-        loop {
-            let old_pos = self.position();
-            let ret = (|| {
-                if self.requires_more {
-                    return Ok(Async::NotReady);
-                }
+    pub fn take_read_state(&mut self) -> ReadState {
+        mem::replace(&mut *self.read_state.borrow_mut(), ReadState::None)
+    }
 
-                let raw_token = match self.read_u8() {
-                    Err(ref e) if e.kind() == ::std::io::ErrorKind::UnexpectedEof && self.completed => {
-                        return Ok(Async::Ready(None));
-                    },
-                    x => try!(x),
-                };
+    /// returns a parsed token
+    fn read_token(&mut self) -> Poll<TdsResponseToken, TdsError> {
+        let (token, size_hint) = {
+            let read_state = self.read_state.clone();
+            let mut read_state_mut = read_state.borrow_mut();
+
+            // read a token
+            if let ReadState::None = *read_state_mut {
+                let raw_token = try!(self.read_u8());
                 let token = Tokens::from_u8(raw_token.clone());
 
-                // read the associated length for a token, if available
-                let min_len = if let Some(ref token) = token {
-                    match *token {
-                        Tokens::SSPI | Tokens::EnvChange | Tokens::Info | Tokens::LoginAck => try!(self.read_u16::<LittleEndian>()) as usize,
-                        _ => 0,
-                    }
-                } else { 0 };
-
-                // check if we have enough data buffered (fast path)
-                if min_len > self.len() {
-                    return Ok(Async::NotReady)
-                }
-
-                match token {
-                    Some(token) => Ok(Async::Ready(Some(try_ready!(self.parse_token(token, min_len))))),
+                *read_state_mut = match token {
+                    Some(token) => ReadState::Generic(token, None),
                     None => panic!("invalid token received 0x{:x}", raw_token),
-                }
-            })();
-            let ret = match ret {
-                Err(TdsError::Io(ref e)) if e.kind() == ::std::io::ErrorKind::UnexpectedEof && !self.completed => Ok(Async::NotReady),
-                ret => ret,
+                };
+            }
+
+            // read the associated length for a token, if available
+            if let ReadState::Generic(token, None) = *read_state_mut {
+                *read_state_mut = match token {
+                    Tokens::SSPI | Tokens::EnvChange | Tokens::Info | Tokens::LoginAck => {
+                        ReadState::Generic(token, Some(try!(self.read_u16::<LittleEndian>()) as usize))
+                    },
+                    Tokens::Row => {
+                        let len = self.last_meta.as_ref().map(|lm| lm.columns.len()).unwrap_or(0);
+                        ReadState::Row(Vec::with_capacity(len), ReadTyState::None)
+                    },
+                    _ => {
+                        ReadState::Generic(token, Some(0))
+                    }
+                };
+            }
+
+            match *read_state_mut {
+                ReadState::Generic(token, Some(size_hint)) => (token, size_hint),
+                ReadState::Row(_, _) => (Tokens::Row, 0),
+                _ => unreachable!()
+            }
+        };
+        let ret = self.parse_token(token, size_hint);
+        if let Ok(Async::Ready(_)) = ret {
+            *self.read_state.borrow_mut() = ReadState::None;
+        }
+        ret
+    }
+
+    pub fn next_token(&mut self) -> Poll<Option<(usize, TdsResponseToken)>, TdsError> {
+        loop {
+            self.last_pos = self.position();
+
+            let ret = match self.read_token() {
+                Err(TdsError::Io(ref err)) if err.kind() == ::std::io::ErrorKind::UnexpectedEof => {
+                    Async::NotReady
+                },
+                x => try!(x)
             };
             match ret {
-                Ok(Async::NotReady) => {
-                    self.rd.start = old_pos;
-                    self.requires_more = true;
-                    let header = try_ready!(self.next_packet());
-                    assert_eq!(header.ty, PacketType::TabularResult);
-                    self.requires_more = false;
+                Async::NotReady if !self.packets_left && self.len() == 0 => {
+                    return Ok(Async::Ready(None))
                 },
-                // reset the read buffer position
-               Err(err) => {
-                    self.rd.start = old_pos;
-                    return Err(err)
-                },
-                Ok(Async::Ready(x)) => {
-                    if self.as_ref().is_empty() {
-                        self.completed = false;
+                Async::NotReady => {
+                    if self.read_reset {
+                        self.rd.start = self.last_pos;
                     }
-                    return Ok(Async::Ready(match x {
-                        None => None,
-                        Some(x) => Some((old_pos, x)),
-                    }));
+                    self.read_reset = true;
+                },
+                Async::Ready(ret) => {
+                    // we only limit the current token to the current stream of packets
+                    self.packets_left = true;
+                    return Ok(Async::Ready(Some((self.last_pos, ret))))
+                },
+            }
+            // if we aren't done with the packets, load more
+            if self.packets_left {
+                let header = try_ready!(self.next_packet());
+                // a token cannot span across multiple packets
+                if header.status == PacketStatus::EndOfMessage {
+                    self.packets_left = false;
                 }
             }
         }
@@ -355,18 +422,13 @@ impl<I: Io> TdsTransport<I> {
     pub fn next_packet(&mut self) -> Poll<PacketHeader, TdsError> {
         // read the header first
         if self.header.is_none() {
-            let offset = self.missing - protocol::HEADER_BYTES;
+            let offset = protocol::HEADER_BYTES - self.missing;
 
             while self.missing > 0 {
-                if self.io.poll_read().is_not_ready() {
-                    return Ok(Async::NotReady)
-                }
-
                 self.missing -= try_nb!(self.io.read(&mut self.hrd[offset..]))
             }
 
             let header = try!(PacketHeader::unserialize(&self.hrd));
-            self.completed = header.status == PacketStatus::EndOfMessage;
             self.missing = header.length as usize - protocol::HEADER_BYTES;
             self.header = Some(header);
         }
@@ -375,13 +437,9 @@ impl<I: Io> TdsTransport<I> {
         if self.header.is_some() {
             // make sure the packet body fits into the buffer
             while self.missing > 0 {
-                if self.io.poll_read().is_not_ready() {
-                    return Ok(Async::NotReady)
-                }
-
                 let count = {
-                    let (write_buf, offset) = self.rd.get_mut(Some(self.missing));
-                    try_nb!(self.io.read(&mut write_buf[offset..]))
+                    let write_buf = self.rd.get_mut(Some(self.missing));
+                    try_nb!(self.io.read(&mut write_buf[..self.missing]))
                 };
                 self.rd.end += count;
                 self.missing -= count;
@@ -420,102 +478,23 @@ impl<I: Io> Sink for TdsTransport<I> {
             }
         }
 
+        try_nb!(self.io.flush());
         if !self.wr.is_empty() {
             return Ok(Async::NotReady);
         }
-        try_nb!(self.io.flush());
         Ok(Async::Ready(()))
     }
 }
 
-pub fn write_varchar<S: WriteSize<Vec<u8>>>(target: &mut Cursor<Vec<u8>>, str_: &str, mut last_pos: usize) -> io::Result<(usize, usize)> {
-    let size_hint = mem::size_of::<S>();
-    let mut written_size = 0;
-    if last_pos < size_hint {
-        let mut buf: Vec<u8> = Vec::with_capacity(size_hint);
-        try!(S::write_size(&mut buf, str_.len()));
-        let (left_bytes, written_bytes) = try!(write_bytes_fragment(target, &buf, last_pos));
-        if left_bytes > 0 {
-            return Ok((left_bytes, written_bytes));
+pub trait PrimitiveWrites: Write {
+    fn write_varchar<S: WriteSize<Self>>(&mut self, str_: &str) -> io::Result<()> where Self: Sized;
+}
+impl<W: Write> PrimitiveWrites for W {
+    fn write_varchar<S: WriteSize<Self>>(&mut self, str_: &str) -> io::Result<()> {
+        try!(S::write_size(self, str_.len()));
+        for chr in str_.encode_utf16() {
+            try!(self.write_u16::<LittleEndian>(chr));
         }
-        written_size += written_bytes;
-        last_pos = size_hint;
+        Ok(())
     }
-    let (left_bytes, written_bytes) = try!(write_varchar_fragment(target, str_, last_pos - size_hint));
-    Ok((left_bytes, written_bytes + written_size))
-}
-
-pub fn write_varchar_fragment(target: &mut Cursor<Vec<u8>>, str_: &str, last_pos: usize) -> io::Result<(usize, usize)> {
-    write_varchar_fragment_limited(target, str_, last_pos, None)
-}
-
-pub fn write_varchar_fragment_limited(target: &mut Cursor<Vec<u8>>, str_: &str, last_pos: usize, writable_bytes: Option<usize>) -> io::Result<(usize, usize)> {
-    let byte_len = 2*str_.len();
-
-    let left_bytes = byte_len - last_pos;
-    let limit = match writable_bytes {
-        Some(x) => cmp::min(x, left_bytes),
-        None => left_bytes,
-    };
-    let mut writable_bytes = cmp::min(limit, target.get_ref().capacity() - target.get_ref().len());
-    let old_pos = target.position();
-    let mut start_delta = last_pos%2;
-    let str_pos = last_pos/2 - start_delta;
-
-    // UTF8 sequences only are 6 bytes at most
-    // find the first byte index which is a valid char boundary
-    let to_boundary = (0..6).position(|x| str_.is_char_boundary(str_pos - x)).unwrap_or(0);
-
-    let mut buf = [0u8; 2];
-    for chr in str_[str_pos-to_boundary..].encode_utf16().skip(to_boundary/2+start_delta) {
-        LittleEndian::write_u16(&mut buf, chr);
-        let end_idx = cmp::min(2, start_delta+writable_bytes);
-        let write_buf = &buf[start_delta..end_idx];
-        try!(target.write(write_buf));
-        writable_bytes -= write_buf.len();
-        if writable_bytes == 0 {
-            break;
-        }
-        start_delta = 0;
-    }
-    assert_eq!(writable_bytes, 0);
-
-    let written_bytes = (target.position() - old_pos) as usize;
-    Ok((byte_len - last_pos - written_bytes, written_bytes))
-}
-
-pub fn write_bytes_fragment(target: &mut Cursor<Vec<u8>>, bytes: &[u8], last_pos: usize) -> io::Result<(usize, usize)> {
-    let writeable_size = cmp::min(target.get_ref().capacity() - target.get_ref().len(), bytes.len() - last_pos);
-    let written_bytes = try!(target.write(&bytes[last_pos..last_pos+writeable_size]));
-    Ok((bytes.len() - last_pos - written_bytes, written_bytes))
-}
-
-pub fn write_u16_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: u16, last_pos: usize) -> io::Result<(usize, usize)> {
-    let mut buf = [0u8; 2];
-    B::write_u16(&mut buf, value);
-    write_bytes_fragment(target, &buf, last_pos)
-}
-
-pub fn write_u32_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: u32, last_pos: usize) -> io::Result<(usize, usize)> {
-    let mut buf = [0u8; 4];
-    B::write_u32(&mut buf, value);
-    write_bytes_fragment(target, &buf, last_pos)
-}
-
-pub fn write_u64_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: u64, last_pos: usize) -> io::Result<(usize, usize)> {
-    let mut buf = [0u8; 8];
-    B::write_u64(&mut buf, value);
-    write_bytes_fragment(target, &buf, last_pos)
-}
-
-pub fn write_f32_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: f32, last_pos: usize) -> io::Result<(usize, usize)> {
-    let mut buf = [0u8; 4];
-    B::write_f32(&mut buf, value);
-    write_bytes_fragment(target, &buf, last_pos)
-}
-
-pub fn write_f64_fragment<B: ByteOrder>(target: &mut Cursor<Vec<u8>>, value: f64, last_pos: usize) -> io::Result<(usize, usize)> {
-    let mut buf = [0u8; 8];
-    B::write_f64(&mut buf, value);
-    write_bytes_fragment(target, &buf, last_pos)
 }
