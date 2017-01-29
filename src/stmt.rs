@@ -52,7 +52,7 @@ impl Statement {
 }
 
 /// A future which handles the execution of a prepared statement and translates it
-/// into the wished result (e.g. QueryStream)
+/// into the wished result (e.g. `QueryStream`)
 pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
     err: Option<TdsError>,
     done: bool,

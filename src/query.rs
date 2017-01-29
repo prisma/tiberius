@@ -217,7 +217,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
 
         let ResultInner { conn, ret_conn } = self.inner.take().unwrap();
         ret_conn.complete(conn);
-        return Ok(Async::Ready(ret))
+        Ok(Async::Ready(ret))
     }
 }
 

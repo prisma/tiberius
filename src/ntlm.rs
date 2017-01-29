@@ -56,7 +56,7 @@ pub mod sso {
             }
         }
 
-        pub fn next_bytes<'a>(&mut self, in_bytes: Option<&'a [u8]>) -> Result<Option<ContextBuffer>, io::Error> {
+        pub fn next_bytes(&mut self, in_bytes: Option<&[u8]>) -> Result<Option<ContextBuffer>, io::Error> {
             unsafe {
                 let mut ctx = None;
                 let ctx_ptr = if let Some(ref mut ctx_ptr) = self.ctx {

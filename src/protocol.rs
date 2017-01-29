@@ -386,13 +386,13 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             self.option_flags_2 & !OF2_INTEGRATED_SECURITY
         };
         // write..
-        for val in [self.tds_version as u32, self.packet_size, self.client_prog_ver, self.client_pid, self.connection_id].into_iter() {
+        for val in &[self.tds_version as u32, self.packet_size, self.client_prog_ver, self.client_pid, self.connection_id] {
             try!(cursor.write_u32::<LittleEndian>(*val));
         }
-        for val in [self.option_flags_1.bits(), option_flags2.bits(), self.type_flags.bits(), self.option_flags_3.bits()].into_iter() {
+        for val in &[self.option_flags_1.bits(), option_flags2.bits(), self.type_flags.bits(), self.option_flags_3.bits()] {
             try!(cursor.write_u8(*val));
         }
-        for val in [self.client_timezone as u32, self.client_lcid].into_iter() {
+        for val in &[self.client_timezone as u32, self.client_lcid] {
             try!(cursor.write_u32::<LittleEndian>(*val));
         }
 
@@ -474,7 +474,7 @@ impl SerializeMessage for SspiMessage {
     fn serialize_message<I: Io>(&self, ctx: &mut TdsTransport<I>) -> io::Result<Vec<u8>> {
         let len = HEADER_BYTES + self.0.len();
         let mut buf: Vec<u8> = vec![0; len];
-        try!((&mut buf[HEADER_BYTES..]).write(&self.0));
+        try!((&mut buf[HEADER_BYTES..]).write_all(&self.0));
 
         // build the header
         let header = PacketHeader {
@@ -613,8 +613,8 @@ impl<W: Write> io::Write for PLPChunkWriter<W> {
             // we can produce a whole chunk => write to the underlying buf
             if fitting.len() == free_bytes {
                 try!(self.target.write_u32::<LittleEndian>(self.buf.capacity() as u32));
-                try!(self.target.write(&self.buf));
-                try!(self.target.write(fitting));
+                try!(self.target.write_all(&self.buf));
+                try!(self.target.write_all(fitting));
                 self.buf.truncate(0);
             } else {
                 self.buf.extend_from_slice(fitting);
@@ -627,7 +627,7 @@ impl<W: Write> io::Write for PLPChunkWriter<W> {
     fn flush(&mut self) -> io::Result<()> {
         if !self.buf.is_empty() {
             try!(self.target.write_u32::<LittleEndian>(self.buf.len() as u32));
-            try!(self.target.write(&self.buf));
+            try!(self.target.write_all(&self.buf));
             self.buf.truncate(0);
         }
         Ok(())

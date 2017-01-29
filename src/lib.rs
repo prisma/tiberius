@@ -1,7 +1,7 @@
 //! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
 //!
 //! # A simple example
-//! **Warning:** Do not use simple_query with user-specified data. Resort to prepared statements for that.
+//! **Warning:** Do not use `simple_query` with user-specified data. Resort to prepared statements for that.
 //!
 //! ```rust
 //! extern crate futures;
@@ -122,7 +122,7 @@ fn get_driver_version() -> u64 {
     env!("CARGO_PKG_VERSION")
         .splitn(6, '.')
         .enumerate()
-        .fold(0u64, |acc, part| acc | (part.1.parse::<u64>().unwrap() << part.0*8))
+        .fold(0u64, |acc, part| acc | (part.1.parse::<u64>().unwrap() << (part.0*8)))
 }
 
 /// A unified error enum that contains several errors that might occurr during the lifecycle of this driver
@@ -205,7 +205,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                     return Err(e.take().unwrap())
                 },
                 SqlConnectionNew::Next(ref mut future @ Some(_)) => {
-                    let _ = try_ready!(future.as_mut().unwrap().poll());
+                    try_ready!(future.as_mut().unwrap().poll());
                     let trans = future.take().unwrap().transport;
                     let conn = InnerSqlConnection {
                         transport: trans,
@@ -437,7 +437,7 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
             input = &input[key_end+1..];
             // check if an escaped value (e.g. 'my password contains a;' or 'or a \' #kappa' follows)
             let escaped = input.starts_with('\'');
-            let end = input.bytes().position(|x| x == b';').unwrap_or(input.len().saturating_sub(1));
+            let end = input.bytes().position(|x| x == b';').unwrap_or_else(|| input.len().saturating_sub(1));
             let mut tmp = None;
 
             let value = if !escaped {
@@ -472,7 +472,7 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
             match key.as_str() {
                 "server" => {
                     if value.starts_with("tcp:") {
-                        let parts: Vec<_> = value[4..].split(",").collect();
+                        let parts: Vec<_> = value[4..].split(',').collect();
                         assert!(parts.len() <= 2 && !parts.is_empty());
                         let addr = match (parts[0], parts[1].parse::<u16>()?).to_socket_addrs()?.nth(0) {
                             None => return Err(TdsError::Conversion("connection string: could not resolve server address".into())),
@@ -650,14 +650,14 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Execute a prepared statement and return each resultset and their associated rows
     /// Usually only one resultset will be interesting for which you can use
     /// [`for_each_row`](struct.StmtStream.html#method.for_each_row)
-    pub fn query<'a>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, QueryStream<I>> {
+    pub fn query(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, QueryStream<I>> {
         self.internal_exec(stmt, params)
     }
 
     /// Execute a prepared statement and return the affected rows for each resultset
     ///
     /// You can access each resultset (in most cases only one) using [`for_each`](struct.StmtStream.html#method.for_each)
-    pub fn exec<'a>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, ExecFuture<I>> {
+    pub fn exec(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, ExecFuture<I>> {
         self.internal_exec(stmt, params)
     }
 

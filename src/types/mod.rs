@@ -194,7 +194,7 @@ impl TypeInfo {
             };
             return Ok(Async::Ready(vty))
         }
-        return Err(TdsError::Protocol(format!("invalid or unsupported column type: {:?}", ty).into()))
+        Err(TdsError::Protocol(format!("invalid or unsupported column type: {:?}", ty).into()))
     }
 }
 
@@ -418,39 +418,39 @@ impl<'a> ColumnData<'a> {
             ColumnData::Bit(ref val) => try!(target.write(&[VarLenType::Bitn as u8, 1, 1, *val as u8]).map(|_| ())),
             ColumnData::I8(ref val) => try!(target.write(&[VarLenType::Intn as u8, 1, 1, *val as u8]).map(|_| ())),
             ColumnData::I16(ref val) => {
-                try!(target.write(&[VarLenType::Intn as u8, 2, 2]));
+                try!(target.write_all(&[VarLenType::Intn as u8, 2, 2]));
                 try!(target.write_i16::<LittleEndian>(*val));
             },
             ColumnData::I32(ref val) => {
-                try!(target.write(&[VarLenType::Intn as u8, 4, 4]));
+                try!(target.write_all(&[VarLenType::Intn as u8, 4, 4]));
                 try!(target.write_i32::<LittleEndian>(*val));
             },
             ColumnData::I64(ref val) => {
-                try!(target.write(&[VarLenType::Intn as u8, 8, 8]));
+                try!(target.write_all(&[VarLenType::Intn as u8, 8, 8]));
                 try!(target.write_i64::<LittleEndian>(*val));
             },
             ColumnData::F32(ref val) => {
-                try!(target.write(&[VarLenType::Floatn as u8, 4, 4]));
+                try!(target.write_all(&[VarLenType::Floatn as u8, 4, 4]));
                 try!(target.write_f32::<LittleEndian>(*val));
             },
             ColumnData::F64(ref val) => {
-                try!(target.write(&[VarLenType::Floatn as u8, 8, 8]));
+                try!(target.write_all(&[VarLenType::Floatn as u8, 8, 8]));
                 try!(target.write_f64::<LittleEndian>(*val));
             },
             ColumnData::Guid(ref guid) => {
-                try!(target.write(&[VarLenType::Guid as u8, 0x10, 0x10]));
-                try!(target.write(guid.as_bytes()));
+                try!(target.write_all(&[VarLenType::Guid as u8, 0x10, 0x10]));
+                try!(target.write_all(guid.as_bytes()));
             },
             ColumnData::String(ref str_) if str_.len() <= 8000 => {
                 try!(target.write_u8(VarLenType::NVarchar as u8));
                 try!(target.write_u16::<LittleEndian>(8000)); // NVARCHAR(4000)
-                try!(target.write(&[0; 5])); // raw collation
+                try!(target.write_all(&[0; 5])); // raw collation
                 try!(target.write_u16::<LittleEndian>(2*str_.len() as u16));
                 try!(target.write_varchar::<NoLength>(str_));
             },
             ColumnData::String(ref str_) => {
                 // length: 0xffff and raw collation
-                try!(target.write(&[VarLenType::NVarchar as u8, 0xff, 0xff, 0, 0, 0, 0, 0]));
+                try!(target.write_all(&[VarLenType::NVarchar as u8, 0xff, 0xff, 0, 0, 0, 0, 0]));
                 try!(target.write_u64::<LittleEndian>(2*str_.len() as u64));
 
                 // write PLP chunks
@@ -568,7 +568,7 @@ impl<'a> ToSql for &'a str {
     fn to_sql(&self) -> &'static str {
         match self.len() {
             0...8000 => "NVARCHAR(4000)",
-            8000...MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
+            8001...MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
             _ => "NTEXT",
         }
     }

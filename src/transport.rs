@@ -2,7 +2,6 @@
 //! handling data split accross packets, etc.
 use std::collections::VecDeque;
 use std::cell::RefCell;
-use std::cmp;
 use std::fmt;
 use std::io::{self, Write};
 use std::mem;
@@ -250,17 +249,21 @@ impl TdsBuf {
 }
 
 impl io::Read for TdsBuf {
+    /// this is basically an exact read (always returns the size of the input buffer)
+    /// or an error that there aren't enough bytes
     fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        let len = cmp::min(buf.len(), self.len());
-        let written = try!(buf.write(&self.as_ref()[..len]));
-        if written == 0 {
+        if buf.len() > self.len() {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "not enough bytes"));
         }
+        let len = buf.len();
+        let written = try!(buf.write(&self.as_ref()[..len]));
+        assert_eq!(written, len);
         self.start += written;
         Ok(written)
     }
 
     #[inline]
+    #[allow(unused_io_amount)]
     fn read_exact(&mut self, mut buf: &mut [u8]) -> io::Result<()> {
         try!(self.read(buf));
         Ok(())
@@ -339,7 +342,7 @@ impl<I: Io> TdsTransport<I> {
             // read a token
             if let ReadState::None = *read_state_mut {
                 let raw_token = try!(self.read_u8());
-                let token = Tokens::from_u8(raw_token.clone());
+                let token = Tokens::from_u8(raw_token);
 
                 *read_state_mut = match token {
                     Some(token) => ReadState::Generic(token, None),

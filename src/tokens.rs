@@ -532,7 +532,7 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
             // status flag
             try!(writer.write_u8(param.flags.bits));
             // recalculate the position for the value (offset)
-            let ret = try!(param.value.serialize(&mut writer));
+            try!(param.value.serialize(&mut writer));
         }
 
         // we're officially done with this token stream, flush a last time
