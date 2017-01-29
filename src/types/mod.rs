@@ -241,19 +241,33 @@ impl<'a> ColumnData<'a> {
                         ColumnData::Guid(Cow::Owned(Guid(data)))
                     },
                     VarLenType::NVarchar => {
+                        let old_read_reset = trans.read_reset;
+                        trans.read_reset = false;
+                        // reduce some boilerplate by using RefCell/Rc
+                        let read_state = trans.read_state.clone();
+                        let mut read_state_mut = read_state.borrow_mut();
                         // check if PLP or normal size
                         if *len < 0xffff {
-                            let len = trans.read_u16::<LittleEndian>()? as usize;
-                            let data: Vec<u16> = try!(vec![0u16; len/2].into_iter().map(|_| trans.read_u16::<LittleEndian>()).collect());
-                            let str_ = String::from_utf16(&data[..])?;
+                            match *read_state_mut {
+                                ReadState::Type(ReadTyState::NVarchar(_)) => (),
+                                _ => {
+                                    let len = try!(trans.read_u16::<LittleEndian>()) as usize;
+                                    *read_state_mut = ReadState::Type(ReadTyState::NVarchar(Vec::with_capacity(len/2)));
+                                }
+                            };
+                            let mut target = match *read_state_mut {
+                                ReadState::Type(ReadTyState::NVarchar(ref mut buf)) => buf,
+                                _ => unreachable!()
+                            };
+                            while target.capacity() > target.len() {
+                                target.push(try!(trans.read_u16::<LittleEndian>()));
+                            }
+                            let str_ = try!(String::from_utf16(&target[..]));
+                            // make sure we do not skip before what we've already read for sure
+                            trans.read_reset = old_read_reset;
+                            trans.last_pos = trans.position();
                             ColumnData::String(str_.into())
                         } else {
-                            let old_read_reset = trans.read_reset;
-                            trans.read_reset = false;
-                            // reduce some boilerplate by using RefCell/Rc
-                            let read_state = trans.read_state.clone();
-                            let mut read_state_mut = read_state.borrow_mut();
-
                             match *read_state_mut {
                                 // we already have a state
                                 ReadState::Type(ReadTyState::NVarcharPLP(_)) => (),

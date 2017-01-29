@@ -28,6 +28,7 @@ pub struct NVarcharPLPTyState {
 pub enum ReadTyState {
     None,
     NVarcharPLP(NVarcharPLPTyState),
+    NVarchar(Vec<u16>),
 }
 
 pub enum ReadState {
