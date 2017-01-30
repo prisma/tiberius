@@ -202,7 +202,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                         params: pairs.take().map(|x| x.1).unwrap(),
                         state: SqlConnectionNewState::PreLoginSend,
                         transport: TdsTransport::new(trans),
-                        sso_client: None,
+                        sspi_client: None,
                     };
                     SqlConnectionNew::Next(Some(future))
                 },
@@ -229,7 +229,7 @@ pub struct SqlConnectionFuture<I: BoxableIo> {
     params: ConnectParams,
     state: SqlConnectionNewState,
     transport: TdsTransport<I>,
-    sso_client: Option<ntlm::sso::NtlmSso>,
+    sspi_client: Option<ntlm::NtlmSspi>,
 }
 
 impl<I: BoxableIo> SqlConnectionFuture<I> {
@@ -263,10 +263,19 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                 SqlConnectionNewState::LoginSend => {
                     let mut login_message = LoginMessage::new();
 
-                    if let AuthMethod::SSPI_SSO = self.params.auth {
-                        let (sso_client, buf) = try!(ntlm::sso::NtlmSso::new());
-                        login_message.integrated_security = Some(buf.to_owned());
-                        self.sso_client = Some(sso_client);
+                    // authentication
+                    match self.params.auth {
+                        #[cfg(windows)]
+                        AuthMethod::SSPI_SSO => {
+                            let (sso_client, buf) = try!(ntlm::sso::NtlmSso::new());
+                            login_message.integrated_security = Some(buf.to_owned());
+                            self.sspi_client = Some(ntlm::NtlmSspi::SSO(sso_client));
+                        },
+                        AuthMethod::SqlServer(ref username, ref password) => {
+                            login_message.username = username.clone();
+                            login_message.password = password.clone();
+                        },
+                        AuthMethod::_DUMMY => unreachable!(),
                     }
 
                     try_nb!(self.queue_simple_message(login_message));
@@ -282,13 +291,13 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     let token = try_ready!(self.transport.next_token());
                     match token.map(|x| x.1) {
                         Some(TdsResponseToken::SSPI(bytes)) => {
-                            assert!(self.sso_client.is_some());
-                            match try!(self.sso_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
+                            assert!(self.sspi_client.is_some());
+                            match try!(self.sspi_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
                                 Some(bytes) => {
-                                    try!(self.queue_simple_message(SspiMessage(bytes.to_vec())));
+                                    try!(self.queue_simple_message(SspiMessage(bytes)));
                                     self.state = SqlConnectionNewState::TokenStreamSend;
                                 },
-                                None => self.sso_client = None,
+                                None => self.sspi_client = None,
                             }
                         },
                         Some(TdsResponseToken::Done(done)) => {
@@ -371,10 +380,11 @@ impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
 
 /// The authentication method that should be used during authentication
 pub enum AuthMethod {
+    SqlServer(Cow<'static, str>, Cow<'static, str>),
     /// Single sign on using the local windows credentials (windows-only)
     #[cfg(windows)]
     SSPI_SSO,
-    _DUMMY_AUTH_METHOD
+    _DUMMY
 }
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
@@ -430,7 +440,7 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
 
         let mut target: Option<DynamicConnectionTarget> = None;
         let mut connect_params = ConnectParams {
-            auth: AuthMethod::_DUMMY_AUTH_METHOD
+            auth: AuthMethod::SqlServer("".into(), "".into()),
         };
 
         while !input.is_empty() {
@@ -486,8 +496,23 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                         target = Some(DynamicConnectionTarget::Tcp(addr));
                     }
                 },
+                #[cfg(windows)]
                 "integratedsecurity" if ["true", "yes", "sspi"].contains(&value.to_lowercase().as_str()) => {
                     connect_params.auth = AuthMethod::SSPI_SSO;
+                },
+                "uid" | "username" | "user" => {
+                    if let AuthMethod::SqlServer(ref mut username, _) = connect_params.auth {
+                        *username = value.to_owned().into();
+                    } else {
+                        connect_params.auth = AuthMethod::SqlServer(value.to_owned().into(), "".into());
+                    }
+                },
+                "password" | "pwd" => {
+                    if let AuthMethod::SqlServer(_, ref mut password) = connect_params.auth {
+                        *password = value.to_owned().into();
+                    } else {
+                        connect_params.auth = AuthMethod::SqlServer("".into(), value.to_owned().into());
+                    }
                 },
                 _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
             }
@@ -692,6 +717,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
     use futures::{Future, BoxFuture};
     use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
@@ -699,8 +725,13 @@ mod tests {
     use stmt::ResultStreamExt;
     use super::{BoxableIo, SqlConnection, Transaction, TdsError};
 
+    /// allow to modify the
+    pub fn connection_string() -> String {
+        env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or("server=tcp:127.0.0.1,1433;integratedSecurity=true;".to_owned())
+    }
+
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
-        let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
+        let future = SqlConnection::connect(lp.handle(), connection_string().as_str());
         lp.run(future).unwrap()
     }
 
@@ -779,7 +810,7 @@ mod tests {
     #[test]
     fn transaction() {
         let mut lp = Core::new().unwrap();
-        let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+        let connection_string = connection_string();
 
         fn check_test_value<I: BoxableIo + 'static>(conn: SqlConnection<I>, value: i32) -> BoxFuture<SqlConnection<I>, TdsError> {
             conn.simple_query("SELECT test FROM #temp;")
@@ -807,7 +838,7 @@ mod tests {
                 .boxed()
         }
 
-        let future = SqlConnection::connect(lp.handle(), connection_string)
+        let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
             .and_then(|conn| conn.simple_exec("CREATE TABLE #Temp(test int); INSERT INTO #Temp (test) VALUES (42);").and_then(|r| r).collect())
             .and_then(|(_, conn)| conn.transaction())
             .and_then(|trans| update_test_value(trans, false))
@@ -821,9 +852,9 @@ mod tests {
     #[test]
     fn todo_doctest() {
         let mut lp = Core::new().unwrap();
-        let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+        let connection_string = connection_string();
 
-        let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
+        let future = SqlConnection::connect(lp.handle(), connection_string.as_str()).and_then(|conn| {
             ::futures::finished((conn.prepare("SELECT @P1 + @P2"), conn))
         }).and_then(|(stmt, conn)| {
             fn handle_row(row: ::query::QueryRow) -> ::TdsResult<()> {

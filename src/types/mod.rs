@@ -580,6 +580,7 @@ mod tests {
     use super::Guid;
     use stmt::ResultStreamExt;
     use SqlConnection;
+    use tests::connection_string;
     use std::iter;
 
     /// prepares a statement which selects a passed value
@@ -591,7 +592,7 @@ mod tests {
                 #[test]
                 fn $name() {
                     let mut lp = Core::new().unwrap();
-                    let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;")
+                    let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
                         .map(|conn| (conn.prepare("SELECT @P1"), conn))
                         .and_then(|(stmt, conn)| {
                             conn.query(&stmt, &[&$val]).for_each_row(|row| {
@@ -624,7 +625,7 @@ mod tests {
     #[test]
     fn test_decimal_numeric() {
         let mut lp = Core::new().unwrap();
-        let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;")
+        let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
             .and_then(|conn| conn.simple_query("select 18446744073709554899982888888888").for_each_row(|row| {
                 assert_eq!(row.get::<_, f64>(0), 18446744073709554000000000000000f64);
                 Ok(())
@@ -635,7 +636,7 @@ mod tests {
     #[test]
     fn test_money() {
         let mut lp = Core::new().unwrap();
-        let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;")
+        let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
             .and_then(|conn| conn.simple_query("select cast(32.32 as smallmoney), cast(3333333 as money)").for_each_row(|row| {
                 assert_eq!(row.get::<_, f64>(0), 32.32f64);
                 assert_eq!(row.get::<_, f64>(1), 3333333f64);

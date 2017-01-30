@@ -1,4 +1,23 @@
 ///! windows authentication for TDS
+use std::io;
+
+pub enum NtlmSspi {
+    #[cfg(windows)]
+    SSO(sso::NtlmSso),
+    _DUMMY
+}
+
+impl NtlmSspi {
+     pub fn next_bytes(&mut self, in_bytes: Option<&[u8]>) -> Result<Option<Vec<u8>>, io::Error> {
+         match *self {
+             #[cfg(windows)]
+             NtlmSspi::SSO(ref mut sso_client) => {
+                 Ok(try!(sso_client.next_bytes(in_bytes)).map(|x| x.to_vec()))
+             },
+             NtlmSspi::_DUMMY => unreachable!()
+         }
+     }
+}
 
 #[cfg(windows)]
 pub mod sso {
