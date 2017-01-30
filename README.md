@@ -1,4 +1,5 @@
 # Tiberius
+[![Build status](https://ci.appveyor.com/api/projects/status/ei34it5ppntytrev/branch/master?svg=true)](https://ci.appveyor.com/project/steffengy/tiberius/branch/master)
 A native TDS (MSSQL) 7.4 driver for Rust
 
 The new async rewrite is in progress in the master now.  
