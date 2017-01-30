@@ -10,6 +10,7 @@
 //! use futures::Future;
 //! use tokio_core::reactor::Core;
 //! use tiberius::SqlConnection;
+//! use tiberius::stmt::ResultStreamExt;
 //!
 //! fn main() {
 //!     let mut lp = Core::new().unwrap();
@@ -47,6 +48,7 @@ use std::io;
 use futures::{Async, BoxFuture, Future, Poll, Sink};
 use futures::sync::oneshot;
 use futures::future::FromErr;
+use futures_state_stream::StateStream;
 use tokio_core::io::Io;
 use tokio_core::net::{TcpStream, TcpStreamNew};
 use tokio_core::reactor::Handle;
@@ -105,6 +107,7 @@ mod types;
 mod tokens;
 pub mod query;
 pub mod stmt;
+mod transaction;
 
 use transport::TdsTransport;
 use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
@@ -112,6 +115,8 @@ use types::{ColumnData, ToSql};
 use tokens::{TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, WriteToken};
 use query::{ResultSetStream, QueryStream, ExecFuture};
 use stmt::{Statement, StmtStream};
+use transaction::new_transaction;
+pub use transaction::Transaction;
 
 lazy_static! {
     #[doc(hidden)]
@@ -231,7 +236,7 @@ impl<I: BoxableIo> SqlConnectionFuture<I> {
     /// Queues a simple message which serializes to ONE packet
     pub fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
         let vec = try!(m.serialize_message(&mut self.transport));
-        self.transport.queue_vec(vec)
+        self.transport.inner.queue_vec(vec)
     }
 }
 
@@ -247,11 +252,11 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     self.state = SqlConnectionNewState::PreLoginRecv;
                 },
                 SqlConnectionNewState::PreLoginRecv => {
-                    try_ready!(self.transport.poll_complete());
-                    let header = try_ready!(self.transport.next_packet());
+                    try_ready!(self.transport.inner.poll_complete());
+                    let header = try_ready!(self.transport.inner.next_packet());
                     assert_eq!(header.ty, PacketType::TabularResult);
                     // parse the prelogin packet
-                    let buf = self.transport.get_packet(header.length as usize);
+                    let buf = self.transport.inner.get_packet(header.length as usize);
                     let msg = try!(buf.as_ref().unserialize_message(&mut self.transport));
                     self.state = SqlConnectionNewState::LoginSend;
                 },
@@ -268,8 +273,8 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     self.state = SqlConnectionNewState::LoginRecv;
                 },
                 SqlConnectionNewState::LoginRecv => {
-                    try_ready!(self.transport.poll_complete());
-                    let header = try_ready!(self.transport.next_packet());
+                    try_ready!(self.transport.inner.poll_complete());
+                    let header = try_ready!(self.transport.inner.next_packet());
                     assert_eq!(header.ty, PacketType::TabularResult);
                     self.state = SqlConnectionNewState::TokenStreamRecv;
                 },
@@ -296,7 +301,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     }
                 },
                 SqlConnectionNewState::TokenStreamSend => {
-                    try_ready!(self.transport.poll_complete());
+                    try_ready!(self.transport.inner.poll_complete());
                     self.state = SqlConnectionNewState::TokenStreamRecv;
                 }
             }
@@ -516,11 +521,11 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         let mut inner = self.borrow_mut();
 
         let batch_packet = try!(protocol::build_sql_batch(&mut inner.transport, &sql));
-        try!(inner.transport.queue_vec(batch_packet));
+        try!(inner.transport.inner.queue_vec(batch_packet));
 
         // attempt to send right now, if it works great, if not ready yet, it will be done later
         // simply ensures that data is sent as fast as possible
-        let _ = try!(inner.transport.poll_complete());
+        let _ = try!(inner.transport.inner.poll_complete());
         Ok(())
     }
 
@@ -661,6 +666,19 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         self.internal_exec(stmt, params)
     }
 
+    /// Start a transaction
+    pub fn transaction(self) -> BoxFuture<Transaction<I>, TdsError> {
+        self.simple_exec("set implicit_transactions on")
+            .and_then(|resultset| resultset)
+            .collect()
+            .and_then(|(results, conn)| {
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0], 0);
+                Ok(new_transaction(conn))
+            })
+            .boxed()
+    }
+
     /// Create a statement associated to a given SQL which can be executed later on
     ///
     /// This is a lazy operation and will not do anything until the first call.
@@ -674,11 +692,12 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 
 #[cfg(test)]
 mod tests {
-    use futures::Future;
+    use futures::{Future, BoxFuture};
     use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
     use query::ExecFuture;
-    use super::{BoxableIo, SqlConnection, TdsError};
+    use stmt::ResultStreamExt;
+    use super::{BoxableIo, SqlConnection, Transaction, TdsError};
 
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
         let future = SqlConnection::connect(lp.handle(), "server=tcp:127.0.0.1,1433;integratedSecurity=true;");
@@ -752,6 +771,51 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let mut c1 = new_connection(&mut lp);
         helper_ddl_exec(c1.simple_exec("DECLARE @Mojo int"), &mut lp);
+    }
+
+    /// This test tests that the old value is returned after a rollback and the new value after a commit
+    /// It also checks if changing the value generally works
+    /// (1 check within the transaction and 1 after the rollback/commit, 4 checks in sum)
+    #[test]
+    fn transaction() {
+        let mut lp = Core::new().unwrap();
+        let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+
+        fn check_test_value<I: BoxableIo + 'static>(conn: SqlConnection<I>, value: i32) -> BoxFuture<SqlConnection<I>, TdsError> {
+            conn.simple_query("SELECT test FROM #temp;")
+                .for_each_row(move |row| {
+                    let val: i32 = row.get(0);
+                    assert_eq!(val, value);
+                    Ok(())
+                })
+                .boxed()
+        }
+
+        fn update_test_value<I: BoxableIo + 'static>(transaction: Transaction<I>, commit: bool) -> BoxFuture<SqlConnection<I>, TdsError> {
+            transaction.simple_exec("UPDATE #Temp SET test=44;")
+                .and_then(|result| result).collect()
+                .and_then(|(_, trans)| trans.simple_query("SELECT test FROM #Temp;").for_each_row(|row| {
+                    let val: i32 = row.get(0);
+                    assert_eq!(val, 44i32);
+                    Ok(())
+                }))
+                .and_then(move |trans| if commit {
+                    trans.commit()
+                } else {
+                    trans.rollback()
+                })
+                .boxed()
+        }
+
+        let future = SqlConnection::connect(lp.handle(), connection_string)
+            .and_then(|conn| conn.simple_exec("CREATE TABLE #Temp(test int); INSERT INTO #Temp (test) VALUES (42);").and_then(|r| r).collect())
+            .and_then(|(_, conn)| conn.transaction())
+            .and_then(|trans| update_test_value(trans, false))
+            .and_then(|conn| check_test_value(conn, 42))
+            .and_then(|conn| conn.transaction())
+            .and_then(|trans| update_test_value(trans, true))
+            .and_then(|conn| check_test_value(conn, 44));
+        lp.run(future).unwrap();
     }
 
     #[test]

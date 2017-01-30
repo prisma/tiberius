@@ -54,7 +54,7 @@ impl<I: Io> TdsTransport<I> {
     pub fn parse_token(&mut self, token: Tokens, min_len: usize) -> Poll<TdsResponseToken, TdsError> {
         match token {
             Tokens::SSPI => {
-                if let Some(bytes) = self.read_bytes(min_len) {
+                if let Some(bytes) = self.inner.read_bytes(min_len) {
                     return Ok(Async::Ready(TdsResponseToken::SSPI(bytes)))
                 }
                 Ok(Async::NotReady)
@@ -68,7 +68,7 @@ impl<I: Io> TdsTransport<I> {
             Tokens::DoneInProc => TokenDoneInProc::parse_token(self),
             Tokens::Row => TokenRow::parse_token(self),
             Tokens::ReturnStatus => {
-                let val = try!(self.read_u32::<LittleEndian>());
+                let val = try!(self.inner.read_u32::<LittleEndian>());
                 Ok(Async::Ready(TdsResponseToken::ReturnStatus(val)))
             },
             Tokens::ReturnValue => TokenReturnValue::parse_token(self),
@@ -81,6 +81,9 @@ pub enum TokenEnvChange {
     Database(TdsBuf, TdsBuf),
     PacketSize(u32, u32),
     SqlCollation(TdsBuf, TdsBuf),
+    BeginTransaction(u64),
+    RollbackTransaction(u64),
+    CommitTransaction(u64),
 }
 
 #[repr(u8)]
@@ -113,25 +116,42 @@ uint_to_enum!(EnvChangeTy, Database, Language, CharacterSet, PacketSize, Unicode
 
 impl<I: Io> ParseToken<I> for TokenEnvChange {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
-        let ty = try!(trans.read_u8());
+        let ty = try!(trans.inner.read_u8());
         let token = match EnvChangeTy::from_u8(ty) {
             Some(EnvChangeTy::Database) => {
-                let new_value = try_ready!(trans.read_varchar::<u8>(false));
-                let old_value = try_ready!(trans.read_varchar::<u8>(false));
+                let new_value = try_ready!(trans.inner.read_varchar::<u8>(false));
+                let old_value = try_ready!(trans.inner.read_varchar::<u8>(false));
                 TokenEnvChange::Database(new_value, old_value)
             },
             Some(EnvChangeTy::PacketSize) => {
-                let new_value = try_ready!(trans.read_varchar::<u8>(false));
-                let old_value = try_ready!(trans.read_varchar::<u8>(false));
+                let new_value = try_ready!(trans.inner.read_varchar::<u8>(false));
+                let old_value = try_ready!(trans.inner.read_varchar::<u8>(false));
                 let new_size = try!(new_value.as_str().parse::<u32>());
                 let old_size = try!(old_value.as_str().parse::<u32>());
-                trans.packet_size = new_size as usize;
                 TokenEnvChange::PacketSize(new_size, old_size)
             },
             Some(EnvChangeTy::SqlCollation) => {
-                let new_value = try_ready!(trans.read_varbyte::<u8>());
-                let old_value = try_ready!(trans.read_varbyte::<u8>());
+                let new_value = try_ready!(trans.inner.read_varbyte::<u8>());
+                let old_value = try_ready!(trans.inner.read_varbyte::<u8>());
                 TokenEnvChange::SqlCollation(new_value, old_value)
+            },
+            Some(EnvChangeTy::BeginTransaction) => {
+                assert_eq!(try!(trans.inner.read_u8()), 8);
+                let new_value = try!(trans.inner.read_u64::<LittleEndian>());
+                let old_value = try!(trans.inner.read_u8());
+                assert_eq!(old_value, 0);
+                TokenEnvChange::BeginTransaction(new_value)
+            },
+            Some(ty @ EnvChangeTy::RollbackTransaction) | Some(ty @ EnvChangeTy::CommitTransaction) => {
+                let new_value = try!(trans.inner.read_u8());
+                assert_eq!(new_value, 0);
+                assert_eq!(try!(trans.inner.read_u8()), 8);
+                let old_value = try!(trans.inner.read_u64::<LittleEndian>());
+                if let EnvChangeTy::RollbackTransaction = ty {
+                    TokenEnvChange::RollbackTransaction(old_value)
+                } else {
+                    TokenEnvChange::CommitTransaction(old_value)
+                }
             },
             _ => panic!("unimplemented env change ty: {:x}", ty),
         };
@@ -156,13 +176,13 @@ pub struct TokenInfo {
 impl<I: Io> ParseToken<I> for TokenInfo {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
         let token = TokenInfo {
-            number: try!(trans.read_u32::<LittleEndian>()),
-            state: try!(trans.read_u8()),
-            class: try!(trans.read_u8()),
-            message: try_ready!(trans.read_varchar::<u16>(false)),
-            server: try_ready!(trans.read_varchar::<u8>(false)),
-            procedure: try_ready!(trans.read_varchar::<u8>(false)),
-            line: try!(trans.read_u32::<LittleEndian>()),
+            number: try!(trans.inner.read_u32::<LittleEndian>()),
+            state: try!(trans.inner.read_u8()),
+            class: try!(trans.inner.read_u8()),
+            message: try_ready!(trans.inner.read_varchar::<u16>(false)),
+            server: try_ready!(trans.inner.read_varchar::<u8>(false)),
+            procedure: try_ready!(trans.inner.read_varchar::<u8>(false)),
+            line: try!(trans.inner.read_u32::<LittleEndian>()),
         };
         Ok(Async::Ready(TdsResponseToken::Info(token)))
     }
@@ -199,10 +219,10 @@ pub struct TokenLoginAck {
 impl<I: Io> ParseToken<I> for TokenLoginAck {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
         let token = TokenLoginAck {
-            interface: try!(trans.read_u8()),
-            tds_version: try!(FeatureLevel::from_u32(try!(trans.read_u32::<BigEndian>())).ok_or(TdsError::Protocol("loginack: invalid tds version".into()))),
-            prog_name: try_ready!(trans.read_varchar::<u8>(false)),
-            version: try!(trans.read_u32::<LittleEndian>()),
+            interface: try!(trans.inner.read_u8()),
+            tds_version: try!(FeatureLevel::from_u32(try!(trans.inner.read_u32::<BigEndian>())).ok_or(TdsError::Protocol("loginack: invalid tds version".into()))),
+            prog_name: try_ready!(trans.inner.read_varchar::<u8>(false)),
+            version: try!(trans.inner.read_u32::<LittleEndian>()),
         };
         Ok(Async::Ready(TdsResponseToken::LoginAck(token)))
     }
@@ -230,9 +250,9 @@ pub struct TokenDone {
 impl<I: Io> ParseToken<I> for TokenDone {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
         let token = TokenDone {
-            status: try!(DoneStatus::from_bits(try!(trans.read_u16::<LittleEndian>())).ok_or(TdsError::Protocol("done(variant): invalid status".into()))),
-            cur_cmd: try!(trans.read_u16::<LittleEndian>()),
-            done_rows: try!(trans.read_u64::<LittleEndian>()),
+            status: try!(DoneStatus::from_bits(try!(trans.inner.read_u16::<LittleEndian>())).ok_or(TdsError::Protocol("done(variant): invalid status".into()))),
+            cur_cmd: try!(trans.inner.read_u16::<LittleEndian>()),
+            done_rows: try!(trans.inner.read_u64::<LittleEndian>()),
         };
         Ok(Async::Ready(TdsResponseToken::Done(token)))
     }
@@ -275,9 +295,9 @@ pub struct MetaDataColumn {
 
 impl BaseMetaDataColumn {
     fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<BaseMetaDataColumn, TdsError> {
-        let user_ty = try!(trans.read_u32::<LittleEndian>());
+        let user_ty = try!(trans.inner.read_u32::<LittleEndian>());
 
-        let raw_flags = try!(trans.read_u16::<LittleEndian>());
+        let raw_flags = try!(trans.inner.read_u16::<LittleEndian>());
         let flags = ColmetaDataFlags::from_bits(raw_flags).unwrap();
 
         let ty = try_ready!(TypeInfo::parse(trans));
@@ -306,7 +326,7 @@ impl MetaDataColumn {
     fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<MetaDataColumn, TdsError> {
         let meta = MetaDataColumn {
             base: try_ready!(BaseMetaDataColumn::parse(trans)),
-            col_name: try_ready!(trans.read_varchar::<u8>(false)),
+            col_name: try_ready!(trans.inner.read_varchar::<u8>(false)),
         };
         Ok(Async::Ready(meta))
     }
@@ -314,7 +334,7 @@ impl MetaDataColumn {
 
 impl<I: Io> ParseToken<I> for TokenColMetaData {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
-        let column_count = try!(trans.read_u16::<LittleEndian>());
+        let column_count = try!(trans.inner.read_u16::<LittleEndian>());
 
         let mut columns = vec![];
         if column_count > 0 && column_count < 0xffff {
@@ -333,7 +353,7 @@ impl<I: Io> ParseToken<I> for TokenColMetaData {
             columns: columns,
         });
         if !token.columns.is_empty() {
-            trans.last_meta = Some(token.clone());
+            trans.inner.last_meta = Some(token.clone());
         }
         Ok(Async::Ready(TdsResponseToken::ColMetaData(token)))
     }
@@ -347,7 +367,7 @@ pub struct TokenRow {
 
 impl<I: Io> ParseToken<I> for TokenRow {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
-        let col_meta = if let Some(ref col_meta) = trans.last_meta {
+        let col_meta = if let Some(ref col_meta) = trans.inner.last_meta {
             col_meta.clone()
         } else {
             return Err(TdsError::Protocol("missing colmeta data".into()));
@@ -356,7 +376,7 @@ impl<I: Io> ParseToken<I> for TokenRow {
         // extract the state for the first Type/ColumnData parse call
         let mut column_data = match trans.take_read_state() {
             ReadState::Row(column_data, state) => {
-                *trans.read_state.borrow_mut() = ReadState::Type(state);
+                trans.read_state = ReadState::Type(state);
                 column_data
             },
             _ => unreachable!()
@@ -368,13 +388,13 @@ impl<I: Io> ParseToken<I> for TokenRow {
                     column_data.push(coldata);
                     // make sure to not fall behind this column, since parsing it again with data
                     // that isn't there anymore would be foolish
-                    trans.last_pos = trans.position();
+                    trans.last_pos = trans.inner.position();
                     // we don't have a state for the next column yet
-                    *trans.read_state.borrow_mut() = ReadState::None;
+                    trans.read_state = ReadState::None;
                 },
                 ret => {
                     // reset the read state back to the last state value
-                    *trans.read_state.borrow_mut() = ReadState::Row(column_data, match trans.take_read_state() {
+                    trans.read_state = ReadState::Row(column_data, match trans.take_read_state() {
                         ReadState::Type(tystate) => tystate,
                         _ => unreachable!()
                     });
@@ -426,9 +446,9 @@ pub struct TokenReturnValue {
 
 impl<I: Io> ParseToken<I> for TokenReturnValue {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
-        let param_ordinal = try!(trans.read_u16::<LittleEndian>());
-        let param_name = try_ready!(trans.read_varchar::<u8>(false));
-        let udf = match try!(trans.read_u8()) {
+        let param_ordinal = try!(trans.inner.read_u16::<LittleEndian>());
+        let param_name = try_ready!(trans.inner.read_varchar::<u8>(false));
+        let udf = match try!(trans.inner.read_u8()) {
             0x01 => false,
             0x02 => true,
             _ => return Err(TdsError::Protocol("ReturnValue: invalid status".into())),
@@ -500,18 +520,9 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
             status: PacketStatus::NormalMessage,
             ..PacketHeader::new(0, 0)
         };
-        let mut writer = PacketWriter::new(trans, header);
+        let mut writer = PacketWriter::new(&mut trans.inner, header);
 
-        {
-            // TODO: move this out (ALL_HEADERS)
-            try!(writer.write_u32::<LittleEndian>(protocol::ALL_HEADERS_LEN_TX as u32));
-            try!(writer.write_u32::<LittleEndian>(protocol::ALL_HEADERS_LEN_TX as u32 - 4));
-            try!(writer.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16));
-            // transaction descriptor
-            try!(writer.write_u64::<LittleEndian>(0));
-            // outstanding requests (TransactionDescrHeader)
-            try!(writer.write_u32::<LittleEndian>(1));
-        }
+          try!(protocol::write_trans_descriptor(&mut writer, trans.transaction));
         match self.proc_id {
             RpcProcIdValue::Id(ref id) => {
                 try!(writer.write_u16::<LittleEndian>(0xffff));

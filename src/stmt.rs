@@ -106,7 +106,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
             self.receiver = None;
         }
 
-        try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.poll_complete());
+        try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.inner.poll_complete());
 
         // receive and handle the result of sp_prepare
         while !self.done {
@@ -151,7 +151,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
             if do_ret {
                 let conn = self.conn.take().unwrap();
                 if let Some(new_pos) = new_pos {
-                    conn.borrow_mut().transport.set_position(new_pos);
+                    conn.borrow_mut().transport.inner.set_position(new_pos);
                 }
                 let (sender, receiver) = oneshot::channel();
                 self.receiver = Some(receiver);
@@ -165,12 +165,19 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
     }
 }
 
-impl<I: BoxableIo> StmtStream<I, QueryStream<I>> {
+pub trait ResultStreamExt<I: BoxableIo>: StateStream {
     /// Only expect 1 result set (e.g. if you're only executing one query)
     /// and execute a given closure for the results of the first result set
     ///
-    /// Other result sets are silently ignored
-    pub fn for_each_row<F>(self, f: F) -> ForEachRow<I, StmtStream<I, QueryStream<I>>, F>
+    /// # Panics
+    /// This will panic if there is more than 1 resultset
+    fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
+        where Self: Sized + StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
+                 F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>;
+}
+
+impl<I: BoxableIo> ResultStreamExt<I> for StmtStream<I, QueryStream<I>> {
+    fn for_each_row<F>(self, f: F) -> ForEachRow<I, StmtStream<I, QueryStream<I>>, F>
         where F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
     {
         ForEachRow::new(self, f)
@@ -180,7 +187,7 @@ impl<I: BoxableIo> StmtStream<I, QueryStream<I>> {
 /// Iterate over resultsets and only return the rows of the first one
 /// but handle/consume the entire result set so that we're ready to continue
 /// after the execution of this
-pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, State=SqlConnection<I>, Error=<QueryStream<I> as Stream>::Error>, F> {
+pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>, F> {
     stream: Option<S>,
     f: F,
     idx: usize,
@@ -188,7 +195,7 @@ pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, State=Sq
 }
 
 impl<I: BoxableIo, S, F> ForEachRow<I, S, F>
-     where S: StateStream<Item=QueryStream<I>, State=SqlConnection<I>, Error=<QueryStream<I> as Stream>::Error>,
+     where S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
            F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
 {
     pub fn new(stream: S, f: F) -> ForEachRow<I, S, F> {
@@ -202,10 +209,10 @@ impl<I: BoxableIo, S, F> ForEachRow<I, S, F>
 }
 
 impl<I: BoxableIo, S, F> Future for ForEachRow<I, S, F>
-    where S: StateStream<Item=QueryStream<I>, State=SqlConnection<I>, Error=<QueryStream<I> as Stream>::Error>,
+    where S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
           F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
 {
-    type Item = SqlConnection<I>;
+    type Item = S::State;
     type Error = <QueryStream<I> as Stream>::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -224,6 +231,9 @@ impl<I: BoxableIo, S, F> Future for ForEachRow<I, S, F>
                 StreamEvent::Next(resultset) => Some(resultset),
                 StreamEvent::Done(conn) => return Ok(Async::Ready(conn)),
             };
+            if self.idx == 1 {
+                panic!("for_each_row received more than 1 resultset");
+            }
             self.idx += 1;
         }
     }

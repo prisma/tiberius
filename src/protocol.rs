@@ -6,7 +6,7 @@ use std::mem;
 use futures::Sink;
 use tokio_core::io::Io;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use transport::TdsTransport;
+use transport::{TdsTransport, TdsTransportInner};
 use {TdsError, TdsResult, FromUint, DRIVER_VERSION};
 
 /// The amount of bytes a packet header consists of
@@ -496,20 +496,23 @@ pub enum AllHeaderTy {
     TraceActivity = 3,
 }
 
+pub fn write_trans_descriptor<W: Write>(mut wr: W, id: u64) -> io::Result<()> {
+    try!(wr.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32));
+    try!(wr.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32 - 4));
+    try!(wr.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16));
+    // transaction descriptor
+    try!(wr.write_u64::<LittleEndian>(id));
+    // outstanding requests (TransactionDescrHeader)
+    wr.write_u32::<LittleEndian>(1)
+}
+
 /// build an SQL batch packet
 pub fn build_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::Result<Vec<u8>> {
     let vec = vec![0u8; HEADER_BYTES + ALL_HEADERS_LEN_TX as usize];
     let mut cursor = Cursor::new(vec);
     cursor.set_position(8);
 
-    // TODO: move this out
-    try!(cursor.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32));
-    try!(cursor.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32 - 4));
-    try!(cursor.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16));
-    // transaction descriptor
-    try!(cursor.write_u64::<LittleEndian>(0));
-    // outstanding requests (TransactionDescrHeader)
-    try!(cursor.write_u32::<LittleEndian>(1));
+    try!(write_trans_descriptor(&mut cursor, trans.transaction));
 
     // the SQL query (after ALL_HEADERS)
     for byte in query.encode_utf16() {
@@ -529,7 +532,7 @@ pub fn build_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::R
 
 /// a writer that splits the written data across multiple packets
 pub struct PacketWriter<'a, I: 'a + Io> {
-    transport: &'a mut TdsTransport<I>,
+    transport: &'a mut TdsTransportInner<I>,
     header: PacketHeader,
     buf: Vec<u8>,
 }
@@ -542,7 +545,7 @@ fn new_packet_buf(capacity: usize) -> Vec<u8> {
 }
 
 impl<'a, I: 'a + Io> PacketWriter<'a, I> {
-    pub fn new(transport: &'a mut TdsTransport<I>, header: PacketHeader) -> Self {
+    pub fn new(transport: &'a mut TdsTransportInner<I>, header: PacketHeader) -> Self {
         PacketWriter {
             header: header,
             buf: new_packet_buf(transport.packet_size),

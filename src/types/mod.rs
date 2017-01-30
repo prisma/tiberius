@@ -160,7 +160,7 @@ impl fmt::Display for Guid {
 
 impl TypeInfo {
     pub fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<TypeInfo, TdsError> {
-        let ty = try!(trans.read_u8());
+        let ty = try!(trans.inner.read_u8());
         if let Some(ty) = FixedLenType::from_u8(ty) {
             return Ok(Async::Ready(TypeInfo::FixedLen(ty)))
         }
@@ -168,17 +168,17 @@ impl TypeInfo {
             // TODO: add .size() / .has_collation() to VarLenType (?)
             let len = match ty {
                 VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Decimaln |
-                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money => try!(trans.read_u8()) as usize,
+                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money => try!(trans.inner.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
-                    try!(trans.read_u16::<LittleEndian>()) as usize
+                    try!(trans.inner.read_u16::<LittleEndian>()) as usize
                 },
                 _ => unimplemented!()
             };
             let collation = match ty {
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
                     Some(Collation {
-                        info: try!(trans.read_u32::<LittleEndian>()),
-                        sort_id: try!(trans.read_u8()),
+                        info: try!(trans.inner.read_u32::<LittleEndian>()),
+                        sort_id: try!(trans.inner.read_u8()),
                     })
                 },
                 _ => None
@@ -187,8 +187,8 @@ impl TypeInfo {
                 VarLenType::Decimaln | VarLenType::Numericn => TypeInfo::VarLenSizedPrecision {
                     ty: ty,
                     size: len,
-                    precision: try!(trans.read_u8()),
-                    scale: try!(trans.read_u8()),
+                    precision: try!(trans.inner.read_u8()),
+                    scale: try!(trans.inner.read_u8()),
                 },
                 _ => TypeInfo::VarLenSized(ty, len, collation),
             };
@@ -203,55 +203,54 @@ impl<'a> ColumnData<'a> {
         Ok(Async::Ready(match meta.ty {
             TypeInfo::FixedLen(ref fixed_ty) => {
                 match *fixed_ty {
-                    FixedLenType::Int4 => ColumnData::I32(try!(trans.read_i32::<LittleEndian>())),
+                    FixedLenType::Int4 => ColumnData::I32(try!(trans.inner.read_i32::<LittleEndian>())),
                     _ => panic!("unsupported fixed type decoding: {:?}", fixed_ty)
                 }
             },
             TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
                 match *ty {
                     VarLenType::Bitn => {
-                        assert_eq!(try!(trans.read_u8()) as usize, *len);
-                        ColumnData::Bit(try!(trans.read_u8()) > 0)
+                        assert_eq!(try!(trans.inner.read_u8()) as usize, *len);
+                        ColumnData::Bit(try!(trans.inner.read_u8()) > 0)
                     },
                     VarLenType::Intn => {
                         assert!(collation.is_none());
-                        assert_eq!(try!(trans.read_u8()) as usize, *len);
+                        assert_eq!(try!(trans.inner.read_u8()) as usize, *len);
                         match *len {
-                            1 => ColumnData::I8(try!(trans.read_i8())),
-                            2 => ColumnData::I16(try!(trans.read_i16::<LittleEndian>())),
-                            4 => ColumnData::I32(try!(trans.read_i32::<LittleEndian>())),
-                            8 => ColumnData::I64(try!(trans.read_i64::<LittleEndian>())),
+                            1 => ColumnData::I8(try!(trans.inner.read_i8())),
+                            2 => ColumnData::I16(try!(trans.inner.read_i16::<LittleEndian>())),
+                            4 => ColumnData::I32(try!(trans.inner.read_i32::<LittleEndian>())),
+                            8 => ColumnData::I64(try!(trans.inner.read_i64::<LittleEndian>())),
                             _ => unimplemented!()
                         }
                     },
                     /// 2.2.5.5.1.5 IEEE754
                     VarLenType::Floatn => {
-                        let len = try!(trans.read_u8());
+                        let len = try!(trans.inner.read_u8());
                         match len {
                             0 => ColumnData::None,
-                            4 => ColumnData::F32(try!(trans.read_f32::<LittleEndian>())),
-                            8 => ColumnData::F64(try!(trans.read_f64::<LittleEndian>())),
+                            4 => ColumnData::F32(try!(trans.inner.read_f32::<LittleEndian>())),
+                            8 => ColumnData::F64(try!(trans.inner.read_f64::<LittleEndian>())),
                             _ => return Err(TdsError::Protocol(format!("floatn: length of {} is invalid", len).into()))
                         }
                     },
                     VarLenType::Guid => {
-                        assert_eq!(try!(trans.read_u8()) as usize, *len);
+                        assert_eq!(try!(trans.inner.read_u8()) as usize, *len);
                         let mut data = [0u8; 16];
-                        try_ready!(trans.read_bytes_to(&mut data));
+                        try_ready!(trans.inner.read_bytes_to(&mut data));
                         ColumnData::Guid(Cow::Owned(Guid(data)))
                     },
                     VarLenType::NVarchar => {
                         let old_read_reset = trans.read_reset;
                         trans.read_reset = false;
                         // reduce some boilerplate by using RefCell/Rc
-                        let read_state = trans.read_state.clone();
-                        let mut read_state_mut = read_state.borrow_mut();
+                        let mut read_state_mut = &mut trans.read_state;
                         // check if PLP or normal size
                         if *len < 0xffff {
                             match *read_state_mut {
                                 ReadState::Type(ReadTyState::NVarchar(_)) => (),
                                 _ => {
-                                    let len = try!(trans.read_u16::<LittleEndian>()) as usize;
+                                    let len = try!(trans.inner.read_u16::<LittleEndian>()) as usize;
                                     *read_state_mut = ReadState::Type(ReadTyState::NVarchar(Vec::with_capacity(len/2)));
                                 }
                             };
@@ -260,12 +259,12 @@ impl<'a> ColumnData<'a> {
                                 _ => unreachable!()
                             };
                             while target.capacity() > target.len() {
-                                target.push(try!(trans.read_u16::<LittleEndian>()));
+                                target.push(try!(trans.inner.read_u16::<LittleEndian>()));
                             }
                             let str_ = try!(String::from_utf16(&target[..]));
                             // make sure we do not skip before what we've already read for sure
                             trans.read_reset = old_read_reset;
-                            trans.last_pos = trans.position();
+                            trans.last_pos = trans.inner.position();
                             ColumnData::String(str_.into())
                         } else {
                             match *read_state_mut {
@@ -273,7 +272,7 @@ impl<'a> ColumnData<'a> {
                                 ReadState::Type(ReadTyState::NVarcharPLP(_)) => (),
                                 // initial call
                                 _ => {
-                                    let size = try!(trans.read_u64::<LittleEndian>()) as usize;
+                                    let size = try!(trans.inner.read_u64::<LittleEndian>()) as usize;
                                     let capacity = match size {
                                         // unsized PLPs, allocate some space
                                         0xfffffffffffffffe => 1<<7,
@@ -297,7 +296,7 @@ impl<'a> ColumnData<'a> {
                             if plp_state.size < 0xffffffffffffffff {
                                 loop {
                                     if plp_state.chunk_left.is_none() {
-                                        let chunk_size = try!(trans.read_u32::<LittleEndian>()) as usize;
+                                        let chunk_size = try!(trans.inner.read_u32::<LittleEndian>()) as usize;
                                         if chunk_size == 0 {
                                             break;
                                         }
@@ -307,20 +306,20 @@ impl<'a> ColumnData<'a> {
                                     // byte from last chunk
                                     if let NVarcharPLPTyState { ref mut bytes, chunk_left: Some(ref mut chunk_left), ref mut leftover, .. } = *plp_state {
                                         if let Some(ref leftover) = *leftover {
-                                            let buf = [*leftover, try!(trans.read_u8())];
+                                            let buf = [*leftover, try!(trans.inner.read_u8())];
                                             bytes.push(LittleEndian::read_u16(&buf));
                                             *chunk_left -= 1;
                                         }
                                         *leftover = None;
 
                                         for _ in 0..*chunk_left/2 {
-                                            bytes.push(try!(trans.read_u16::<LittleEndian>()));
+                                            bytes.push(try!(trans.inner.read_u16::<LittleEndian>()));
                                             *chunk_left -= 2;
                                         }
 
                                         // queue the last byte for the next chunk
                                         if *chunk_left % 2 == 1 {
-                                            *leftover = Some(try!(trans.read_u8()));
+                                            *leftover = Some(try!(trans.inner.read_u8()));
                                         }
                                     }
                                     plp_state.chunk_left = None;
@@ -328,7 +327,7 @@ impl<'a> ColumnData<'a> {
                                 let str_ = String::from_utf16(&plp_state.bytes[..])?;
                                 // make sure we do not skip before what we've already read for sure
                                 trans.read_reset = old_read_reset;
-                                trans.last_pos = trans.position();
+                                trans.last_pos = trans.inner.position();
                                 ColumnData::String(str_.into())
                             } else {
                                 ColumnData::None
@@ -336,19 +335,19 @@ impl<'a> ColumnData<'a> {
                         }
                     },
                     VarLenType::BigVarChar => {
-                        let bytes = try_ready!(trans.read_varbyte::<u16>());
+                        let bytes = try_ready!(trans.inner.read_varbyte::<u16>());
                         let encoder = try!(collation.as_ref().unwrap().encoding().ok_or(TdsError::Encoding("encoding: unspported encoding".into())));
                         let str_: String = try!(encoder.decode(bytes.as_ref(), DecoderTrap::Strict).map_err(TdsError::Encoding));
                         ColumnData::String(str_.into())
                     },
                     VarLenType::Money => {
-                        let len = try!(trans.read_u8());
+                        let len = try!(trans.inner.read_u8());
                         match len {
                             0 => ColumnData::None,
-                            4 => ColumnData::F64(try!(trans.read_i32::<LittleEndian>()) as f64 / 1e4),
+                            4 => ColumnData::F64(try!(trans.inner.read_i32::<LittleEndian>()) as f64 / 1e4),
                             8 => ColumnData::F64({
-                                let high = try!(trans.read_i32::<LittleEndian>()) as i64;
-                                let low = try!(trans.read_u32::<LittleEndian>()) as f64;
+                                let high = try!(trans.inner.read_i32::<LittleEndian>()) as i64;
+                                let low = try!(trans.inner.read_u32::<LittleEndian>()) as f64;
                                 ((high << 32) as f64 + low) / 1e4
                             }),
                             _ => return Err(TdsError::Protocol(format!("money: length of {} is invalid", len).into()))
@@ -383,24 +382,24 @@ impl<'a> ColumnData<'a> {
                             low_part + high_part
                         }
 
-                        let len = try!(trans.read_u8());
-                        let sign = match try!(trans.read_u8()) {
+                        let len = try!(trans.inner.read_u8());
+                        let sign = match try!(trans.inner.read_u8()) {
                             0 => -1f64,
                             1 => 1f64,
                             _ => return Err(TdsError::Protocol("decimal: invalid sign".into())),
                         };
                         let value = sign * match len {
-                            5 => try!(trans.read_u32::<LittleEndian>()) as f64,
-                            9 => try!(trans.read_u64::<LittleEndian>()) as f64,
+                            5 => try!(trans.inner.read_u32::<LittleEndian>()) as f64,
+                            9 => try!(trans.inner.read_u64::<LittleEndian>()) as f64,
                             // the following two cases are even more approximate
                             13 => {
                                 let mut bytes = [0u8; 12]; //u96
-                                try!(trans.read_bytes_to(&mut bytes));
+                                try!(trans.inner.read_bytes_to(&mut bytes));
                                 read_d128(&bytes)
                             },
                             17 => {
                                 let mut bytes = [0u8; 16]; //u128
-                                try!(trans.read_bytes_to(&mut bytes));
+                                try!(trans.inner.read_bytes_to(&mut bytes));
                                 read_d128(&bytes)
                             },
                             x => return Err(TdsError::Protocol(format!("decimal/numeric: invalid length of {} received", x).into()))
@@ -579,6 +578,7 @@ mod tests {
     use tokio_core::reactor::Core;
     use futures::Future;
     use super::Guid;
+    use stmt::ResultStreamExt;
     use SqlConnection;
     use std::iter;
 

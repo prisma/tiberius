@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
-use stmt::ForEachRow;
+use stmt::{ForEachRow, ResultStreamExt};
 use tokens::{self, TdsResponseToken, TokenRow};
 use types::FromColumnData;
 use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
@@ -16,7 +16,7 @@ pub struct ResultSetStream<I: BoxableIo, R: StmtResult<I>> {
     /// whether we already returned a result for the current resultset
     already_triggered: bool,
     done: bool,
-    _marker: PhantomData<*const R>,
+    _marker: PhantomData<R>,
 }
 
 impl<I: BoxableIo, R: StmtResult<I>> ResultSetStream<I, R> {
@@ -60,7 +60,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
                 None => false,
                 Some(ref mut conn) => {
                     let mut inner = conn.borrow_mut();
-                    try_ready!(inner.transport.poll_complete());
+                    try_ready!(inner.transport.inner.poll_complete());
 
                     match try_ready!(inner.transport.next_token()) {
                         None => panic!("resultset: expected a token!"),
@@ -70,13 +70,12 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
                                 true
                             },
                             TdsResponseToken::Done(ref done) => {
-                                assert!(!done.status.contains(tokens::DONE_MORE));
-                                self.done = true;
+                                self.done = !done.status.contains(tokens::DONE_MORE);
                                 let old = self.already_triggered;
                                 self.already_triggered = false;
                                 // make sure to return exactly one time for each result set
                                 if !old {
-                                    inner.transport.set_position(last_pos); // reinject
+                                    inner.transport.inner.set_position(last_pos); // reinject
                                     true
                                 } else {
                                     false
@@ -99,12 +98,8 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
     }
 }
 
-impl<'a, I: BoxableIo> ResultSetStream<I, QueryStream<I>> {
-    /// Only expect 1 result set (e.g. if you're only executing one query)
-    /// and execute a given closure for the results of the first result set
-    ///
-    /// Other result sets are silently ignored
-    pub fn for_each_row<F>(self, f: F) -> ForEachRow<I, ResultSetStream<I, QueryStream<I>>, F>
+impl<'a, I: BoxableIo> ResultStreamExt<I> for ResultSetStream<I, QueryStream<I>> {
+    fn for_each_row<F>(self, f: F) -> ForEachRow<I, ResultSetStream<I, QueryStream<I>>, F>
         where F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
     {
         ForEachRow::new(self, f)
@@ -128,7 +123,7 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
 
         if let Some(ref mut inner) = self.0 {
             let mut inner = inner.conn.borrow_mut();
-            try_ready!(inner.transport.poll_complete());
+            try_ready!(inner.transport.inner.poll_complete());
 
             loop {
                 let token = try_ready!(inner.transport.next_token());
@@ -140,7 +135,7 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
                         },
                         // if this is the final done token, we need to reinject it for result set stream to handle it
                         TdsResponseToken::Done(ref done) if !done.status.contains(tokens::DONE_MORE) => {
-                            inner.transport.set_position(last_pos);
+                            inner.transport.inner.set_position(last_pos);
                             break;
                         },
                         TdsResponseToken::Done(_) | TdsResponseToken::DoneInProc(_) => break,
@@ -185,7 +180,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
         let mut ret: u64 = 0;
         if let Some(ref mut inner) = self.inner {
             let mut inner = inner.conn.borrow_mut();
-            try_ready!(inner.transport.poll_complete());
+            try_ready!(inner.transport.inner.poll_complete());
 
             loop {
                 match try_ready!(inner.transport.next_token()) {
@@ -200,8 +195,8 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
                             };
                             // if this is the final done token, we need to reinject it for result set stream to handle it
                             // (as in querying, if self.single_token it already was reinjected and would result in an infinite cycle)
-                            if !done.status.contains(tokens::DONE_MORE) && self.single_token && final_token {
-                                inner.transport.set_position(last_pos);
+                            if !done.status.contains(tokens::DONE_MORE) && !self.single_token && final_token {
+                                inner.transport.inner.set_position(last_pos);
                             }
                             if done.status.contains(tokens::DONE_COUNT) {
                                 ret = done.done_rows;

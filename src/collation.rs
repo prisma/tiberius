@@ -334,6 +334,7 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
 mod tests {
     use tokio_core::reactor::Core;
     use tests::new_connection;
+    use stmt::ResultStreamExt;
 
     #[test]
     fn select_nvarchar_collation_test() {
