@@ -17,7 +17,6 @@ use types::ColumnData;
 use {FromUint, TdsError};
 
 pub struct NVarcharPLPTyState {
-    pub size: usize,
     pub bytes: Vec<u16>,
     pub chunk_left: Option<usize>,
     pub leftover: Option<u8>,

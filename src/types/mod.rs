@@ -272,7 +272,11 @@ impl<'a> ColumnData<'a> {
                                 ReadState::Type(ReadTyState::NVarcharPLP(_)) => (),
                                 // initial call
                                 _ => {
-                                    let size = try!(trans.inner.read_u64::<LittleEndian>()) as usize;
+                                    let size = try!(trans.inner.read_u64::<LittleEndian>());
+                                    if size == 0xffffffffffffffff {
+                                        trans.read_reset = old_read_reset;
+                                        return Ok(Async::Ready(ColumnData::None));
+                                    }
                                     let capacity = match size {
                                         // unsized PLPs, allocate some space
                                         0xfffffffffffffffe => 1<<7,
@@ -280,8 +284,7 @@ impl<'a> ColumnData<'a> {
                                         _ => return Err(TdsError::Protocol("nvarchar: invalid plp length".into())),
                                     };
                                     *read_state_mut = ReadState::Type(ReadTyState::NVarcharPLP(NVarcharPLPTyState {
-                                        size: size,
-                                        bytes: Vec::with_capacity(capacity),
+                                        bytes: Vec::with_capacity(capacity as usize),
                                         chunk_left: None,
                                         leftover: None,
                                     }));
@@ -293,45 +296,41 @@ impl<'a> ColumnData<'a> {
                                 _ => unreachable!()
                             };
 
-                            if plp_state.size < 0xffffffffffffffff {
-                                loop {
-                                    if plp_state.chunk_left.is_none() {
-                                        let chunk_size = try!(trans.inner.read_u32::<LittleEndian>()) as usize;
-                                        if chunk_size == 0 {
-                                            break;
-                                        }
-                                        plp_state.bytes.reserve(chunk_size / 2);
-                                        plp_state.chunk_left = Some(chunk_size);
+                            loop {
+                                if plp_state.chunk_left.is_none() {
+                                    let chunk_size = try!(trans.inner.read_u32::<LittleEndian>()) as usize;
+                                    if chunk_size == 0 {
+                                        break;
                                     }
-                                    // byte from last chunk
-                                    if let NVarcharPLPTyState { ref mut bytes, chunk_left: Some(ref mut chunk_left), ref mut leftover, .. } = *plp_state {
-                                        if let Some(ref leftover) = *leftover {
-                                            let buf = [*leftover, try!(trans.inner.read_u8())];
-                                            bytes.push(LittleEndian::read_u16(&buf));
-                                            *chunk_left -= 1;
-                                        }
-                                        *leftover = None;
-
-                                        for _ in 0..*chunk_left/2 {
-                                            bytes.push(try!(trans.inner.read_u16::<LittleEndian>()));
-                                            *chunk_left -= 2;
-                                        }
-
-                                        // queue the last byte for the next chunk
-                                        if *chunk_left % 2 == 1 {
-                                            *leftover = Some(try!(trans.inner.read_u8()));
-                                        }
-                                    }
-                                    plp_state.chunk_left = None;
+                                    plp_state.bytes.reserve(chunk_size / 2);
+                                    plp_state.chunk_left = Some(chunk_size);
                                 }
-                                let str_ = String::from_utf16(&plp_state.bytes[..])?;
-                                // make sure we do not skip before what we've already read for sure
-                                trans.read_reset = old_read_reset;
-                                trans.last_pos = trans.inner.position();
-                                ColumnData::String(str_.into())
-                            } else {
-                                ColumnData::None
+                                // byte from last chunk
+                                if let NVarcharPLPTyState { ref mut bytes, chunk_left: Some(ref mut chunk_left), ref mut leftover, .. } = *plp_state {
+                                    if let Some(ref leftover) = *leftover {
+                                        let buf = [*leftover, try!(trans.inner.read_u8())];
+                                        bytes.push(LittleEndian::read_u16(&buf));
+                                        *chunk_left -= 1;
+                                    }
+                                    *leftover = None;
+
+                                    for _ in 0..*chunk_left/2 {
+                                        bytes.push(try!(trans.inner.read_u16::<LittleEndian>()));
+                                        *chunk_left -= 2;
+                                    }
+
+                                    // queue the last byte for the next chunk
+                                    if *chunk_left % 2 == 1 {
+                                        *leftover = Some(try!(trans.inner.read_u8()));
+                                    }
+                                }
+                                plp_state.chunk_left = None;
                             }
+                            let str_ = String::from_utf16(&plp_state.bytes[..])?;
+                            // make sure we do not skip before what we've already read for sure
+                            trans.read_reset = old_read_reset;
+                            trans.last_pos = trans.inner.position();
+                            ColumnData::String(str_.into())
                         }
                     },
                     VarLenType::BigVarChar => {
