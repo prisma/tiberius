@@ -403,7 +403,7 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             &"".into(), // ibCltIntName
             &"".into(), // ibLanguage
             &self.db_name,
-            &"".into(), // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong and can insert it at the correct position
+            &"".into(), // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong (4=2*2) and can insert it at the correct position
             &"".into(), // 10. ibSSPI
             &"".into(), // ibAtchDBFile
             &"".into(), // ibChangePassword
@@ -440,11 +440,22 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             for codepoint in value.encode_utf16() {
                 try!(cursor.write_u16::<LittleEndian>(codepoint));
             }
-            let length = cursor.position() as usize - data_offset;
+            let new_position = cursor.position() as usize;
+            // prepare the password in MS-fashion
+            if i == 2 {
+                let mut buffer = cursor.get_mut();
+                for idx in data_offset..new_position {
+                    let byte = buffer[idx];
+                    buffer[idx] = ((byte << 4) & 0xf0 | (byte >> 4) & 0x0f) ^ 0xA5;
+                }
+            }
+            let length = new_position - data_offset;
             cursor.set_position(bak);
             data_offset += length;
 
-            try!(cursor.write_u16::<LittleEndian>(length as u16));
+            // microsoft being really consistent here... using byte offsets with utf16-length's
+            // sounds like premature optimization
+            try!(cursor.write_u16::<LittleEndian>(length as u16 / 2));
         }
         // cbSSPILong
         try!(cursor.write_u32::<LittleEndian>(0));
