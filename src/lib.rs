@@ -13,10 +13,19 @@
 //! use tiberius::stmt::ResultStreamExt;
 //!
 //! fn main() {
-//!     let mut lp = Core::new().unwrap();
-//!     let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+//!    let mut lp = Core::new().unwrap();
+//!    // for windows we demonstrate the hardcoded variant
+//!    // which is equivalent to:
+//!    //     let connection_string = "server=tcp:127.0.0.1,1433;integratedSecurity=true;";
+//!    //     let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
+//!    // and for linux we use the connection string from an environment variable
+//!    let connection_string = if cfg!(windows) {
+//!        "server=tcp:127.0.0.1,1433;integratedSecurity=true;".to_owned()
+//!    } else {
+//!        ::std::env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap()
+//!    };
 //!
-//!    let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
+//!    let future = SqlConnection::connect(lp.handle(), connection_string.as_str()).and_then(|conn| {
 //!        conn.simple_query("SELECT 1+2").for_each_row(|row| {
 //!            let val: i32 = row.get(0);
 //!            assert_eq!(val, 3i32);
