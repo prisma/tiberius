@@ -12,6 +12,48 @@ use transport::{NoLength, ReadState, ReadTyState, NVarcharPLPTyState, TdsBuf, Td
 use collation;
 use {FromUint, TdsResult, TdsError};
 
+macro_rules! from_column_data {
+    ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
+        $(
+            impl<'a> FromColumnData<'a> for $ty {
+                fn from_column_data(data: &'a ColumnData) -> TdsResult<Self> {
+                    match *data {
+                        $( $pat => Ok($val), )*
+                        _ => Err(TdsError::Conversion(concat!("cannot interpret the given column data as an ", stringify!($ty), "value").into()))
+                    }
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! to_column_data {
+    ($target:ident, $( $ty:ty => $val:expr ),* ) => {
+        $(
+            impl<'a> ToColumnData for $ty {
+                fn to_column_data(&self) -> ColumnData {
+                    let $target = self;
+                    $val
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! to_sql {
+    ($($ty:ty => $sql:expr),*) => {
+        $(
+            impl<'a> ToSql for $ty {
+                fn to_sql(&self) -> &'static str {
+                    $sql
+                }
+            }
+        )*
+    }
+}
+
+mod time;
+
 #[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 pub enum FixedLenType {
@@ -125,6 +167,9 @@ pub enum ColumnData<'a> {
     F64(f64),
     Bit(bool),
     Guid(Cow<'a, Guid>),
+    DateTime(Cow<'a, time::DateTime>),
+    SmallDateTime(Cow<'a, time::SmallDateTime>),
+    Date(time::Date),
     /// owned/borrowed rust string
     String(Cow<'a, str>),
     /// a buffer string which is a reference to a buffer of a received packet
@@ -165,13 +210,13 @@ impl TypeInfo {
             return Ok(Async::Ready(TypeInfo::FixedLen(ty)))
         }
         if let Some(ty) = VarLenType::from_u8(ty) {
-            // TODO: add .size() / .has_collation() to VarLenType (?)
             let len = match ty {
                 VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Decimaln |
-                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money => try!(trans.inner.read_u8()) as usize,
+                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money | VarLenType::Datetimen => try!(trans.inner.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
                     try!(trans.inner.read_u16::<LittleEndian>()) as usize
                 },
+                VarLenType::Daten => 3,
                 _ => unimplemented!()
             };
             let collation = match ty {
@@ -352,6 +397,33 @@ impl<'a> ColumnData<'a> {
                             _ => return Err(TdsError::Protocol(format!("money: length of {} is invalid", len).into()))
                         }
                     },
+                    VarLenType::Datetimen => {
+                        let len = try!(trans.inner.read_u8());
+                        match len {
+                            0 => ColumnData::None,
+                            4 => ColumnData::SmallDateTime(Cow::Owned(time::SmallDateTime {
+                                days: try!(trans.inner.read_u16::<LittleEndian>()),
+                                seconds_fragments: try!(trans.inner.read_u16::<LittleEndian>()),
+                            })),
+                            8 => ColumnData::DateTime(Cow::Owned(time::DateTime {
+                                days: try!(trans.inner.read_i32::<LittleEndian>()),
+                                seconds_fragments: try!(trans.inner.read_u32::<LittleEndian>()),
+                            })),
+                            _ => return Err(TdsError::Protocol(format!("datetimen: length of {} is invalid", len).into()))
+                        }
+                    },
+                    VarLenType::Daten => {
+                        let len = try!(trans.inner.read_u8());
+                        match len {
+                            0 => ColumnData::None,
+                            3 => {
+                                let mut bytes = [0u8; 4];
+                                try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
+                                ColumnData::Date(time::Date::new(LittleEndian::read_u32(&bytes)))
+                            },
+                            _ => return Err(TdsError::Protocol(format!("daten: length of {} is invalid", len).into()))
+                        }
+                    },
                     _ => unimplemented!()
                 }
             },
@@ -463,6 +535,23 @@ impl<'a> ColumnData<'a> {
 
                 try!(target.write_u32::<LittleEndian>(0)); //PLP_TERMINATOR
             },
+            ColumnData::DateTime(ref dt) => {
+                try!(target.write_all(&[VarLenType::Datetimen as u8, 8, 8]));
+                try!(target.write_i32::<LittleEndian>(dt.days));
+                try!(target.write_u32::<LittleEndian>(dt.seconds_fragments));
+            },
+            ColumnData::SmallDateTime(ref dt) => {
+                try!(target.write_all(&[VarLenType::Datetimen as u8, 4, 4]));
+                try!(target.write_u16::<LittleEndian>(dt.days));
+                try!(target.write_u16::<LittleEndian>(dt.seconds_fragments));
+            },
+            ColumnData::Date(ref dt) => {
+                try!(target.write_all(&[VarLenType::Daten as u8, 3]));
+                let mut tmp = [0u8; 4];
+                LittleEndian::write_u32(&mut tmp, dt.days());
+                assert_eq!(tmp[3], 0);
+                try!(target.write_all(&tmp[0..3]));
+            },
             _ => unimplemented!()
         }
         Ok(())
@@ -481,46 +570,6 @@ pub trait ToColumnData {
 /// e.g. for usage within a ROW token
 pub trait ToSql : ToColumnData {
     fn to_sql(&self) -> &'static str;
-}
-
-macro_rules! from_column_data {
-    ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
-        $(
-            impl<'a> FromColumnData<'a> for $ty {
-                fn from_column_data(data: &'a ColumnData) -> TdsResult<Self> {
-                    match *data {
-                        $( $pat => Ok($val), )*
-                        _ => Err(TdsError::Conversion(concat!("cannot interpret the given column data as an ", stringify!($ty), "value").into()))
-                    }
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! to_column_data {
-    ($target:ident, $( $ty:ty => $val:expr ),* ) => {
-        $(
-            impl<'a> ToColumnData for $ty {
-                fn to_column_data(&self) -> ColumnData {
-                    let $target = self;
-                    $val
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! to_sql {
-    ($($ty:ty => $sql:expr),*) => {
-        $(
-            impl<'a> ToSql for $ty {
-                fn to_sql(&self) -> &'static str {
-                    $sql
-                }
-            }
-        )*
-    }
 }
 
 from_column_data!(
