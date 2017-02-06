@@ -249,6 +249,7 @@ impl<'a> ColumnData<'a> {
             TypeInfo::FixedLen(ref fixed_ty) => {
                 match *fixed_ty {
                     FixedLenType::Int4 => ColumnData::I32(try!(trans.inner.read_i32::<LittleEndian>())),
+                    FixedLenType::Int8 => ColumnData::I64(try!(trans.inner.read_i64::<LittleEndian>())),
                     _ => panic!("unsupported fixed type decoding: {:?}", fixed_ty)
                 }
             },
