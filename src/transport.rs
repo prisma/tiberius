@@ -418,6 +418,7 @@ impl<I: Io> TdsTransport<I> {
                             }
                             continue;
                         },
+                        TdsResponseToken::Info(_) => continue,
                         _ => ()
                     }
                     return Ok(Async::Ready(Some((self.last_pos, ret))))
