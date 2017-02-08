@@ -151,6 +151,7 @@ pub enum TdsError {
     Utf8(std::str::Utf8Error),
     Utf16(std::string::FromUtf16Error),
     ParseInt(std::num::ParseIntError),
+    Server(tokens::TokenError),
     Canceled,
 }
 

@@ -419,6 +419,9 @@ impl<I: Io> TdsTransport<I> {
                             continue;
                         },
                         TdsResponseToken::Info(_) => continue,
+                        TdsResponseToken::Error(err) => {
+                            return Err(TdsError::Server(err));
+                        },
                         _ => ()
                     }
                     return Ok(Async::Ready(Some((self.last_pos, ret))))
