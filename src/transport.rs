@@ -351,7 +351,7 @@ impl<I: Io> TdsTransport<I> {
             // read the associated length for a token, if available
             if let ReadState::Generic(token, None) = self.read_state {
                 self.read_state = match token {
-                    Tokens::SSPI | Tokens::EnvChange | Tokens::Info | Tokens::LoginAck => {
+                    Tokens::SSPI | Tokens::EnvChange | Tokens::Info | Tokens::Error | Tokens::LoginAck => {
                         ReadState::Generic(token, Some(try!(self.inner.read_u16::<LittleEndian>()) as usize))
                     },
                     Tokens::Row => {

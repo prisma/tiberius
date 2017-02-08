@@ -22,6 +22,7 @@ pub trait WriteToken<I: Io> {
 pub enum Tokens {
     ReturnStatus = 0x79,
     ColMetaData = 0x81,
+    Error = 0xAA,
     Info = 0xAB,
     ReturnValue = 0xAC,
     LoginAck = 0xAD,
@@ -32,12 +33,13 @@ pub enum Tokens {
     DoneProc = 0xFE,
     DoneInProc = 0xFF,
 }
-uint_to_enum!(Tokens, ReturnStatus, ColMetaData, Info, ReturnValue, LoginAck, Row, SSPI, EnvChange, Done, DoneProc, DoneInProc);
+uint_to_enum!(Tokens, ReturnStatus, ColMetaData, Error, Info, ReturnValue, LoginAck, Row, SSPI, EnvChange, Done, DoneProc, DoneInProc);
 
 #[derive(Debug)]
 pub enum TdsResponseToken {
     SSPI(TdsBuf),
     EnvChange(TokenEnvChange),
+    Error(TokenError),
     Info(TokenInfo),
     LoginAck(TokenLoginAck),
     Done(TokenDone),
@@ -72,6 +74,7 @@ impl<I: Io> TdsTransport<I> {
                 Ok(Async::Ready(TdsResponseToken::ReturnStatus(val)))
             },
             Tokens::ReturnValue => TokenReturnValue::parse_token(self),
+            Tokens::Error => TokenError::parse_token(self),
         }
     }
 }
@@ -431,6 +434,36 @@ impl<I: Io> ParseToken<I> for TokenDoneProc {
             _ => unreachable!()
         };
         Ok(Async::Ready(TdsResponseToken::DoneProc(token)))
+    }
+}
+
+#[derive(Debug)]
+pub struct TokenError {
+    /// ErrorCode
+    code: u32,
+    /// ErrorState (describing code)
+    state: u8,
+    /// The class (severity) of the error
+    class: u8,
+    /// The error message
+    message: TdsBuf,
+    server: TdsBuf,
+    procedure: TdsBuf,
+    line: u32,
+}
+
+impl<I: Io> ParseToken<I> for TokenError {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+        let token = TokenError {
+            code: try!(trans.inner.read_u32::<LittleEndian>()),
+            state: try!(trans.inner.read_u8()),
+            class: try!(trans.inner.read_u8()),
+            message: try_ready!(trans.inner.read_varchar::<u16>(false)),
+            server: try_ready!(trans.inner.read_varchar::<u8>(false)),
+            procedure: try_ready!(trans.inner.read_varchar::<u8>(false)),
+            line: try!(trans.inner.read_u32::<LittleEndian>()),
+        };
+        Ok(Async::Ready(TdsResponseToken::Error(token)))
     }
 }
 
