@@ -46,6 +46,7 @@ extern crate futures_state_stream;
 extern crate lazy_static;
 #[macro_use]
 extern crate tokio_core;
+extern crate winauth;
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -110,7 +111,6 @@ macro_rules! uint_to_enum {
 
 mod collation;
 mod transport;
-mod ntlm;
 mod protocol;
 mod types;
 mod tokens;
@@ -212,7 +212,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                         params: pairs.take().map(|x| x.1).unwrap(),
                         state: SqlConnectionNewState::PreLoginSend,
                         transport: TdsTransport::new(trans),
-                        sspi_client: None,
+                        wauth_client: None,
                     };
                     SqlConnectionNew::Next(Some(future))
                 },
@@ -234,12 +234,34 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
     }
 }
 
+pub enum WinAuth<'a> {
+    /// single-sign on using the current windows account
+    #[cfg(windows)]
+    SSPI_SSO(winauth::windows::NtlmSspi),
+    /// windows-integrated authentication using NTLMv2
+    NTLMv2(winauth::NtlmV2Client<'a>),
+}
+
+impl<'a> WinAuth<'a> {
+    pub fn next_bytes(&mut self, in_bytes: Option<&[u8]>) -> Result<Option<Vec<u8>>, io::Error> {
+        match *self {
+            #[cfg(windows)]
+            WinAuth::SSPI_SSO(ref mut sso_client) => {
+                Ok(try!(sso_client.next_bytes(in_bytes)).map(|x| x.to_vec()))
+            },
+            WinAuth::NTLMv2(ref mut client) => {
+                Ok(try!(client.next_bytes(in_bytes)))
+            }
+        }
+    }
+}
+
 #[doc(hidden)]
 pub struct SqlConnectionFuture<I: BoxableIo> {
     params: ConnectParams,
     state: SqlConnectionNewState,
     transport: TdsTransport<I>,
-    sspi_client: Option<ntlm::NtlmSspi>,
+    wauth_client: Option<WinAuth<'static>>,
 }
 
 impl<I: BoxableIo> SqlConnectionFuture<I> {
@@ -277,15 +299,22 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     match self.params.auth {
                         #[cfg(windows)]
                         AuthMethod::SSPI_SSO => {
-                            let (sso_client, buf) = try!(ntlm::sso::NtlmSso::new());
-                            login_message.integrated_security = Some(buf.to_owned());
-                            self.sspi_client = Some(ntlm::NtlmSspi::SSO(sso_client));
+                            // TODO: integrate channel binding
+                            let mut sso_client = try!(winauth::windows::NtlmSspiBuilder::new().build());
+                            let buf = try!(sso_client.next_bytes(None)).map(|x| x.to_owned());
+                            login_message.integrated_security = buf;
+                            self.wauth_client = Some(WinAuth::SSPI_SSO(sso_client));
                         },
                         AuthMethod::SqlServer(ref username, ref password) => {
                             login_message.username = username.clone();
                             login_message.password = password.clone();
                         },
-                        AuthMethod::_DUMMY => unreachable!(),
+                        AuthMethod::WinAuth(ref username, ref password) => {
+                            // TODO: integrate channel binding
+                            // TODO: use NEGOTIATE
+                            let client = winauth::NtlmV2ClientBuilder::new().build(unimplemented!(), username.clone(), password.clone());
+                            self.wauth_client = Some(WinAuth::NTLMv2(client));
+                        }
                     }
 
                     try_nb!(self.queue_simple_message(login_message));
@@ -301,13 +330,13 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     let token = try_ready!(self.transport.next_token());
                     match token.map(|x| x.1) {
                         Some(TdsResponseToken::SSPI(bytes)) => {
-                            assert!(self.sspi_client.is_some());
-                            match try!(self.sspi_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
+                            assert!(self.wauth_client.is_some());
+                            match try!(self.wauth_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
                                 Some(bytes) => {
                                     try!(self.queue_simple_message(SspiMessage(bytes)));
                                     self.state = SqlConnectionNewState::TokenStreamSend;
                                 },
-                                None => self.sspi_client = None,
+                                None => self.wauth_client = None,
                             }
                         },
                         Some(TdsResponseToken::Done(done)) => {
@@ -391,10 +420,11 @@ impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
 /// The authentication method that should be used during authentication
 pub enum AuthMethod {
     SqlServer(Cow<'static, str>, Cow<'static, str>),
+    // TODO: this should map to negotiate, currently it maps to NTLMv2
+    WinAuth(Cow<'static, str>, Cow<'static, str>),
     /// Single sign on using the local windows credentials (windows-only)
     #[cfg(windows)]
     SSPI_SSO,
-    _DUMMY
 }
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
@@ -511,18 +541,24 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                     connect_params.auth = AuthMethod::SSPI_SSO;
                 },
                 "uid" | "username" | "user" => {
-                    if let AuthMethod::SqlServer(ref mut username, _) = connect_params.auth {
-                        *username = value.to_owned().into();
-                    } else {
-                        connect_params.auth = AuthMethod::SqlServer(value.to_owned().into(), "".into());
-                    }
+                    connect_params.auth = match connect_params.auth {
+                        AuthMethod::SqlServer(ref mut username, _) | AuthMethod::WinAuth(ref mut username, _) => {
+                            *username = value.to_owned().into();
+                            continue;
+                        },
+                        AuthMethod::SSPI_SSO => AuthMethod::WinAuth(value.to_owned().into(), "".into()),
+                        _ => AuthMethod::SqlServer(value.to_owned().into(), "".into()),
+                    };
                 },
                 "password" | "pwd" => {
-                    if let AuthMethod::SqlServer(_, ref mut password) = connect_params.auth {
-                        *password = value.to_owned().into();
-                    } else {
-                        connect_params.auth = AuthMethod::SqlServer("".into(), value.to_owned().into());
-                    }
+                    connect_params.auth = match connect_params.auth {
+                        AuthMethod::SqlServer(_, ref mut password) | AuthMethod::WinAuth(_, ref mut password) => {
+                            *password = value.to_owned().into();
+                            continue;
+                        },
+                        AuthMethod::SSPI_SSO => AuthMethod::WinAuth("".into(), value.to_owned().into()),
+                        _ => AuthMethod::SqlServer("".into(), value.to_owned().into()),
+                    };
                 },
                 _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
             }
