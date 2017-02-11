@@ -536,9 +536,13 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                         target = Some(DynamicConnectionTarget::Tcp(addr));
                     }
                 },
-                #[cfg(windows)]
                 "integratedsecurity" if ["true", "yes", "sspi"].contains(&value.to_lowercase().as_str()) => {
-                    connect_params.auth = AuthMethod::SSPI_SSO;
+                    #[cfg(windows)]
+                    {
+                        connect_params.auth = AuthMethod::SSPI_SSO;
+                        continue;
+                    }
+                    connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
                 },
                 "uid" | "username" | "user" => {
                     connect_params.auth = match connect_params.auth {
@@ -546,8 +550,8 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                             *username = value.to_owned().into();
                             continue;
                         },
+                        #[cfg(windows)]
                         AuthMethod::SSPI_SSO => AuthMethod::WinAuth(value.to_owned().into(), "".into()),
-                        _ => AuthMethod::SqlServer(value.to_owned().into(), "".into()),
                     };
                 },
                 "password" | "pwd" => {
@@ -556,8 +560,8 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                             *password = value.to_owned().into();
                             continue;
                         },
+                        #[cfg(windows)]
                         AuthMethod::SSPI_SSO => AuthMethod::WinAuth("".into(), value.to_owned().into()),
-                        _ => AuthMethod::SqlServer("".into(), value.to_owned().into()),
                     };
                 },
                 _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
