@@ -295,6 +295,10 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                 SqlConnectionNewState::LoginSend => {
                     let mut login_message = LoginMessage::new();
 
+                    if let Some(ref db) = self.params.target_db {
+                        login_message.db_name = db.clone();
+                    }
+
                     // authentication
                     match self.params.auth {
                         #[cfg(windows)]
@@ -429,7 +433,8 @@ pub enum AuthMethod {
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
 pub struct ConnectParams {
-    auth: AuthMethod,
+    pub auth: AuthMethod,
+    pub target_db: Option<Cow<'static, str>>,
 }
 
 /// A target address and connection settings = all that's required to connect to a SQL server
@@ -481,6 +486,7 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
         let mut target: Option<DynamicConnectionTarget> = None;
         let mut connect_params = ConnectParams {
             auth: AuthMethod::SqlServer("".into(), "".into()),
+            target_db: None,
         };
 
         while !input.is_empty() {
@@ -537,12 +543,12 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                     }
                 },
                 "integratedsecurity" if ["true", "yes", "sspi"].contains(&value.to_lowercase().as_str()) => {
-                    #[cfg(windows)]
-                    {
+                    #[cfg(windows)] {
                         connect_params.auth = AuthMethod::SSPI_SSO;
-                        continue;
                     }
-                    connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
+                    #[cfg(not(windows))] {
+                        connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
+                    }
                 },
                 "uid" | "username" | "user" => {
                     connect_params.auth = match connect_params.auth {
@@ -563,6 +569,9 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                         #[cfg(windows)]
                         AuthMethod::SSPI_SSO => AuthMethod::WinAuth("".into(), value.to_owned().into()),
                     };
+                },
+                "database" => {
+                    connect_params.target_db = Some(value.to_owned().into());
                 },
                 _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
             }
