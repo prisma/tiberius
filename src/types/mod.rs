@@ -167,9 +167,11 @@ pub enum ColumnData<'a> {
     F64(f64),
     Bit(bool),
     Guid(Cow<'a, Guid>),
-    DateTime(Cow<'a, time::DateTime>),
-    SmallDateTime(Cow<'a, time::SmallDateTime>),
+    DateTime(time::DateTime),
+    SmallDateTime(time::SmallDateTime),
+    Time(time::Time),
     Date(time::Date),
+    DateTime2(time::DateTime2),
     /// owned/borrowed rust string
     String(Cow<'a, str>),
     /// a buffer string which is a reference to a buffer of a received packet
@@ -212,7 +214,8 @@ impl TypeInfo {
         if let Some(ty) = VarLenType::from_u8(ty) {
             let len = match ty {
                 VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Decimaln |
-                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money | VarLenType::Datetimen => try!(trans.inner.read_u8()) as usize,
+                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money | VarLenType::Datetimen |
+                VarLenType::Timen | VarLenType::Datetime2 => try!(trans.inner.read_u8()) as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
                     try!(trans.inner.read_u16::<LittleEndian>()) as usize
                 },
@@ -402,14 +405,14 @@ impl<'a> ColumnData<'a> {
                         let len = try!(trans.inner.read_u8());
                         match len {
                             0 => ColumnData::None,
-                            4 => ColumnData::SmallDateTime(Cow::Owned(time::SmallDateTime {
+                            4 => ColumnData::SmallDateTime(time::SmallDateTime {
                                 days: try!(trans.inner.read_u16::<LittleEndian>()),
                                 seconds_fragments: try!(trans.inner.read_u16::<LittleEndian>()),
-                            })),
-                            8 => ColumnData::DateTime(Cow::Owned(time::DateTime {
+                            }),
+                            8 => ColumnData::DateTime(time::DateTime {
                                 days: try!(trans.inner.read_i32::<LittleEndian>()),
                                 seconds_fragments: try!(trans.inner.read_u32::<LittleEndian>()),
-                            })),
+                            }),
                             _ => return Err(TdsError::Protocol(format!("datetimen: length of {} is invalid", len).into()))
                         }
                     },
@@ -424,6 +427,18 @@ impl<'a> ColumnData<'a> {
                             },
                             _ => return Err(TdsError::Protocol(format!("daten: length of {} is invalid", len).into()))
                         }
+                    },
+                    VarLenType::Timen => {
+                        let rlen = try!(trans.inner.read_u8());
+                        ColumnData::Time(try!(time::Time::decode(&mut *trans.inner, *len, rlen)))
+                    },
+                    VarLenType::Datetime2 => {
+                        let rlen = try!(trans.inner.read_u8()) - 3;
+                        let time = try!(time::Time::decode(&mut *trans.inner, *len, rlen));
+                        let mut bytes = [0u8; 4];
+                        try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
+                        let date = time::Date::new(LittleEndian::read_u32(&bytes));
+                        ColumnData::DateTime2(time::DateTime2(date, time))
                     },
                     _ => unimplemented!()
                 }
@@ -550,6 +565,21 @@ impl<'a> ColumnData<'a> {
                 try!(target.write_all(&[VarLenType::Daten as u8, 3]));
                 let mut tmp = [0u8; 4];
                 LittleEndian::write_u32(&mut tmp, dt.days());
+                assert_eq!(tmp[3], 0);
+                try!(target.write_all(&tmp[0..3]));
+            },
+            ColumnData::Time(ref t) => {
+                 let len = try!(t.len());
+                 try!(target.write_all(&[VarLenType::Timen as u8, t.scale, len]));
+                 try!(t.encode_to(&mut target));
+            },
+            ColumnData::DateTime2(ref dt) => {
+                let len = try!(dt.1.len()) + 3;
+                try!(target.write_all(&[VarLenType::Datetime2 as u8, dt.1.scale, len]));
+                try!(dt.1.encode_to(&mut target));
+                // date
+                let mut tmp = [0u8; 4];
+                LittleEndian::write_u32(&mut tmp, dt.0.days());
                 assert_eq!(tmp[3], 0);
                 try!(target.write_all(&tmp[0..3]));
             },
