@@ -24,6 +24,7 @@ pub enum Tokens {
     ColMetaData = 0x81,
     Error = 0xAA,
     Info = 0xAB,
+    Order = 0xA9,
     ReturnValue = 0xAC,
     LoginAck = 0xAD,
     Row = 0xD1,
@@ -33,7 +34,7 @@ pub enum Tokens {
     DoneProc = 0xFE,
     DoneInProc = 0xFF,
 }
-uint_to_enum!(Tokens, ReturnStatus, ColMetaData, Error, Info, ReturnValue, LoginAck, Row, SSPI, EnvChange, Done, DoneProc, DoneInProc);
+uint_to_enum!(Tokens, ReturnStatus, ColMetaData, Error, Info, Order, ReturnValue, LoginAck, Row, SSPI, EnvChange, Done, DoneProc, DoneInProc);
 
 #[derive(Debug)]
 pub enum TdsResponseToken {
@@ -41,6 +42,7 @@ pub enum TdsResponseToken {
     EnvChange(TokenEnvChange),
     Error(TokenError),
     Info(TokenInfo),
+    Order(TokenOrder),
     LoginAck(TokenLoginAck),
     Done(TokenDone),
     ColMetaData(Arc<TokenColMetaData>),
@@ -64,6 +66,7 @@ impl<I: Io> TdsTransport<I> {
             Tokens::ColMetaData => TokenColMetaData::parse_token(self),
             Tokens::EnvChange => TokenEnvChange::parse_token(self),
             Tokens::Info => TokenInfo::parse_token(self),
+            Tokens::Order => TokenOrder::parse_token(self),
             Tokens::LoginAck => TokenLoginAck::parse_token(self),
             Tokens::Done => TokenDone::parse_token(self),
             Tokens::DoneProc => TokenDoneProc::parse_token(self),
@@ -188,6 +191,21 @@ impl<I: Io> ParseToken<I> for TokenInfo {
             line: try!(trans.inner.read_u32::<LittleEndian>()),
         };
         Ok(Async::Ready(TdsResponseToken::Info(token)))
+    }
+}
+
+/// Contains the indexes of the columns by which the data is sorted
+#[derive(Debug)]
+pub struct TokenOrder(Vec<u16>);
+
+impl<I: Io> ParseToken<I> for TokenOrder {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+        let len = try!(trans.inner.read_u16::<LittleEndian>());
+        let mut cols = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            cols.push(try!(trans.inner.read_u16::<LittleEndian>()));
+        }
+        Ok(Async::Ready(TdsResponseToken::Order(TokenOrder(cols))))
     }
 }
 

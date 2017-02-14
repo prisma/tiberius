@@ -418,7 +418,7 @@ impl<I: Io> TdsTransport<I> {
                             }
                             continue;
                         },
-                        TdsResponseToken::Info(_) => continue,
+                        TdsResponseToken::Info(_) | TdsResponseToken::Order(_) => continue,
                         TdsResponseToken::Error(err) => {
                             return Err(TdsError::Server(err));
                         },
