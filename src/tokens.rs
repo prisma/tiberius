@@ -200,7 +200,7 @@ pub struct TokenOrder(Vec<u16>);
 
 impl<I: Io> ParseToken<I> for TokenOrder {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
-        let len = try!(trans.inner.read_u16::<LittleEndian>());
+        let len = try!(trans.inner.read_u16::<LittleEndian>())/2;
         let mut cols = Vec::with_capacity(len as usize);
         for _ in 0..len {
             cols.push(try!(trans.inner.read_u16::<LittleEndian>()));
