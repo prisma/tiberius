@@ -9,14 +9,14 @@ keywords = ["tds", "mssql"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-bitflags = "0.7.0"
+bitflags = "0.8.0"
 byteorder = "1.0"
 encoding = "0.2"
 lazy_static = "0.2"
 futures = "0.1.9"
 tokio-core = "0.1.1"
 futures-state-stream = "0.1"
-chrono = { version = "0.2.25", optional=true }
+chrono = { version = "0.3", optional=true }
 winauth = { version = "0.1", git = "https://github.com/steffengy/winauth-rs" }
 
 [features]

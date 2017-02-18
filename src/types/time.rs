@@ -192,12 +192,12 @@ mod chrono {
 
     #[inline]
     fn to_days(date: &NaiveDate, start_year: i32) -> i64 {
-        (*date - NaiveDate::from_ymd(start_year, 1, 1)).num_days()
+        date.signed_duration_since(NaiveDate::from_ymd(start_year, 1, 1)).num_days()
     }
 
     #[inline]
     fn to_sec_fragments(time: &NaiveTime) -> i64 {
-        (*time - NaiveTime::from_hms(0, 0, 0)).num_nanoseconds().unwrap() * 300 / (1e9 as i64)
+        time.signed_duration_since(NaiveTime::from_hms(0, 0, 0)).num_nanoseconds().unwrap() * 300 / (1e9 as i64)
     }
 
     from_column_data!(
