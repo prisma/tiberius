@@ -146,7 +146,7 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
         }
 
         let ResultInner { conn, ret_conn } = self.0.take().unwrap();
-        ret_conn.complete(conn);
+        assert!(ret_conn.send(conn).is_ok());
         Ok(Async::Ready(None))
     }
 }
@@ -211,7 +211,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
         }
 
         let ResultInner { conn, ret_conn } = self.inner.take().unwrap();
-        ret_conn.complete(conn);
+        assert!(ret_conn.send(conn).is_ok());
         Ok(Async::Ready(ret))
     }
 }

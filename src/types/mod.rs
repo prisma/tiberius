@@ -5,10 +5,9 @@ use std::io::Write;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use encoding::{DecoderTrap, Encoding};
 use futures::{Async, Poll};
-use tokio_core::io::Io;
 use tokens::BaseMetaDataColumn;
 use protocol::PLPChunkWriter;
-use transport::{NoLength, ReadState, ReadTyState, NVarcharPLPTyState, TdsBuf, TdsTransport, PrimitiveWrites};
+use transport::{Io, NoLength, ReadState, ReadTyState, NVarcharPLPTyState, TdsBuf, TdsTransport, PrimitiveWrites};
 use collation;
 use {FromUint, TdsResult, TdsError};
 

@@ -1,5 +1,4 @@
 ///! time type implementations
-use std::borrow::Cow;
 use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use super::{ColumnData, FromColumnData, ToColumnData, ToSql};
@@ -170,11 +169,10 @@ to_column_data!(self_,
     DateTime2 =>            ColumnData::DateTime2(*self_)
 );
 
-#[feature(chrono)]
+#[cfg(feature = "chrono")]
 mod chrono {
     extern crate chrono;
 
-    use std::borrow::Cow;
     use self::chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
     use types::{ColumnData, FromColumnData, ToColumnData, ToSql};
     use super::{Date, DateTime};

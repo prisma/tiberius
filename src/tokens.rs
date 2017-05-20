@@ -3,10 +3,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
 use futures::{Async, Poll};
-use tokio_core::io::Io;
-use transport::{ReadState, TdsBuf, TdsTransport, PrimitiveWrites};
+use transport::{Io, ReadState, TdsBuf, TdsTransport, PrimitiveWrites};
 use types::{TypeInfo, ColumnData};
-use protocol::{self, AllHeaderTy, PacketStatus, PacketType, PacketHeader, PacketWriter};
+use protocol::{self, PacketStatus, PacketType, PacketHeader, PacketWriter};
 use {TdsError, TdsResult, FromUint};
 
 /// read a token from an underlying transport

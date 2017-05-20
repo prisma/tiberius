@@ -4,9 +4,8 @@ use std::cmp;
 use std::io::{self, Cursor, Write};
 use std::mem;
 use futures::Sink;
-use tokio_core::io::Io;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use transport::{TdsTransport, TdsTransportInner};
+use transport::{Io, TdsTransport, TdsTransportInner};
 use {TdsError, TdsResult, FromUint, DRIVER_VERSION};
 
 /// The amount of bytes a packet header consists of
@@ -130,13 +129,17 @@ uint_to_enum!(FeatureLevel, SqlServerV7, SqlServer2000, SqlServer2000Sp1, SqlSer
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
-pub enum PreloginEncrypt {
+pub enum EncryptionLevel {
+    /// Only use encryption for the login procedure
     Off = 0,
+    /// Encrypt everything if possible
     On = 1,
+    /// Do not encrypt anything
     NotSupported = 2,
+    /// Encrypt everything and fail if not possible
     Required = 3,
 }
-uint_to_enum!(PreloginEncrypt, Off, On, NotSupported, Required);
+uint_to_enum!(EncryptionLevel, Off, On, NotSupported, Required);
 
 /// The prelogin packet used to initialize a connection
 #[derive(Debug)]
@@ -146,7 +149,7 @@ pub struct PreloginMessage {
     pub version: u32,
     pub sub_build: u16,
     /// token=0x01
-    pub encryption: PreloginEncrypt,
+    pub encryption: EncryptionLevel,
     /// [client] threadid for debugging purposes, token=0x03
     pub thread_id: u32,
     /// token=0x04
@@ -158,7 +161,7 @@ impl PreloginMessage {
         PreloginMessage {
             version: *DRIVER_VERSION as u32,
             sub_build: (*DRIVER_VERSION >> 32) as u16,
-            encryption: PreloginEncrypt::NotSupported,
+            encryption: EncryptionLevel::NotSupported,
             thread_id: 0,
             mars: false,
         }
@@ -238,7 +241,7 @@ impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
                 // encryption
                 1 => {
                     let encrypt = try!(cursor.read_u8());
-                    ret.encryption = try!(PreloginEncrypt::from_u8(encrypt)
+                    ret.encryption = try!(EncryptionLevel::from_u8(encrypt)
                         .ok_or(TdsError::Protocol(format!("invalid encryption value: {}", encrypt).into())));
                 },
                 3 => debug_assert_eq!(length, 0), // threadid

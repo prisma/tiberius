@@ -1,20 +1,208 @@
 //! low level transport that deals with reading bytes from an underlying Io
 //! handling data split accross packets, etc.
 use std::collections::VecDeque;
-use std::cell::RefCell;
 use std::fmt;
 use std::io::{self, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::str;
+use tokio_io::{AsyncRead, AsyncWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Sink, StartSend, Poll};
-use tokio_core::io::Io;
 use protocol::{self, PacketHeader, PacketStatus};
 use tokens::{TdsResponseToken, Tokens, TokenColMetaData, TokenEnvChange};
 use types::ColumnData;
 use {FromUint, TdsError};
+
+pub trait Io: AsyncRead + AsyncWrite {}
+impl<I: AsyncRead + AsyncWrite> Io for I {}
+
+#[cfg(feature = "tls")]
+pub mod tls {
+    extern crate native_tls;
+    extern crate tokio_tls;
+
+    use std::cmp;
+    use std::io::{self, Read, Write};
+    use futures::Poll;
+    use tokio_io::{AsyncRead, AsyncWrite};
+    use protocol::{self, PacketHeader, PacketType, PacketStatus};
+    use transport::{Io, TdsPacketId};
+    pub use self::native_tls::TlsConnector;
+    pub use self::tokio_tls::{TlsConnectorExt, ConnectAsync, TlsStream};
+    use TdsError;
+
+    impl From<native_tls::Error> for TdsError {
+        fn from(e: native_tls::Error) -> TdsError {
+            let err =  format!("{:?}", e);
+            TdsError::Protocol(err.into())
+        }
+    }
+
+    /// wraps written/read data into PRELOGIN packets
+    pub struct TlsTdsWrapper<S: Io> {
+        stream: S,
+        /// whether to wrap written/read data into prelogin packets (required for the handshake)
+        pub wrap_id: Option<TdsPacketId>,
+        wr: Vec<u8>,
+        rd: Vec<u8>,
+        bytes_left: usize,
+    }
+
+    impl<S: Io> TlsTdsWrapper<S> {
+        pub fn new(s: S, id: TdsPacketId) -> TlsTdsWrapper<S> {
+            TlsTdsWrapper {
+                stream: s,
+                wrap_id: Some(id),
+                wr: vec![],
+                rd: Vec::with_capacity(protocol::HEADER_BYTES),
+                bytes_left: 0,
+            }
+        }
+    }
+
+    impl<S: Io> Write for TlsTdsWrapper<S> {
+        #[inline]
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if self.wrap_id.is_none() {
+                self.stream.write(buf)
+            } else {
+                self.wr.extend_from_slice(buf);
+                Ok(buf.len())
+            }
+        }
+
+        #[inline]
+        fn flush(&mut self) -> io::Result<()> {
+            if let Some(ref mut wrap_id) = self.wrap_id {
+                if self.wr.is_empty() {
+                    return Ok(())
+                }
+                let header = PacketHeader {
+                    ty: PacketType::PreLogin,
+                    status: PacketStatus::EndOfMessage,
+                    ..PacketHeader::new(self.wr.len() + protocol::HEADER_BYTES, wrap_id.next())
+                };
+                let mut header_bytes = [0u8; protocol::HEADER_BYTES];
+                try!(header.serialize(&mut header_bytes));
+                try!(self.stream.write_all(&header_bytes));
+                try!(self.stream.write_all(&self.wr));
+                self.wr.truncate(0);
+            }
+            self.stream.flush()
+        }
+    }
+
+    impl<S: Io> Read for TlsTdsWrapper<S> {
+        #[inline]
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.wrap_id.is_none() {
+                return self.stream.read(buf)
+            }
+
+            // read a new packet header, when required
+            if self.bytes_left == 0 {
+                try!(self.flush());
+                let mut header_bytes = [0u8; protocol::HEADER_BYTES];
+                let end_pos = header_bytes.len() - self.rd.len();
+                let amount = try!(self.stream.read(&mut header_bytes[..end_pos]));
+
+                self.rd.extend_from_slice(&header_bytes[..amount]);
+                if self.rd.len() == protocol::HEADER_BYTES {
+                    let header = try!(PacketHeader::unserialize(&self.rd).map_err(|_|
+                        io::Error::new(io::ErrorKind::InvalidInput, "malformed packet header")));
+                    self.bytes_left = header.length as usize - protocol::HEADER_BYTES;
+                    self.rd.truncate(0);
+                }
+            }
+
+            // read as much data as required
+            if self.bytes_left > 0 {
+                let end_pos = cmp::min(self.bytes_left, buf.len());
+                let amount = try!(self.stream.read(&mut buf[..end_pos]));
+                if amount == 0 {
+                    return Ok(0);
+                }
+                self.bytes_left -= amount;
+                return Ok(amount);
+            }
+
+            Ok(0)
+        }
+    }
+
+    impl<S: Io> AsyncWrite for TlsTdsWrapper<S> {
+        fn shutdown(&mut self) -> Poll<(), io::Error> {
+            self.stream.shutdown()
+        }
+    }
+
+    impl<S: Io> AsyncRead for TlsTdsWrapper<S> {}
+
+    /// A potentially SSL capable stream that wraps any underlying IO
+    pub enum TransportStream<S: Io> {
+        None,
+        TLS(TlsStream<TlsTdsWrapper<S>>),
+        Raw(S),
+    }
+
+    impl<S: Io> Write for TransportStream<S> {
+        #[inline]
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            match *self {
+                TransportStream::None => unreachable!(),
+                TransportStream::Raw(ref mut raw) => raw.write(buf),
+                TransportStream::TLS(ref mut tls) => tls.write(buf),
+            }
+        }
+
+        #[inline]
+        fn flush(&mut self) -> io::Result<()> {
+            match *self {
+                TransportStream::None => unreachable!(),
+                TransportStream::Raw(ref mut raw) => raw.flush(),
+                TransportStream::TLS(ref mut tls) => tls.flush(),
+            }
+        }
+    }
+
+    impl<S: Io> Read for TransportStream<S> {
+        #[inline]
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            match *self {
+                TransportStream::None => unreachable!(),
+                TransportStream::Raw(ref mut raw) => raw.read(buf),
+                TransportStream::TLS(ref mut tls) => tls.read(buf),
+            }
+        }
+    }
+
+    impl<S: Io> AsyncWrite for TransportStream<S> {
+        fn shutdown(&mut self) -> Poll<(), io::Error> {
+            match *self {
+                TransportStream::None => unreachable!(),
+                TransportStream::Raw(ref mut raw) => raw.shutdown(),
+                TransportStream::TLS(ref mut tls) => tls.shutdown(),
+            }
+        }
+    }
+
+    impl<S: Io> AsyncRead for TransportStream<S> {}
+
+    // #WARNING: If no hostname is provided, certificate validation is DISABLED
+    pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> {
+        let host = host.unwrap_or("");
+        let cx = TlsConnector::builder().unwrap().build().unwrap();
+        cx.connect_async(host, stream)
+    }
+}
+
+#[cfg(feature = "tls")]
+pub use self::tls::*;
+
+#[cfg(not(feature = "tls"))]
+pub type TlsStream<S: Io> = S;
 
 pub struct NVarcharPLPTyState {
     pub bytes: Vec<u16>,
@@ -48,8 +236,21 @@ pub struct TdsTransport<I: Io> {
     pub transaction: u64,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct TdsPacketId(u8);
+
+impl TdsPacketId {
+    /// get the next unused packet id
+    #[inline]
+    pub fn next(&mut self) -> u8 {
+        let id = self.0;
+        self.0 = (id + 1) % 0xff;
+        id
+    }
+}
+
 pub struct TdsTransportInner<I: Io> {
-    io: I,
+    pub io: I,
     missing: usize,
     hrd: [u8; protocol::HEADER_BYTES],
     pub rd: TdsBuf,
@@ -57,7 +258,7 @@ pub struct TdsTransportInner<I: Io> {
     packets_left: bool,
 
     wr: VecDeque<(usize, Vec<u8>)>,
-    next_packet_id: u8,
+    pub next_packet_id: TdsPacketId,
     pub packet_size: usize,
     pub last_meta: Option<Arc<TokenColMetaData>>,
 }
@@ -312,7 +513,7 @@ impl<I: Io> TdsTransport<I> {
                 packets_left: true,
                 wr: VecDeque::new(),
                 //
-                next_packet_id: 0,
+                next_packet_id: TdsPacketId(0),
                 packet_size: packet_size,
                 last_meta: None,
             },
@@ -443,9 +644,7 @@ impl <I: Io> TdsTransportInner<I> {
     /// get the next unused packet id
     #[inline]
     pub fn next_id(&mut self) -> u8 {
-        let id = self.next_packet_id;
-        self.next_packet_id = (id + 1) % 0xff;
-        id
+        self.next_packet_id.next()
     }
 
     pub fn queue_vec(&mut self, buf: Vec<u8>) -> io::Result<()> {
@@ -463,10 +662,12 @@ impl <I: Io> TdsTransportInner<I> {
     pub fn next_packet(&mut self) -> Poll<PacketHeader, TdsError> {
         // read the header first
         if self.header.is_none() {
-            let offset = protocol::HEADER_BYTES - self.missing;
+            let mut offset = protocol::HEADER_BYTES - self.missing;
 
             while self.missing > 0 {
-                self.missing -= try_nb!(self.io.read(&mut self.hrd[offset..]))
+                let amount = try_nb!(self.io.read(&mut self.hrd[offset..]));
+                self.missing -= amount;
+                offset += amount;
             }
 
             let header = try!(PacketHeader::unserialize(&self.hrd));
