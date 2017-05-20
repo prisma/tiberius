@@ -128,7 +128,7 @@ uint_to_enum!(FeatureLevel, SqlServerV7, SqlServer2000, SqlServer2000Sp1, SqlSer
     SqlServer2008R2, SqlServerN);
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum EncryptionLevel {
     /// Only use encryption for the login procedure
     Off = 0,

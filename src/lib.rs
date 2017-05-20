@@ -275,6 +275,8 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     let mut msg = PreloginMessage::new();
                     if cfg!(feature = "tls") {
                         msg.encryption = self.params.ssl;
+                    } else if self.params.ssl != EncryptionLevel::NotSupported {
+                        panic!("TLS support is not enabled in this build, but required for this configuration!");
                     }
                     try_nb!(self.queue_simple_message(msg));
                     SqlConnectionNewState::PreLoginRecv
@@ -286,9 +288,14 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     // parse the prelogin packet
                     let buf = self.transport.inner.get_packet(header.length as usize);
                     let msg = try!(buf.as_ref().unserialize_message(&mut self.transport));
+
                     // move to an TLS stream, if requested
-                    match self.params.ssl {
-                        EncryptionLevel::On | EncryptionLevel::Required => {
+                    match (self.params.ssl, msg.encryption) {
+                        // encrypt everything
+                        (EncryptionLevel::Required, _) |
+                        (_, EncryptionLevel::Required) |
+                        (EncryptionLevel::On, _) |
+                        (_, EncryptionLevel::On) => {
                             match mem::replace(&mut self.transport.inner.io, TransportStream::None) {
                                 TransportStream::Raw(stream) => {
                                     let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream, self.transport.inner.next_packet_id);
@@ -302,8 +309,12 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                                 },
                                 _ => unreachable!(),
                             }
-                        },
-                        _ => SqlConnectionNewState::LoginSend
+                        }
+                        // encrypt login packet only (TODO)
+                        (EncryptionLevel::Off, EncryptionLevel::Off) => unimplemented!(),
+                        // do not encrypt at all
+                        (EncryptionLevel::NotSupported, _) |
+                        (_, EncryptionLevel::NotSupported) => SqlConnectionNewState::LoginSend
                     }
                 },
                 #[cfg(feature = "tls")]
@@ -464,6 +475,23 @@ pub struct ConnectParams {
     pub target_db: Option<Cow<'static, str>>,
 }
 
+impl ConnectParams {
+    /// Get a default/zeroed set of connection params
+    pub fn new() -> ConnectParams {
+        ConnectParams {
+            host: Cow::Borrowed(""),
+            ssl: if cfg!(feature = "tls") {
+                EncryptionLevel::Off
+            } else {
+                EncryptionLevel::NotSupported
+            },
+            trust_cert: false,
+            auth: AuthMethod::SqlServer("".into(), "".into()),
+            target_db: None,
+        }
+    }
+}
+
 /// A target address and connection settings = all that's required to connect to a SQL server
 ///
 /// # Example
@@ -477,6 +505,7 @@ pub struct ConnectParams {
 /// let addr: SocketAddr = "localhost:1433".parse().unwrap();
 /// let params = ConnectParams {
 ///     auth: AuthMethod::SSPI_SSO,
+///     ..ConnectParams::new(),
 /// };
 /// let client = SqlConnection::connect(lp.handle(), (&addr, params));
 /// ```
@@ -511,16 +540,7 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
         let mut input = &self[..];
 
         let mut target: Option<DynamicConnectionTarget> = None;
-        let mut connect_params = ConnectParams {
-            host: Cow::Borrowed(""),
-            ssl: EncryptionLevel::NotSupported,
-            trust_cert: false,
-            auth: AuthMethod::SqlServer("".into(), "".into()),
-            target_db: None,
-        };
-        if cfg!(feature = "tls") {
-            connect_params.ssl = EncryptionLevel::Required;
-        }
+        let mut connect_params = ConnectParams::new();
 
         while !input.is_empty() {
             let key_end = input.bytes().position(|x| x == b'=');
@@ -608,6 +628,9 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                 "trustservercertificate" if ["true", "yes"].contains(&value.to_lowercase().as_str()) => {
                     //connect_params.trust_cert = true;
                     unimplemented!()
+                },
+                "encrypt" if ["true", "yes"].contains(&value.to_lowercase().as_str()) => {
+                    connect_params.ssl = EncryptionLevel::Required;
                 },
                 _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
             }
