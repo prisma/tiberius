@@ -17,4 +17,4 @@ before_script:
 
 script:
   - docker ps -a
-  - cargo test
+  - cargo test --no-default-features --features "chrono"
