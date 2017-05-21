@@ -27,13 +27,15 @@ pub enum Tokens {
     ReturnValue = 0xAC,
     LoginAck = 0xAD,
     Row = 0xD1,
+    NbcRow = 0xD2,
     SSPI = 0xED,
     EnvChange = 0xE3,
     Done = 0xFD,
     DoneProc = 0xFE,
     DoneInProc = 0xFF,
 }
-uint_to_enum!(Tokens, ReturnStatus, ColMetaData, Error, Info, Order, ReturnValue, LoginAck, Row, SSPI, EnvChange, Done, DoneProc, DoneInProc);
+uint_to_enum!(Tokens, ReturnStatus, ColMetaData, Error, Info, Order, ReturnValue, LoginAck, Row,
+    NbcRow, SSPI, EnvChange, Done, DoneProc, DoneInProc);
 
 #[derive(Debug)]
 pub enum TdsResponseToken {
@@ -71,6 +73,7 @@ impl<I: Io> TdsTransport<I> {
             Tokens::DoneProc => TokenDoneProc::parse_token(self),
             Tokens::DoneInProc => TokenDoneInProc::parse_token(self),
             Tokens::Row => TokenRow::parse_token(self),
+            Tokens::NbcRow => TokenNbcRow::parse_token(self),
             Tokens::ReturnStatus => {
                 let val = try!(self.inner.read_u32::<LittleEndian>());
                 Ok(Async::Ready(TdsResponseToken::ReturnStatus(val)))
@@ -386,6 +389,7 @@ pub struct TokenRow {
 }
 
 impl<I: Io> ParseToken<I> for TokenRow {
+    #[inline]
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
         let col_meta = if let Some(ref col_meta) = trans.inner.last_meta {
             col_meta.clone()
@@ -394,15 +398,27 @@ impl<I: Io> ParseToken<I> for TokenRow {
         };
 
         // extract the state for the first Type/ColumnData parse call
-        let mut column_data = match trans.take_read_state() {
-            ReadState::Row(column_data, state) => {
+        let (row_tok, mut column_data) = match trans.take_read_state() {
+            ReadState::Row(token, column_data, state) => {
                 trans.read_state = ReadState::Type(state);
-                column_data
+                (token, column_data)
             },
             _ => unreachable!()
         };
 
-        for column in &col_meta.columns[column_data.len()..] {
+        for (i, column) in col_meta.columns.iter().enumerate().skip(column_data.len()) {
+            // only needed for NBCRow
+            if let Some(ref bitmap) = trans.inner.row_bitmap {
+                let index = i / 8;
+                let bit = i % 8;
+                // If the column is null (specified by the bitmap), there's nothing to read
+                if bitmap.as_ref()[index] & (1 << bit) > 0 {
+                    column_data.push(ColumnData::None);
+                    trans.read_state = ReadState::None;
+                    continue;
+                }
+            }
+
             match ColumnData::parse(trans, &column.base) {
                 Ok(Async::Ready(coldata)) => {
                     column_data.push(coldata);
@@ -414,10 +430,11 @@ impl<I: Io> ParseToken<I> for TokenRow {
                 },
                 ret => {
                     // reset the read state back to the last state value
-                    trans.read_state = ReadState::Row(column_data, match trans.take_read_state() {
+                    let col_state = match trans.take_read_state() {
                         ReadState::Type(tystate) => tystate,
                         _ => unreachable!()
-                    });
+                    };
+                    trans.read_state = ReadState::Row(row_tok, column_data, col_state);
                     // this closure cannot be executed here since Async::Ready is handled above, only used for type conversion
                     return ret.map(|_| Async::Ready((None as Option<TdsResponseToken>).unwrap()));
                 }
@@ -425,6 +442,33 @@ impl<I: Io> ParseToken<I> for TokenRow {
         }
         let token = TokenRow { meta: col_meta, columns: column_data };
         Ok(Async::Ready(TdsResponseToken::Row(token)))
+    }
+}
+
+#[derive(Debug)]
+pub struct TokenNbcRow;
+
+impl<I: Io> ParseToken<I> for TokenNbcRow {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+        if trans.inner.row_bitmap.is_none() {
+            let col_meta = if let Some(ref col_meta) = trans.inner.last_meta {
+                col_meta.clone()
+            } else {
+                return Err(TdsError::Protocol("missing colmeta data".into()));
+            };
+
+            // calculate size of the null-bitmap and read it
+            let bitmap_size = (col_meta.columns.len() + 8 - 1) / 8;
+            println!("{} columns => {} bits", col_meta.columns.len(), bitmap_size);
+            trans.inner.row_bitmap = trans.inner.read_bytes(bitmap_size);
+        }
+
+        if trans.inner.row_bitmap.is_some() {
+            let ret = try_ready!(TokenRow::parse_token(trans));
+            trans.inner.row_bitmap = None;
+            return Ok(Async::Ready(ret));
+        }
+        Ok(Async::NotReady)
     }
 }
 

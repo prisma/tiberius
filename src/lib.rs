@@ -888,6 +888,25 @@ mod tests {
         assert_eq!(i, limit);
     }
 
+    #[test]
+    fn nbcrow() {
+        let mut lp = Core::new().unwrap();
+        let c1 = new_connection(&mut lp);
+        let sql = "select null, null, null, null, 1, null, null, null, 2, null, null, 3, null, 4";
+
+        let query = c1.simple_query(sql);
+        let future = query.for_each_row(|x| {
+            let expected_results: Vec<Option<i32>> = vec![
+                None, None, None, None, Some(1),
+                None, None, None, Some(2), None, None, Some(3), None, Some(4)
+            ];
+            let results: Vec<Option<i32>> = (0..expected_results.len()).map(|i| x.get(i)).collect();
+            assert_eq!(results, expected_results);
+            Ok(())
+        });
+        lp.run(future).unwrap();
+    }
+
     /*#[test]
     fn prepared_select_reexecute() {
         let mut lp = Core::new().unwrap();

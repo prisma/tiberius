@@ -602,6 +602,16 @@ pub trait ToSql : ToColumnData {
     fn to_sql(&self) -> &'static str;
 }
 
+// allow getting nullable columns
+impl<'a, S: FromColumnData<'a> + 'a> FromColumnData<'a> for Option<S> {
+    fn from_column_data(data: &'a ColumnData) -> TdsResult<Self> {
+        if let ColumnData::None = *data {
+            return Ok(None);
+        }
+        S::from_column_data(data).map(Some)
+    }
+}
+
 from_column_data!(
     // integers are auto-castable on receiving
     bool:       ColumnData::Bit(val) => val;

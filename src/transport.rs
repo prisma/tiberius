@@ -223,7 +223,7 @@ pub enum ReadTyState {
 pub enum ReadState {
     None,
     Generic(Tokens, Option<usize>),
-    Row(Vec<ColumnData<'static>>, ReadTyState),
+    Row(Tokens, Vec<ColumnData<'static>>, ReadTyState),
 
     Type(ReadTyState),
 }
@@ -265,6 +265,7 @@ pub struct TdsTransportInner<I: Io> {
     pub next_packet_id: TdsPacketId,
     pub packet_size: usize,
     pub last_meta: Option<Arc<TokenColMetaData>>,
+    pub row_bitmap: Option<TdsBuf>,
 }
 
 impl<I: Io> Deref for TdsTransportInner<I> {
@@ -436,6 +437,7 @@ impl<I: Io> TdsTransport<I> {
                 next_packet_id: TdsPacketId(0),
                 packet_size: packet_size,
                 last_meta: None,
+                row_bitmap: None,
             },
             read_state: ReadState::None,
             read_reset: true,
@@ -475,9 +477,9 @@ impl<I: Io> TdsTransport<I> {
                     Tokens::SSPI | Tokens::EnvChange | Tokens::Info | Tokens::Error | Tokens::LoginAck => {
                         ReadState::Generic(token, Some(try!(self.inner.read_u16::<LittleEndian>()) as usize))
                     },
-                    Tokens::Row => {
+                    Tokens::Row | Tokens::NbcRow => {
                         let len = self.inner.last_meta.as_ref().map(|lm| lm.columns.len()).unwrap_or(0);
-                        ReadState::Row(Vec::with_capacity(len), ReadTyState::None)
+                        ReadState::Row(token, Vec::with_capacity(len), ReadTyState::None)
                     },
                     _ => {
                         ReadState::Generic(token, Some(0))
@@ -487,7 +489,7 @@ impl<I: Io> TdsTransport<I> {
 
             match self.read_state {
                 ReadState::Generic(token, Some(size_hint)) => (token, size_hint),
-                ReadState::Row(_, _) => (Tokens::Row, 0),
+                ReadState::Row(tok, _, _) => (tok, 0),
                 _ => unreachable!()
             }
         };
