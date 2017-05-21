@@ -5,6 +5,7 @@ version = "0.2.0"
 readme = "README.md"
 repository = "https://github.com/steffengy/tiberius"
 authors = ["Steffen Butzer <steffen.butzer@outlook.com>"]
+documentation = "https://docs.rs/tiberius/"
 keywords = ["tds", "mssql"]
 license = "MIT/Apache-2.0"
 
@@ -19,7 +20,7 @@ tokio-core = "0.1.1"
 tokio-io = "0.1"
 futures-state-stream = "0.1"
 chrono = { version = "0.3", optional = true }
-winauth = { version = "0.1", git = "https://github.com/steffengy/winauth-rs" }
+winauth = { version = "0.0.1" }
 native-tls = { version = "0.1", optional = true }
 tokio-tls = { version = "0.1", optional = true }
 
