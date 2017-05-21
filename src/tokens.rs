@@ -408,7 +408,7 @@ impl<I: Io> ParseToken<I> for TokenRow {
                     column_data.push(coldata);
                     // make sure to not fall behind this column, since parsing it again with data
                     // that isn't there anymore would be foolish
-                    trans.last_pos = trans.inner.position();
+                    trans.last_state = trans.inner.clone();
                     // we don't have a state for the next column yet
                     trans.read_state = ReadState::None;
                 },

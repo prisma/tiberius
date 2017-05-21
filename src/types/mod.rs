@@ -312,7 +312,7 @@ impl<'a> ColumnData<'a> {
                             let str_ = try!(String::from_utf16(&target[..]));
                             // make sure we do not skip before what we've already read for sure
                             trans.read_reset = old_read_reset;
-                            trans.last_pos = trans.inner.position();
+                            trans.last_state = trans.inner.clone();
                             ColumnData::String(str_.into())
                         } else {
                             match *read_state_mut {
@@ -377,7 +377,7 @@ impl<'a> ColumnData<'a> {
                             let str_ = String::from_utf16(&plp_state.bytes[..])?;
                             // make sure we do not skip before what we've already read for sure
                             trans.read_reset = old_read_reset;
-                            trans.last_pos = trans.inner.position();
+                            trans.last_state = trans.inner.clone();
                             ColumnData::String(str_.into())
                         }
                     },

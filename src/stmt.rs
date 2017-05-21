@@ -110,7 +110,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
 
         // receive and handle the result of sp_prepare
         while !self.done {
-            let (do_ret, new_pos) = match try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.next_token()) {
+            let (do_ret, new_state) = match try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.next_token()) {
                 Some((last_pos, token)) => match token {
                     TdsResponseToken::ColMetaData(meta) => {
                         if !meta.columns.is_empty() {
@@ -150,8 +150,8 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
             };
             if do_ret {
                 let conn = self.conn.take().unwrap();
-                if let Some(new_pos) = new_pos {
-                    conn.borrow_mut().transport.inner.set_position(new_pos);
+                if let Some(new_state) = new_state {
+                    conn.borrow_mut().transport.inner.rd = new_state;
                 }
                 let (sender, receiver) = oneshot::channel();
                 self.receiver = Some(receiver);

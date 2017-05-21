@@ -64,7 +64,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
 
                     match try_ready!(inner.transport.next_token()) {
                         None => panic!("resultset: expected a token!"),
-                        Some((last_pos, token)) => match token {
+                        Some((last_state, token)) => match token {
                             TdsResponseToken::ColMetaData(_) => {
                                 self.already_triggered = true;
                                 true
@@ -75,7 +75,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
                                 self.already_triggered = false;
                                 // make sure to return exactly one time for each result set
                                 if !old {
-                                    inner.transport.inner.set_position(last_pos); // reinject
+                                    inner.transport.inner.rd = last_state; // reinject
                                     true
                                 } else {
                                     false
@@ -129,13 +129,13 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
                 let token = try_ready!(inner.transport.next_token());
                 match token {
                     None => panic!("query: expected token"),
-                    Some((last_pos, token)) => match token {
+                    Some((last_state, token)) => match token {
                         TdsResponseToken::Row(row) => {
                             return Ok(Async::Ready(Some(QueryRow(row))));
                         },
                         // if this is the final done token, we need to reinject it for result set stream to handle it
                         TdsResponseToken::Done(ref done) if !done.status.contains(tokens::DONE_MORE) => {
-                            inner.transport.inner.set_position(last_pos);
+                            inner.transport.inner.rd = last_state;
                             break;
                         },
                         TdsResponseToken::Done(_) | TdsResponseToken::DoneInProc(_) => break,
@@ -184,7 +184,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
 
             loop {
                 match try_ready!(inner.transport.next_token()) {
-                    Some((last_pos, token)) => match token {
+                    Some((last_state, token)) => match token {
                         TdsResponseToken::Row(_) => {
                             self.single_token = false;
                         },
@@ -196,7 +196,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
                             // if this is the final done token, we need to reinject it for result set stream to handle it
                             // (as in querying, if self.single_token it already was reinjected and would result in an infinite cycle)
                             if !done.status.contains(tokens::DONE_MORE) && !self.single_token && final_token {
-                                inner.transport.inner.set_position(last_pos);
+                                inner.transport.inner.rd = last_state;
                             }
                             if done.status.contains(tokens::DONE_COUNT) {
                                 ret = done.done_rows;

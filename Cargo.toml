@@ -11,6 +11,7 @@ license = "MIT/Apache-2.0"
 [dependencies]
 bitflags = "0.8.0"
 byteorder = "1.0"
+bytes = "0.4.3"
 encoding = "0.2"
 lazy_static = "0.2"
 futures = "0.1.9"

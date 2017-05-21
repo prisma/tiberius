@@ -8,6 +8,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::str;
 use tokio_io::{AsyncRead, AsyncWrite};
+use bytes::{BufMut, Bytes, BytesMut};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Sink, StartSend, Poll};
 use protocol::{self, PacketHeader, PacketStatus};
@@ -232,10 +233,10 @@ pub struct TdsTransport<I: Io> {
     pub read_state: ReadState,
     /// whether to reset the position, if parsing this token fails (see comment below)
     pub read_reset: bool,
-    /// the last position which will be resetted to if not enough data is available
+    /// the last buffer which will be resetted to if not enough data is available
     /// needed for parsers where simply trying until enough data is available is not expensive enough
     /// that writing a stateful parser would be worth it
-    pub last_pos: usize,
+    pub last_state: TdsBuf,
     pub transaction: u64,
 }
 
@@ -321,34 +322,16 @@ impl<W: io::Write> WriteSize<W> for u16 {
     }
 }
 
-/// TdsBuf/TdsBufMut inspired by tokio's EasyBuf
-pub struct TdsBuf {
-    start: usize,
-    end: usize,
-    //TODO: Arc or Rc?
-    buf: Arc<Vec<u8>>,
-}
+#[derive(Clone)]
+pub struct TdsBuf(Bytes);
 
 impl TdsBuf {
-    pub fn with_capacity(cap: usize) -> TdsBuf {
-        TdsBuf {
-            start: 0,
-            end: 0,
-            buf: Arc::new(Vec::with_capacity(cap)),
-        }
-    }
-
-    pub fn set_position(&mut self, pos: usize) {
-        self.start = pos;
-        assert!(self.end >= self.start);
-    }
-
-    pub fn position(&self) -> usize {
-        self.start
+    pub fn empty() -> TdsBuf {
+        TdsBuf(Bytes::new())
     }
 
     pub fn len(&self) -> usize {
-        self.end - self.start
+        self.0.len()
     }
 
     pub fn as_str(&self) -> &str {
@@ -360,21 +343,7 @@ impl TdsBuf {
     /// attempts to read n bytes and returns them as a subslice-buffer
     pub fn read_bytes(&mut self, n: usize) -> Option<TdsBuf> {
         if self.len() >= n {
-            // determine whether it's the better option to copy or zero-copy
-            // based on the buffer memory overhead
-            let buf = if self.len() * 3/4 < n {
-                // zero-copy
-                TdsBuf {
-                    start: self.start,
-                    end: self.start + n,
-                    buf: self.buf.clone(),
-                }
-            } else {
-                // copy
-                self.as_ref()[..n].to_owned().into()
-            };
-            self.start += n;
-            return Some(buf)
+            return Some(TdsBuf(self.0.split_to(n)))
         }
         None
     }
@@ -384,7 +353,7 @@ impl TdsBuf {
         let n = target.len();
         if self.len() >= n {
             target.clone_from_slice(&self.as_ref()[..n]);
-            self.start += n;
+            self.0 = self.0.slice_from(n);
             return Ok(Async::Ready(()));
         }
         Ok(Async::NotReady)
@@ -410,49 +379,7 @@ impl TdsBuf {
         // this is suboptimal but we need to copy them to be able to interpret these strings properly
         let data: Vec<u16> = try!(vec![0u16; len].into_iter().map(|_| self.read_u16::<LittleEndian>()).collect());
         let bytes = try!(String::from_utf16(&data[..])).into_bytes();;
-        Ok(Async::Ready(bytes.into()))
-    }
-
-    /// get a mutable reference and
-    // optionally ensure the underlying buffer has atleast a given length
-    pub fn get_mut(&mut self, required_length: Option<usize>) -> &mut [u8] {
-        // the underlying buffer is only used by us, we can get exclusive access
-        if Arc::get_mut(&mut self.buf).is_some() {
-            let buf = Arc::get_mut(&mut self.buf).unwrap();
-
-            if self.start > 0 {
-                buf.drain(..self.start);
-                self.end -= self.start;
-                self.start = 0;
-            }
-
-            if let Some(min_len) = required_length {
-                if buf.len() < min_len + self.end {
-                    buf.resize(min_len + self.end, 0);
-                }
-            }
-            return &mut buf[self.end..]
-        }
-
-        // can't get access, need a new buffer
-        let mut new_capacity = self.buf.capacity();
-        let min_capacity = self.len() + required_length.unwrap_or(0);
-        if min_capacity > new_capacity {
-           new_capacity = min_capacity;
-        }
-        // allocate a new buffer with the required length
-        let mut v = Vec::with_capacity(new_capacity);
-        v.extend_from_slice(self.as_ref());
-        self.end -= v.len();
-        if let Some(min_len) = required_length {
-            if v.len() < min_len + self.end {
-                v.resize(min_len + self.end, 0);
-            }
-        }
-        self.start = 0;
-        self.buf = Arc::new(v);
-        let new_buf = Arc::get_mut(&mut self.buf).unwrap();
-        &mut new_buf[self.end..]
+        Ok(Async::Ready(TdsBuf(bytes.into())))
     }
 }
 
@@ -466,7 +393,7 @@ impl io::Read for TdsBuf {
         let len = buf.len();
         let written = try!(buf.write(&self.as_ref()[..len]));
         assert_eq!(written, len);
-        self.start += written;
+        self.0 = self.0.slice_from(written);
         Ok(written)
     }
 
@@ -480,17 +407,7 @@ impl io::Read for TdsBuf {
 
 impl AsRef<[u8]> for TdsBuf {
     fn as_ref(&self) -> &[u8] {
-        &self.buf[self.start..self.end]
-    }
-}
-
-impl From<Vec<u8>> for TdsBuf {
-    fn from(v: Vec<u8>) -> TdsBuf {
-        TdsBuf {
-            start: 0,
-            end: v.len(),
-            buf: Arc::new(v),
-        }
+        &self.0
     }
 }
 
@@ -511,7 +428,7 @@ impl<I: Io> TdsTransport<I> {
                 io: io,
                 missing: protocol::HEADER_BYTES,
                 hrd: [0; protocol::HEADER_BYTES],
-                rd: TdsBuf::with_capacity(packet_size),
+                rd: TdsBuf::empty(),
                 header: None,
                 packets_left: true,
                 wr: VecDeque::new(),
@@ -522,7 +439,7 @@ impl<I: Io> TdsTransport<I> {
             },
             read_state: ReadState::None,
             read_reset: true,
-            last_pos: 0,
+            last_state: TdsBuf::empty(),
             transaction: 0,
         }
     }
@@ -581,9 +498,9 @@ impl<I: Io> TdsTransport<I> {
         ret
     }
 
-    pub fn next_token(&mut self) -> Poll<Option<(usize, TdsResponseToken)>, TdsError> {
+    pub fn next_token(&mut self) -> Poll<Option<(TdsBuf, TdsResponseToken)>, TdsError> {
         loop {
-            self.last_pos = self.inner.position();
+            self.last_state = self.inner.rd.clone();
 
             let ret = match self.read_token() {
                 Err(TdsError::Io(ref err)) if err.kind() == ::std::io::ErrorKind::UnexpectedEof => {
@@ -597,7 +514,7 @@ impl<I: Io> TdsTransport<I> {
                 },
                 Async::NotReady => {
                     if self.read_reset {
-                        self.inner.rd.start = self.last_pos;
+                        self.inner.rd = mem::replace(&mut self.last_state, TdsBuf::empty());
                     }
                     self.read_reset = true;
                 },
@@ -628,7 +545,8 @@ impl<I: Io> TdsTransport<I> {
                         },
                         _ => ()
                     }
-                    return Ok(Async::Ready(Some((self.last_pos, ret))))
+                    let last_state = mem::replace(&mut self.last_state, TdsBuf::empty());
+                    return Ok(Async::Ready(Some((last_state, ret))))
                 },
             }
             // if we aren't done with the packets, load more
@@ -682,12 +600,29 @@ impl <I: Io> TdsTransportInner<I> {
         if self.header.is_some() {
             // make sure the packet body fits into the buffer
             while self.missing > 0 {
-                let count = {
-                    let write_buf = self.rd.get_mut(Some(self.missing));
-                    try_nb!(self.io.read(&mut write_buf[..self.missing]))
+                let buf = mem::replace(&mut self.rd.0, Bytes::new());
+                let mut write_buf = match buf.try_mut() {
+                    Ok(mut buf) => {
+                        if buf.remaining_mut() < self.missing {
+                            buf.reserve(self.missing);
+                        }
+                        buf
+                    },
+                    Err(old_buf) => {
+                        let mut buf = BytesMut::with_capacity(old_buf.len() + self.missing);
+                        buf.put_slice(old_buf.as_ref());
+                        buf
+                    }
                 };
-                self.rd.end += count;
-                self.missing -= count;
+                unsafe {
+                    let count_result = self.io.read(&mut write_buf.bytes_mut()[..self.missing]);
+                    if let Ok(count) = count_result {
+                        write_buf.advance_mut(count);
+                        self.missing -= count;
+                    }
+                    self.rd.0 = write_buf.freeze();
+                    try_nb!(count_result);
+                }
             }
 
             // if we're done get ready to read the next packet and restore state
