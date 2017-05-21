@@ -204,6 +204,9 @@ pub use self::tls::*;
 #[cfg(not(feature = "tls"))]
 pub type TlsStream<S: Io> = S;
 
+#[cfg(not(feature = "tls"))]
+pub type TransportStream<S: Io> = S;
+
 pub struct NVarcharPLPTyState {
     pub bytes: Vec<u16>,
     pub chunk_left: Option<usize>,

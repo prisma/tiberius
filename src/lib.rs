@@ -182,6 +182,7 @@ enum SqlConnectionNewState<I: Io> {
     LoginRecv,
     TokenStreamRecv,
     TokenStreamSend,
+    _Dummy(PhantomData<I>)
 }
 
 /// A representation of the initialization state of an SQL connection (pending connection)
@@ -200,10 +201,14 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
             *self = match *self {
                 SqlConnectionNew::Connection(ref mut pairs @ Some(_)) => {
                     let trans = try_ready!(pairs.as_mut().map(|x| &mut x.0).unwrap().poll());
+                    #[cfg(feature = "tls")]
+                    let trans = TransportStream::Raw(trans);
+                    let trans = TdsTransport::new(trans);
+
                     let future = SqlConnectionFuture {
                         params: pairs.take().map(|x| x.1).unwrap(),
                         state: SqlConnectionNewState::PreLoginSend,
-                        transport: TdsTransport::new(TransportStream::Raw(trans)),
+                        transport: trans,
                         wauth_client: None,
                     };
                     SqlConnectionNew::Next(Some(future))
@@ -296,19 +301,24 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                         (_, EncryptionLevel::Required) |
                         (EncryptionLevel::On, _) |
                         (_, EncryptionLevel::On) => {
-                            match mem::replace(&mut self.transport.inner.io, TransportStream::None) {
-                                TransportStream::Raw(stream) => {
-                                    let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream, self.transport.inner.next_packet_id);
-                                    let host = if self.params.trust_cert {
-                                        None
-                                    } else {
-                                        Some(&*self.params.host)
-                                    };
-                                    let tls_stream = transport::tls::connect_async(wrapped_stream, host);
-                                    SqlConnectionNewState::TLSPending(Some(tls_stream))
-                                },
-                                _ => unreachable!(),
+                            #[cfg(feature = "tls")]
+                            {
+                                match mem::replace(&mut self.transport.inner.io, TransportStream::None) {
+                                    TransportStream::Raw(stream) => {
+                                        let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream, self.transport.inner.next_packet_id);
+                                        let host = if self.params.trust_cert {
+                                            None
+                                        } else {
+                                            Some(&*self.params.host)
+                                        };
+                                        let tls_stream = transport::tls::connect_async(wrapped_stream, host);
+                                        SqlConnectionNewState::TLSPending(Some(tls_stream))
+                                    },
+                                    _ => unreachable!(),
+                                }
                             }
+                            #[cfg(not(feature = "tls"))]
+                            panic!("encryption requested without build support!");
                         }
                         // encrypt login packet only (TODO)
                         (EncryptionLevel::Off, EncryptionLevel::Off) => unimplemented!(),
@@ -391,7 +401,8 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                 SqlConnectionNewState::TokenStreamSend => {
                     try_ready!(self.transport.inner.poll_complete());
                     SqlConnectionNewState::TokenStreamRecv
-                }
+                },
+                SqlConnectionNewState::_Dummy(_) => unreachable!(),
             };
         }
 
