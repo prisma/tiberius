@@ -301,7 +301,9 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                         (EncryptionLevel::Required, _) |
                         (_, EncryptionLevel::Required) |
                         (EncryptionLevel::On, _) |
-                        (_, EncryptionLevel::On) => {
+                        (_, EncryptionLevel::On) |
+                        // encrypt login packet only
+                        (EncryptionLevel::Off, EncryptionLevel::Off) => {
                             #[cfg(feature = "tls")]
                             {
                                 match mem::replace(&mut self.transport.inner.io, TransportStream::None) {
@@ -321,8 +323,6 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                             #[cfg(not(feature = "tls"))]
                             panic!("encryption requested without build support!");
                         }
-                        // encrypt login packet only (TODO)
-                        (EncryptionLevel::Off, EncryptionLevel::Off) => unimplemented!(),
                         // do not encrypt at all
                         (EncryptionLevel::NotSupported, _) |
                         (_, EncryptionLevel::NotSupported) => SqlConnectionNewState::LoginSend
@@ -371,6 +371,20 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                 },
                 SqlConnectionNewState::LoginRecv => {
                     try_ready!(self.transport.inner.poll_complete());
+                    // if login only encryption was negotiated, disable encryption
+                    // after we sent the first login packet
+                    #[cfg(feature = "tls")]
+                    {
+                        if self.params.ssl == EncryptionLevel::Off {
+                            let stream = mem::replace(&mut self.transport.inner.io, TransportStream::None);
+                            self.transport.inner.io = match stream {
+                                TransportStream::TLS(mut stream) => TransportStream::Raw(
+                                    stream.get_mut().get_mut().take_stream()
+                                ),
+                                x => x,
+                            };
+                        }
+                    }
                     let header = try_ready!(self.transport.inner.next_packet());
                     assert_eq!(header.ty, PacketType::TabularResult);
                     SqlConnectionNewState::TokenStreamRecv
