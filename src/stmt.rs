@@ -51,6 +51,18 @@ impl Statement {
     }
 }
 
+impl<'a> From<&'a Statement> for Statement {
+    fn from(stmt: &'a Statement) -> Statement {
+        stmt.clone()
+    }
+}
+
+impl<S> From<S> for Statement where S: Into<Cow<'static, str>> {
+    fn from(sql: S) -> Statement {
+        Statement::new(sql.into())
+    }
+}
+
 /// A future which handles the execution of a prepared statement and translates it
 /// into the wished result (e.g. `QueryStream`)
 pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
@@ -69,7 +81,7 @@ pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
 }
 
 impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
-    pub fn new(conn: SqlConnection<I>, stmt: &Statement, params: &[&ToSql]) -> Self {
+    pub fn new(conn: SqlConnection<I>, stmt: Statement, params: &[&ToSql]) -> Self {
         let signature = params.iter().map(|x| x.to_sql()).collect();
         StmtStream {
             err: None,
@@ -77,7 +89,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
             conn: Some(conn),
             param_sig: Some(signature),
             receiver: None,
-            stmt: stmt.clone(),
+            stmt: stmt,
             already_triggered: false,
             _marker: PhantomData,
         }

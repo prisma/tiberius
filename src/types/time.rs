@@ -16,9 +16,8 @@ macro_rules! test_timedatatype {
             fn $name() {
                 let mut lp = Core::new().unwrap();
                 let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
-                    .map(|conn| (conn.prepare("SELECT @P1, convert(varchar, @P1, 121)"), conn))
-                    .and_then(|(stmt, conn)| {
-                        conn.query(&stmt, &[&$val]).for_each_row(|row| {
+                    .and_then(|conn| {
+                        conn.query("SELECT @P1, convert(varchar, @P1, 121)", &[&$val]).for_each_row(|row| {
                             assert_eq!(row.get::<_, $ty>(0), $val);
                             assert_eq!(row.get::<_, &str>(1), $str_val);
                             Ok(())

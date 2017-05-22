@@ -127,6 +127,7 @@ pub enum FeatureLevel {
 uint_to_enum!(FeatureLevel, SqlServerV7, SqlServer2000, SqlServer2000Sp1, SqlServer2005, SqlServer2008,
     SqlServer2008R2, SqlServerN);
 
+/// The configured encryption level specifying if encryption is required
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum EncryptionLevel {

@@ -62,11 +62,11 @@ impl<I: BoxableIo + 'static> Transaction<I> {
         TransactionStream::new(self.0.simple_query(query))
     }
 
-    pub fn exec(self, stmt: &Statement, params: &[&ToSql]) -> TransactionStream<StmtStream<I, ExecFuture<I>>> {
+    pub fn exec<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> TransactionStream<StmtStream<I, ExecFuture<I>>> {
         TransactionStream::new(self.0.exec(stmt, params))
     }
 
-    pub fn query(self, stmt: &Statement, params: &[&ToSql]) -> TransactionStream<StmtStream<I, QueryStream<I>>> {
+    pub fn query<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> TransactionStream<StmtStream<I, QueryStream<I>>> {
         TransactionStream::new(self.0.query(stmt, params))
     }
 

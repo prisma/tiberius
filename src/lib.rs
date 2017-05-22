@@ -187,6 +187,7 @@ enum SqlConnectionNewState<I: Io> {
 }
 
 /// A representation of the initialization state of an SQL connection (pending connection)
+#[doc(hidden)]
 pub enum SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send + Sized> {
     Connection(Option<(F, ConnectParams)>),
     Error(Option<TdsError>),
@@ -232,7 +233,8 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
     }
 }
 
-pub enum WinAuth<'a> {
+/// internal authentication state for windows authentication
+enum WinAuth<'a> {
     /// single-sign on using the current windows account
     #[cfg(windows)]
     SSPI_SSO(winauth::windows::NtlmSspi),
@@ -730,7 +732,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         self.simple_exec_internal(query)
     }
 
-    fn do_prepare_exec<'b>(&self, stmt: &Statement, params: &'b [&'b ToSql]) -> TokenRpcRequest<'b> {
+    fn do_prepare_exec<'b>(&self, stmt: Statement, params: &'b [&'b ToSql]) -> TokenRpcRequest<'b> {
         let mut param_str = String::with_capacity(10 * params.len());
 
         let mut params_meta = vec![
@@ -775,7 +777,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
-    fn do_exec<'a>(&self, stmt: &Statement, params: &'a [&'a ToSql]) -> TokenRpcRequest<'a> {
+    fn do_exec<'a>(&self, stmt: Statement, params: &'a [&'a ToSql]) -> TokenRpcRequest<'a> {
         let mut params_meta = vec![
             RpcParam {
                 // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
@@ -800,17 +802,18 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
-    fn internal_exec<R: StmtResult<I>>(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, R> {
+    fn internal_exec<R: StmtResult<I>>(self, stmt: Statement, params: &[&ToSql]) -> StmtStream<I, R> {
         // call sp_prepare (with valid handle) or sp_prepexec (initializer)
         let already_prepared = stmt.handle.borrow().as_ref().map(|handle| {
             // check if the param-type signature matches, if we have a handle
             handle.signature.iter().cloned().eq(params.iter().map(|x| x.to_sql()))
         }).unwrap_or(false);
+
         let req = if already_prepared {
-            self.do_exec(stmt, params)
+            self.do_exec(stmt.clone(), params)
         } else {
             *stmt.handle.borrow_mut() = None;
-            self.do_prepare_exec(stmt, params)
+            self.do_prepare_exec(stmt.clone(), params)
         };
 
         // write everything (or atleast queue it for write)
@@ -825,15 +828,15 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Execute a prepared statement and return each resultset and their associated rows
     /// Usually only one resultset will be interesting for which you can use
     /// [`for_each_row`](struct.StmtStream.html#method.for_each_row)
-    pub fn query(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, QueryStream<I>> {
-        self.internal_exec(stmt, params)
+    pub fn query<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> StmtStream<I, QueryStream<I>> {
+        self.internal_exec(stmt.into(), params)
     }
 
     /// Execute a prepared statement and return the affected rows for each resultset
     ///
     /// You can access each resultset (in most cases only one) using [`for_each`](struct.StmtStream.html#method.for_each)
-    pub fn exec(self, stmt: &Statement, params: &[&ToSql]) -> StmtStream<I, ExecFuture<I>> {
-        self.internal_exec(stmt, params)
+    pub fn exec<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> StmtStream<I, ExecFuture<I>> {
+        self.internal_exec(stmt.into(), params)
     }
 
     /// Start a transaction
