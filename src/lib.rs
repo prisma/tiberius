@@ -14,7 +14,7 @@
 //!
 //! fn main() {
 //!    let mut lp = Core::new().unwrap();
-//!    // for windows we demonstrate the hardcoded variant
+//!    // 1: for windows we demonstrate the hardcoded variant
 //!    // which is equivalent to:
 //!    //     let connection_string = "server=tcp:localhost,1433;integratedSecurity=true;";
 //!    //     let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
@@ -35,6 +35,43 @@
 //!    lp.run(future).unwrap();
 //! }
 //! ```
+//!
+//!
+//! # Prepared Statements
+//! Parameters use numeric indexes such as @P1, @P2 for the n-th parameter (starting with 1 for the first)
+//!
+//! ```rust
+//! extern crate futures;
+//! extern crate tokio_core;
+//! extern crate tiberius;
+//! use futures::Future;
+//! use tokio_core::reactor::Core;
+//! use tiberius::SqlConnection;
+//! use tiberius::stmt::ResultStreamExt;
+//!
+//! fn main() {
+//!    let mut lp = Core::new().unwrap();
+//!    // 1: Same as in the example above
+//!    let connection_string = if cfg!(windows) {
+//!        "server=tcp:localhost,1433;integratedSecurity=true;".to_owned()
+//!    } else {
+//!        ::std::env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap()
+//!    };
+//!
+//!    let future = SqlConnection::connect(lp.handle(), connection_string.as_str()).and_then(|conn| {
+//!        conn.query("SELECT x FROM (VALUES (1),(2),(3),(4)) numbers(x) WHERE x%@P1=@P2",
+//!            &[&2i32, &0i32]).for_each_row(|row| {
+//!            let val: i32 = row.get(0);
+//!            assert_eq!(val % 2, 0i32);
+//!            Ok(())
+//!        })
+//!    });
+//!    lp.run(future).unwrap();
+//! }
+//! ```
+//! If you intend to execute the same statement multiple times for the same connection, you should use `.prepare`.
+//! For most cases you'll want this though.
+
 #[macro_use]
 extern crate bitflags;
 extern crate bytes;
@@ -523,12 +560,13 @@ impl ConnectParams {
 /// A target address and connection settings = all that's required to connect to a SQL server
 ///
 /// # Example
-/// This allows to explicitly construct the connection parameters.
-/// This might be useful for connecting to an underlying IO that isn't supported
-/// within a connection string, such as through a custom protocol implementation.
+/// This allows to explicitly construct the connection parameters.  
+/// This might be useful for connecting to an underlying IO that isn't supported  
+/// within a connection string, such as through a custom protocol implementation.  
 ///
 /// (In theory it's slightly more efficient, since it should require less dynamic dispatch
 ///  but is also less flexible because the connection method has to be known at compile time)
+///
 /// ```rust
 /// let addr: SocketAddr = "localhost:1433".parse().unwrap();
 /// let params = ConnectParams {
@@ -920,6 +958,17 @@ mod tests {
             let results: Vec<Option<i32>> = (0..expected_results.len()).map(|i| x.get(i)).collect();
             assert_eq!(results, expected_results);
             Ok(())
+        });
+        lp.run(future).unwrap();
+    }
+
+    #[test]
+    fn prepared_select_empty_resultset() {
+        let mut lp = Core::new().unwrap();
+        let c1 = new_connection(&mut lp);
+
+        let future = c1.query("SELECT TOP 0 NULL AS MyValue", &[]).for_each_row(|_| {
+            unreachable!()
         });
         lp.run(future).unwrap();
     }
