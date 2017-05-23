@@ -62,28 +62,26 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
                     let mut inner = conn.borrow_mut();
                     try_ready!(inner.transport.inner.poll_complete());
 
-                    match try_ready!(inner.transport.next_token()) {
-                        None => panic!("resultset: expected a token!"),
-                        Some((last_state, token)) => match token {
-                            TdsResponseToken::ColMetaData(_) => {
-                                self.already_triggered = true;
-                                true
-                            },
-                            TdsResponseToken::Done(ref done) => {
-                                self.done = !done.status.contains(tokens::DONE_MORE);
-                                let old = self.already_triggered;
-                                self.already_triggered = false;
-                                // make sure to return exactly one time for each result set
-                                if !old {
-                                    inner.transport.inner.rd = last_state; // reinject
-                                    true
-                                } else {
-                                    false
-                                }
-                            },
-                            tok => panic!("resultset: unexpected token: {:?}", tok)
-                        }
+                    let token = try_ready!(inner.transport.next_token())
+                        .expect("resultset: expected a token!");
+                    let (do_ret, reinject) = match token {
+                        TdsResponseToken::ColMetaData(_) => {
+                            self.already_triggered = true;
+                            (true, false)
+                        },
+                        TdsResponseToken::Done(ref done) => {
+                            self.done = !done.status.contains(tokens::DONE_MORE);
+                            let old = self.already_triggered;
+                            self.already_triggered = false;
+                            // make sure to return exactly one time for each result set
+                            (!old, !old)
+                        },
+                        tok => panic!("resultset: unexpected token: {:?}", tok)
+                    };
+                    if reinject  {
+                        inner.transport.reinject(token);
                     }
+                    do_ret
                 }
             };
             if do_ret {
@@ -125,23 +123,18 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
             let mut inner = inner.conn.borrow_mut();
             try_ready!(inner.transport.inner.poll_complete());
 
-            loop {
-                let token = try_ready!(inner.transport.next_token());
-                match token {
-                    None => panic!("query: expected token"),
-                    Some((last_state, token)) => match token {
-                        TdsResponseToken::Row(row) => {
-                            return Ok(Async::Ready(Some(QueryRow(row))));
-                        },
-                        // if this is the final done token, we need to reinject it for result set stream to handle it
-                        TdsResponseToken::Done(ref done) if !done.status.contains(tokens::DONE_MORE) => {
-                            inner.transport.inner.rd = last_state;
-                            break;
-                        },
-                        TdsResponseToken::Done(_) | TdsResponseToken::DoneInProc(_) => break,
-                        x => panic!("query: unexpected token: {:?}", x),
-                    }
-                }
+            let token = try_ready!(inner.transport.next_token()).expect("query: expected token");
+            let reinject = match token {
+                TdsResponseToken::Row(row) => {
+                    return Ok(Async::Ready(Some(QueryRow(row))));
+                },
+                // if this is the final done token, we need to reinject it for result set stream to handle it
+                TdsResponseToken::Done(ref done) if !done.status.contains(tokens::DONE_MORE) => true,
+                TdsResponseToken::Done(_) | TdsResponseToken::DoneInProc(_) => false,
+                x => panic!("query: unexpected token: {:?}", x),
+            };
+            if reinject {
+                inner.transport.reinject(token);
             }
         }
 
@@ -183,29 +176,33 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
             try_ready!(inner.transport.inner.poll_complete());
 
             loop {
-                match try_ready!(inner.transport.next_token()) {
-                    Some((last_state, token)) => match token {
-                        TdsResponseToken::Row(_) => {
-                            self.single_token = false;
-                        },
-                        TdsResponseToken::Done(ref done) | TdsResponseToken::DoneInProc(ref done) | TdsResponseToken::DoneProc(ref done) => {
-                            let final_token = match token {
-                                TdsResponseToken::Done(_) | TdsResponseToken::DoneProc(_) => true,
-                                _ => false
-                            };
-                            // if this is the final done token, we need to reinject it for result set stream to handle it
-                            // (as in querying, if self.single_token it already was reinjected and would result in an infinite cycle)
-                            if !done.status.contains(tokens::DONE_MORE) && !self.single_token && final_token {
-                                inner.transport.inner.rd = last_state;
-                            }
-                            if done.status.contains(tokens::DONE_COUNT) {
-                                ret = done.done_rows;
-                            }
-                            break;
-                        },
-                        x => panic!("exec: unexpected token: {:?}", x),
+                let token = try_ready!(inner.transport.next_token()).expect("exec: expected token");
+                let reinject = match token {
+                    TdsResponseToken::Row(_) => {
+                        self.single_token = false;
+                        false
                     },
-                    None =>  panic!("expected token")
+                    TdsResponseToken::Done(ref done) | TdsResponseToken::DoneInProc(ref done) | TdsResponseToken::DoneProc(ref done) => {
+                        let final_token = match token {
+                            TdsResponseToken::Done(_) | TdsResponseToken::DoneProc(_) => true,
+                            _ => false
+                        };
+                        
+                        if done.status.contains(tokens::DONE_COUNT) {
+                            ret = done.done_rows;
+                        }
+                        // if this is the final done token, we need to reinject it for result set stream to handle it
+                        // (as in querying, if self.single_token it already was reinjected and would result in an infinite cycle)
+                        let reinject = !done.status.contains(tokens::DONE_MORE) && !self.single_token && final_token;
+                        if !reinject {
+                            break;
+                        }
+                        true
+                    },
+                    x => panic!("exec: unexpected token: {:?}", x),
+                };
+                if reinject {
+                    inner.transport.reinject(token);
                 }
             }
         }

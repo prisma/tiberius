@@ -122,48 +122,47 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
 
         // receive and handle the result of sp_prepare
         while !self.done {
-            let (do_ret, new_state) = match try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.next_token()) {
-                Some((last_pos, token)) => match token {
-                    TdsResponseToken::ColMetaData(meta) => {
-                        if !meta.columns.is_empty() {
-                            *self.stmt.meta.borrow_mut() = Some(meta.clone());
-                        }
-                        self.already_triggered = !meta.columns.is_empty() || self.stmt.handle.borrow().is_some();
-                        (self.already_triggered, None)
-                    },
-                    TdsResponseToken::DoneProc(done) => {
-                        // we've read each query result, we're done with the current sp_exec, this stream may rest
-                        assert_eq!(done.status, DoneStatus::empty());
-                        let old = self.already_triggered;
-                        self.already_triggered = false;
-                        self.done = true;
-                        (!old, Some(last_pos)) //reinject last_pos if !old
-                    },
-                    // this simply notifies us that a DoneProc is following (DONE_MORE)
-                    TdsResponseToken::DoneInProc(_) => (false, None),
-                    TdsResponseToken::ReturnStatus(status) => {
-                        assert_eq!(status & 1, 0); // ensure that failure is no part of status
-                        (false, None)
-                    },
-                    TdsResponseToken::ReturnValue(retval) => {
-                        assert_eq!(retval.param_name.as_str(), "handle");
-                        *self.stmt.handle.borrow_mut() = Some(match retval.value {
-                            ColumnData::I32(val) => StatementHandle {
-                                handle: val,
-                                signature: self.param_sig.take().unwrap(),
-                            },
-                            _ => unreachable!()
-                        });
-                        (false, None)
-                    },
-                    x => panic!("stmtstream: unexpected token: {:?}", x),
+            let token = try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.next_token())
+                .expect("StateStream: expected token");
+            let (do_ret, reinject) = match token {
+                TdsResponseToken::ColMetaData(ref meta) => {
+                    if !meta.columns.is_empty() {
+                        *self.stmt.meta.borrow_mut() = Some(meta.clone());
+                    }
+                    self.already_triggered = !meta.columns.is_empty() || self.stmt.handle.borrow().is_some();
+                    (self.already_triggered, false)
                 },
-                _ => unimplemented!()
+                TdsResponseToken::DoneProc(ref done) => {
+                    // we've read each query result, we're done with the current sp_exec, this stream may rest
+                    assert_eq!(done.status, DoneStatus::empty());
+                    let old = self.already_triggered;
+                    self.already_triggered = false;
+                    self.done = true;
+                    (!old, !old) //reinject if !old, see below
+                },
+                // this simply notifies us that a DoneProc is following (DONE_MORE)
+                TdsResponseToken::DoneInProc(_) => (false, false),
+                TdsResponseToken::ReturnStatus(ref status) => {
+                    assert_eq!(status & 1, 0); // ensure that failure is no part of status
+                    (false, false)
+                },
+                TdsResponseToken::ReturnValue(ref retval) => {
+                    assert_eq!(retval.param_name.as_str(), "handle");
+                    *self.stmt.handle.borrow_mut() = Some(match retval.value {
+                        ColumnData::I32(val) => StatementHandle {
+                            handle: val,
+                            signature: self.param_sig.take().unwrap(),
+                        },
+                        _ => unreachable!()
+                    });
+                    (false, false)
+                },
+                x => panic!("stmtstream: unexpected token: {:?}", x),
             };
             if do_ret {
                 let conn = self.conn.take().unwrap();
-                if let Some(new_state) = new_state {
-                    conn.borrow_mut().transport.inner.rd = new_state;
+                if reinject {
+                    conn.borrow_mut().transport.reinject(token);
                 }
                 let (sender, receiver) = oneshot::channel();
                 self.receiver = Some(receiver);

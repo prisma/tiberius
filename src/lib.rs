@@ -430,7 +430,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                 },
                 SqlConnectionNewState::TokenStreamRecv => {
                     let token = try_ready!(self.transport.next_token());
-                    match token.map(|x| x.1) {
+                    match token {
                         Some(TdsResponseToken::SSPI(bytes)) => {
                             assert!(self.wauth_client.is_some());
                             match try!(self.wauth_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
@@ -567,13 +567,18 @@ impl ConnectParams {
 /// (In theory it's slightly more efficient, since it should require less dynamic dispatch
 ///  but is also less flexible because the connection method has to be known at compile time)
 ///
-/// ```rust
-/// let addr: SocketAddr = "localhost:1433".parse().unwrap();
+/// ```rust,no_run
+/// use std::net::SocketAddr;
+/// use tiberius::{ConnectParams, EncryptionLevel, SqlConnection};
+/// let addr: SocketAddr = "127.0.0.1:1433".parse().unwrap();
 /// let params = ConnectParams {
-///     auth: AuthMethod::SSPI_SSO,
-///     ..ConnectParams::new(),
+///     ssl: EncryptionLevel::Required,
+///     host: "localhost".into(),
+///     ..ConnectParams::new()
 /// };
-/// let client = SqlConnection::connect(lp.handle(), (&addr, params));
+/// // WARNING: This is just so this test can compile, actually you'd want a reactor handle here
+/// let handle = unsafe { ::std::mem::zeroed() };
+/// SqlConnection::connect(handle, (&addr, params));
 /// ```
 pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Sized + 'static {
     params: ConnectParams,

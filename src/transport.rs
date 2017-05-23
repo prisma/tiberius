@@ -279,6 +279,7 @@ pub struct TdsTransport<I: Io> {
     /// that writing a stateful parser would be worth it
     pub last_state: TdsBuf,
     pub transaction: u64,
+    reinject_token: Option<TdsResponseToken>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -484,6 +485,7 @@ impl<I: Io> TdsTransport<I> {
             read_reset: true,
             last_state: TdsBuf::empty(),
             transaction: 0,
+            reinject_token: None,
         }
     }
 
@@ -491,6 +493,12 @@ impl<I: Io> TdsTransport<I> {
     #[inline]
     pub fn next_id(&mut self) -> u8 {
         self.inner.next_id()
+    }
+
+    /// reinject a token, so it's returned again on the next call to read_token
+    pub fn reinject(&mut self, tok: TdsResponseToken) {
+        assert!(self.reinject_token.is_none());
+        self.reinject_token = Some(tok);
     }
 
     #[inline]
@@ -541,7 +549,12 @@ impl<I: Io> TdsTransport<I> {
         ret
     }
 
-    pub fn next_token(&mut self) -> Poll<Option<(TdsBuf, TdsResponseToken)>, TdsError> {
+    pub fn next_token(&mut self) -> Poll<Option<TdsResponseToken>, TdsError> {
+        // return a reinjected token instantly
+        if let Some(next_token) = self.reinject_token.take() {
+            return Ok(Async::Ready(Some(next_token)));
+        }
+
         loop {
             self.last_state = self.inner.rd.clone();
 
@@ -588,8 +601,8 @@ impl<I: Io> TdsTransport<I> {
                         },
                         _ => ()
                     }
-                    let last_state = mem::replace(&mut self.last_state, TdsBuf::empty());
-                    return Ok(Async::Ready(Some((last_state, ret))))
+                    self.last_state = TdsBuf::empty();
+                    return Ok(Async::Ready(Some(ret)))
                 },
             }
             // if we aren't done with the packets, load more
