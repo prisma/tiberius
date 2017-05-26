@@ -257,6 +257,11 @@ impl QueryIdx for usize {
 }
 
 impl QueryRow {
+    /// Returns the amount of columns in the row
+    pub fn len(&self) -> usize {
+        self.0.columns.len()
+    }
+
     /// Attempt to get a column's value for a given column index
     pub fn try_get<'a, I: QueryIdx, R: FromColumnData<'a>>(&'a self, idx: I) -> TdsResult<Option<R>> {
         let idx = match idx.to_idx(self) {
