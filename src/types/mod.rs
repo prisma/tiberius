@@ -18,7 +18,7 @@ macro_rules! from_column_data {
                 fn from_column_data(data: &'a ColumnData) -> TdsResult<Self> {
                     match *data {
                         $( $pat => Ok($val), )*
-                        _ => Err(TdsError::Conversion(concat!("cannot interpret the given column data as an ", stringify!($ty), "value").into()))
+                        _ => Err(TdsError::Conversion(format!("cannot interpret {:?} as an {} value", *data, stringify!($ty)).into()))
                     }
                 }
             }
