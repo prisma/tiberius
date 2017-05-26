@@ -53,6 +53,12 @@ macro_rules! to_sql {
 
 mod time;
 
+/// Exported Datatypes (Dates, GUID, ...)
+pub mod prelude {
+    pub use super::Guid;
+    pub use super::time::{Date, DateTime, DateTime2, SmallDateTime, Time};
+}
+
 #[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 pub enum FixedLenType {

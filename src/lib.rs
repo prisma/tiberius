@@ -154,6 +154,7 @@ use stmt::{Statement, StmtStream};
 use transaction::new_transaction;
 pub use protocol::EncryptionLevel;
 pub use transaction::Transaction;
+pub use types::prelude as ty;
 
 lazy_static! {
     #[doc(hidden)]
