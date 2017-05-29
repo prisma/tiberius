@@ -150,7 +150,7 @@ use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, Serialize
 use types::{ColumnData, ToSql};
 use tokens::{TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, WriteToken};
 use query::{ResultSetStream, QueryStream, ExecFuture};
-use stmt::{Statement, StmtStream};
+use stmt::{Statement, StmtStream, ResultStreamExt};
 use transaction::new_transaction;
 pub use protocol::EncryptionLevel;
 pub use transaction::Transaction;
@@ -886,11 +886,9 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Start a transaction
     pub fn transaction(self) -> BoxFuture<Transaction<I>, TdsError> {
         self.simple_exec("set implicit_transactions on")
-            .and_then(|resultset| resultset)
-            .collect()
-            .and_then(|(results, conn)| {
-                assert_eq!(results.len(), 1);
-                assert_eq!(results[0], 0);
+            .single()
+            .and_then(|(result, conn)| {
+                assert_eq!(result, 0);
                 Ok(new_transaction(conn))
             })
             .boxed()
@@ -1045,8 +1043,7 @@ mod tests {
         }
 
         fn update_test_value<I: BoxableIo + 'static>(transaction: Transaction<I>, commit: bool) -> BoxFuture<SqlConnection<I>, TdsError> {
-            transaction.simple_exec("UPDATE #Temp SET test=44;")
-                .and_then(|result| result).collect()
+            transaction.simple_exec("UPDATE #Temp SET test=44;").single()
                 .and_then(|(_, trans)| trans.simple_query("SELECT test FROM #Temp;").for_each_row(|row| {
                     let val: i32 = row.get(0);
                     assert_eq!(val, 44i32);

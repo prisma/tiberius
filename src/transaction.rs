@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use futures::{Async, Future, BoxFuture, Poll, Stream};
 use futures_state_stream::{StateStream, StreamEvent};
 use query::{ResultSetStream, ExecFuture, QueryStream};
-use stmt::{ForEachRow, Statement, StmtStream, ResultStreamExt};
+use stmt::{ForEachRow, SingleResultSet, Statement, StmtStream, ResultStreamExt};
 use types::ToSql;
 use {BoxableIo, SqlConnection, TdsError};
 
@@ -51,6 +51,12 @@ impl<I: BoxableIo, R> ResultStreamExt<I> for TransactionStream<R> where R: Resul
     {
         ForEachRow::new(self, f)
     }
+
+    fn single(self) -> SingleResultSet<I, Self>
+        where Self: Sized + StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error> 
+    {
+        SingleResultSet::new(self)
+    }
 }
 
 impl<I: BoxableIo + 'static> Transaction<I> {
@@ -98,11 +104,9 @@ impl<I: BoxableIo + 'static> Transaction<I> {
     /// executes an internal statement and checks if it succeeded
     fn internal_exec(self, sql: &str) -> BoxFuture<Transaction<I>, TdsError> {
         self.simple_exec(sql)
-            .and_then(|resultset| resultset)
-            .collect()
-            .and_then(|(results, trans)| {
-                assert_eq!(results.len(), 1);
-                assert_eq!(results[0], 0);
+            .single()
+            .and_then(|(result, trans)| {
+                assert_eq!(result, 0);
                 Ok(trans)
             })
             .boxed()

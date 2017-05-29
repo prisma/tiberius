@@ -7,7 +7,7 @@ use std::sync::Arc;
 use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
-use query::QueryStream;
+use query::{ExecFuture, QueryStream};
 use tokens::{DoneStatus, TdsResponseToken, TokenColMetaData};
 use types::{ColumnData, ToSql};
 use {BoxableIo, SqlConnection, StmtResult, TdsError};
@@ -185,13 +185,78 @@ pub trait ResultStreamExt<I: BoxableIo>: StateStream {
     fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
         where Self: Sized + StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
                  F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>;
+
+    /// Expect 1 resultset and unpacks the single underlying ExecFuture
+    //
+    /// # Panics
+    /// This will panic if there is more than 1 resultset
+    fn single(self) -> SingleResultSet<I, Self>
+        where Self: Sized + StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>;
 }
 
-impl<I: BoxableIo> ResultStreamExt<I> for StmtStream<I, QueryStream<I>> {
-    fn for_each_row<F>(self, f: F) -> ForEachRow<I, StmtStream<I, QueryStream<I>>, F>
-        where F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
+impl<I: BoxableIo, R: StmtResult<I>> ResultStreamExt<I> for StmtStream<I, R> {
+    fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
+        where Self: Sized + StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
+                 F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
     {
         ForEachRow::new(self, f)
+    }
+
+    fn single(self) -> SingleResultSet<I, Self>
+        where Self: Sized + StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error> 
+    {
+        SingleResultSet::new(self)
+    }
+}
+
+/// Extract the result from a single resultset contained in a set of resultsets 
+pub struct SingleResultSet<I: BoxableIo, S: StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>> {
+    stream: S,
+    idx: usize,
+    resultset: Option<ExecFuture<I>>,
+    result: Option<<ExecFuture<I> as Future>::Item>,
+}
+
+impl<I, S> SingleResultSet<I, S> 
+    where I: BoxableIo, 
+          S: StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>
+{
+    pub fn new(stream: S) -> SingleResultSet<I, S> {
+        SingleResultSet { 
+            stream, 
+            idx: 0, 
+            resultset: None,
+            result: None 
+        }
+    }
+}
+
+impl<I, S> Future for SingleResultSet<I, S> 
+    where I: BoxableIo,
+          S: StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>
+{
+    type Item = (<ExecFuture<I> as Future>::Item, S::State);
+    type Error = <ExecFuture<I> as Future>::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            if let Some(ref mut resultset) = self.resultset {
+                self.result = Some(try_ready!(resultset.poll()));
+            }
+            // ensure we do not poll the same resultset again
+            self.resultset = None;
+            self.resultset = match try_ready!(self.stream.poll()) {
+                StreamEvent::Next(resultset) => Some(resultset),
+                StreamEvent::Done(conn) => {
+                    let result = self.result.take().expect("single expected 1 resultset, got none");
+                    return Ok(Async::Ready((result, conn)));
+                }
+            };
+            if self.idx == 1 {
+                panic!("single received more than 1 resultset");
+            }
+            self.idx += 1;
+        }
     }
 }
 
@@ -199,7 +264,7 @@ impl<I: BoxableIo> ResultStreamExt<I> for StmtStream<I, QueryStream<I>> {
 /// but handle/consume the entire result set so that we're ready to continue
 /// after the execution of this
 pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>, F> {
-    stream: Option<S>,
+    stream: S,
     f: F,
     idx: usize,
     resultset: Option<QueryStream<I>>,
@@ -211,7 +276,7 @@ impl<I: BoxableIo, S, F> ForEachRow<I, S, F>
 {
     pub fn new(stream: S, f: F) -> ForEachRow<I, S, F> {
         ForEachRow {
-            stream: Some(stream),
+            stream,
             f: f,
             idx: 0,
             resultset: None,
@@ -231,14 +296,12 @@ impl<I: BoxableIo, S, F> Future for ForEachRow<I, S, F>
             while let Some(ref mut resultset) = self.resultset {
                 match try_ready!(resultset.poll()) {
                     None => break,
-                    Some(row) => if self.idx == 1 {
-                        try!((self.f)(row))
-                    },
+                    Some(row) => try!((self.f)(row)),
                 }
             }
             // ensure we do not poll the same resultset again
             self.resultset = None;
-            self.resultset = match try_ready!(self.stream.as_mut().unwrap().poll()) {
+            self.resultset = match try_ready!(self.stream.poll()) {
                 StreamEvent::Next(resultset) => Some(resultset),
                 StreamEvent::Done(conn) => return Ok(Async::Ready(conn)),
             };

@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
-use stmt::{ForEachRow, ResultStreamExt};
+use stmt::{ForEachRow, SingleResultSet, ResultStreamExt};
 use tokens::{self, TdsResponseToken, TokenRow};
 use types::FromColumnData;
 use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
@@ -96,11 +96,18 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
     }
 }
 
-impl<'a, I: BoxableIo> ResultStreamExt<I> for ResultSetStream<I, QueryStream<I>> {
-    fn for_each_row<F>(self, f: F) -> ForEachRow<I, ResultSetStream<I, QueryStream<I>>, F>
-        where F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
+impl<'a, I: BoxableIo, R: StmtResult<I>> ResultStreamExt<I> for ResultSetStream<I, R> {
+    fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
+        where Self: Sized + StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
+                 F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
     {
         ForEachRow::new(self, f)
+    }
+
+    fn single(self) -> SingleResultSet<I, Self>
+        where Self: Sized + StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error> 
+    {
+        SingleResultSet::new(self)
     }
 }
 
