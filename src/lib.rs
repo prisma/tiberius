@@ -16,22 +16,25 @@
 //!    let mut lp = Core::new().unwrap();
 //!    // 1: for windows we demonstrate the hardcoded variant
 //!    // which is equivalent to:
-//!    //     let connection_string = "server=tcp:localhost,1433;integratedSecurity=true;";
-//!    //     let future = SqlConnection::connect(lp.handle(), connection_string).and_then(|conn| {
+//!    //     let conn_str = "server=tcp:localhost,1433;integratedSecurity=true;";
+//!    //     let future = SqlConnection::connect(lp.handle(), conn_str).and_then(|conn| {
 //!    // and for linux we use the connection string from an environment variable
-//!    let connection_string = if cfg!(windows) {
+//!    let conn_str = if cfg!(windows) {
 //!        "server=tcp:localhost,1433;integratedSecurity=true;".to_owned()
 //!    } else {
 //!        ::std::env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap()
 //!    };
 //!
-//!    let future = SqlConnection::connect(lp.handle(), connection_string.as_str()).and_then(|conn| {
-//!        conn.simple_query("SELECT 1+2").for_each_row(|row| {
-//!            let val: i32 = row.get(0);
-//!            assert_eq!(val, 3i32);
-//!            Ok(())
+//!    let future = SqlConnection::connect(lp.handle(), conn_str.as_str())
+//!        .and_then(|conn| {
+//!            conn.simple_query("SELECT 1+2").for_each_row(|row| {
+//!                let val: i32 = row.get(0);
+//!                assert_eq!(val, 3i32);
+//!                Ok(())
+//!            })
 //!        })
-//!    });
+//!        .and_then(|conn| conn.simple_exec("create table #Temp(gg int);").single())
+//!        .and_then(|(_, conn)| conn.simple_exec("UPDATE #Temp SET gg=1 WHERE gg=1").single());
 //!    lp.run(future).unwrap();
 //! }
 //! ```
@@ -52,13 +55,13 @@
 //! fn main() {
 //!    let mut lp = Core::new().unwrap();
 //!    // 1: Same as in the example above
-//!    let connection_string = if cfg!(windows) {
+//!    let conn_str = if cfg!(windows) {
 //!        "server=tcp:localhost,1433;integratedSecurity=true;".to_owned()
 //!    } else {
 //!        ::std::env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap()
 //!    };
 //!
-//!    let future = SqlConnection::connect(lp.handle(), connection_string.as_str()).and_then(|conn| {
+//!    let future = SqlConnection::connect(lp.handle(), conn_str.as_str()).and_then(|conn| {
 //!        conn.query("SELECT x FROM (VALUES (1),(2),(3),(4)) numbers(x) WHERE x%@P1=@P2",
 //!            &[&2i32, &0i32]).for_each_row(|row| {
 //!            let val: i32 = row.get(0);
