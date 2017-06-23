@@ -6,7 +6,7 @@ services:
   - docker
 
 env:
-  - TIBERIUS_TEST_CONNECTION_STRING='server=tcp:127.0.0.1,1433;username=sa;password=tiberius123Linux;'
+  - TIBERIUS_TEST_CONNECTION_STRING='server=tcp:127.0.0.1,1433;username=sa;password=tiberius123Linux;trustservercertificate=true'
 
 rust:
   - stable
@@ -17,4 +17,4 @@ before_script:
 
 script:
   - docker ps -a
-  - cargo test --no-default-features --features "chrono"
+  - cargo test

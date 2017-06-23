@@ -27,3 +27,6 @@ tokio-tls = { version = "0.1", optional = true }
 [features]
 default = ["chrono", "tls"]
 tls = ["tokio-tls", "native-tls"]
+
+[replace]
+"tokio-tls:0.1.2" = { git = 'https://github.com/tokio-rs/tokio-tls' }

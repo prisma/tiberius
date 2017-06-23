@@ -33,8 +33,8 @@ Currently this is only possible by doing someting like the following in your `ca
 tiberius = { version = "0.X", default-features=false,features=["chrono"] }
 ```
 **This will disable encryption for your ENTIRE crate**  
-In the future it will be possible to disable certificate validation by using `TrustServerCertificate` in your connection
-string. This unfortunately isn't implementable without support in the underlying libraries.
+
+### c) Disable certificate validation by using `TrustServerCertificate=true` in your connection string (requires 0.2.2)
 
 ### SQL Type Mappings
 Any nullable type should be accessed as `Option<T>` where T is any Rust Type listed below.

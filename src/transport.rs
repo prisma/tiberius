@@ -234,9 +234,11 @@ pub mod tls {
 
     // #WARNING: If no hostname is provided, certificate validation is DISABLED
     pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> {
-        let host = host.unwrap_or("");
         let cx = TlsConnector::builder().unwrap().build().unwrap();
-        cx.connect_async(host, stream)
+        match host {
+            Some(host) => cx.connect_async(host, stream),
+            None => cx.danger_connect_async_without_providing_domain_for_certificate_verification_and_server_name_indication(stream),
+        }
     }
 }
 

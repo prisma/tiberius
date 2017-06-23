@@ -93,6 +93,7 @@ extern crate winauth;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::convert::From;
+use std::cmp;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::marker::PhantomData;
 use std::mem;
@@ -626,11 +627,11 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
             input = &input[key_end+1..];
             // check if an escaped value (e.g. 'my password contains a;' or 'or a \' #kappa' follows)
             let escaped = input.starts_with('\'');
-            let end = input.bytes().position(|x| x == b';').unwrap_or_else(|| input.len().saturating_sub(1));
+            let end = input.bytes().position(|x| x == b';').unwrap_or(input.len());
 
             let value = if !escaped {
                 let ret = &input[..end];
-                input = &input[end+1..];
+                input = &input[cmp::min(end + 1, input.len())..];
                 Cow::Borrowed(ret)
             } else {
                 let mut val = String::with_capacity(end);
@@ -701,8 +702,7 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                     connect_params.target_db = Some(value.into_owned().into());
                 },
                 "trustservercertificate" if ["true", "yes"].contains(&value.to_lowercase().as_str()) => {
-                    //connect_params.trust_cert = true;
-                    unimplemented!()
+                    connect_params.trust_cert = true;
                 },
                 "encrypt" if ["true", "yes"].contains(&value.to_lowercase().as_str()) => {
                     connect_params.ssl = EncryptionLevel::Required;
