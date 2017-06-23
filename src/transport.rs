@@ -234,7 +234,32 @@ pub mod tls {
 
     // #WARNING: If no hostname is provided, certificate validation is DISABLED
     pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> {
-        let cx = TlsConnector::builder().unwrap().build().unwrap();
+        
+        let mut builder = TlsConnector::builder().unwrap();
+        let mut panic = true;
+
+        if host.is_none() {
+            #[cfg(windows)]
+            {
+                panic = false;
+                use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
+                builder.verify_callback(|_| Ok(()));
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            {
+                panic = false;
+                extern crate openssl;
+                use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
+                println!("builder modifying");
+                builder.builder_mut().builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_PEER, |_, _| true);
+            }
+
+            if panic {
+                panic!("disabling cert verification is not supported for this target");
+            }
+        }
+
+        let cx = builder.build().unwrap();
         match host {
             Some(host) => cx.connect_async(host, stream),
             None => cx.danger_connect_async_without_providing_domain_for_certificate_verification_and_server_name_indication(stream),
