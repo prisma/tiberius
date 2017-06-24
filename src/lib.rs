@@ -102,7 +102,6 @@ use std::io;
 use futures::{Async, BoxFuture, Future, Poll, Sink};
 use futures::sync::oneshot;
 use futures::future::FromErr;
-use futures_state_stream::StateStream;
 use tokio_core::net::{TcpStream, TcpStreamNew};
 use tokio_core::reactor::Handle;
 
@@ -156,6 +155,7 @@ use tokens::{TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFla
 use query::{ResultSetStream, QueryStream, ExecFuture};
 use stmt::{Statement, StmtStream, ResultStreamExt};
 use transaction::new_transaction;
+use winauth::NextBytes;
 pub use protocol::EncryptionLevel;
 pub use transaction::Transaction;
 pub use types::prelude as ty;
@@ -275,35 +275,12 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
     }
 }
 
-/// internal authentication state for windows authentication
-enum WinAuth<'a> {
-    /// single-sign on using the current windows account
-    #[cfg(windows)]
-    SSPI_SSO(winauth::windows::NtlmSspi),
-    /// windows-integrated authentication using NTLMv2
-    NTLMv2(winauth::NtlmV2Client<'a>),
-}
-
-impl<'a> WinAuth<'a> {
-    pub fn next_bytes(&mut self, in_bytes: Option<&[u8]>) -> Result<Option<Vec<u8>>, io::Error> {
-        match *self {
-            #[cfg(windows)]
-            WinAuth::SSPI_SSO(ref mut sso_client) => {
-                Ok(try!(sso_client.next_bytes(in_bytes)).map(|x| x.to_vec()))
-            },
-            WinAuth::NTLMv2(ref mut client) => {
-                Ok(try!(client.next_bytes(in_bytes)))
-            }
-        }
-    }
-}
-
 #[doc(hidden)]
 pub struct SqlConnectionFuture<I: BoxableIo> {
     params: ConnectParams,
     state: SqlConnectionNewState<I>,
     transport: TdsTransport<TransportStream<I>>,
-    wauth_client: Option<WinAuth<'static>>,
+    wauth_client: Option<Box<NextBytes>>,
 }
 
 impl<I: BoxableIo> SqlConnectionFuture<I> {
@@ -396,7 +373,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                             let mut sso_client = try!(winauth::windows::NtlmSspiBuilder::new().build());
                             let buf = try!(sso_client.next_bytes(None)).map(|x| x.to_owned());
                             login_message.integrated_security = buf;
-                            self.wauth_client = Some(WinAuth::SSPI_SSO(sso_client));
+                            self.wauth_client = Some(Box::new(sso_client));
                         },
                         AuthMethod::SqlServer(ref username, ref password) => {
                             login_message.username = username.clone();
@@ -405,8 +382,22 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                         AuthMethod::WinAuth(ref username, ref password) => {
                             // TODO: integrate channel binding
                             // TODO: use NEGOTIATE
-                            let client = winauth::NtlmV2ClientBuilder::new().build(unimplemented!(), username.clone(), password.clone());
-                            self.wauth_client = Some(WinAuth::NTLMv2(client));
+                            let (domain, username) = if let Some(idx) = username.find("\\") {
+                                match *username {
+                                    Cow::Borrowed(ref x) => {
+                                        let (domain, username) = (&x[..idx], &x[idx+1..]);
+                                        (Some(Cow::Borrowed(domain)), username.into())
+                                    }
+                                    Cow::Owned(ref x) => {
+                                        let (domain, username) = (&x[..idx], &x[idx+1..]);
+                                        (Some(Cow::Owned(domain.to_owned())), username.to_owned().into())
+                                    }
+                                }
+                            } else {
+                                (None, username.clone())
+                            };
+                            let client = winauth::NtlmV2ClientBuilder::new().build(domain, username, password.clone());
+                            self.wauth_client = Some(Box::new(client));
                         }
                     }
 
@@ -527,6 +518,7 @@ impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
 }
 
 /// The authentication method that should be used during authentication
+#[allow(non_camel_case_types)]
 pub enum AuthMethod {
     SqlServer(Cow<'static, str>, Cow<'static, str>),
     // TODO: this should map to negotiate, currently it maps to NTLMv2

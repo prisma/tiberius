@@ -236,9 +236,9 @@ pub mod tls {
     pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> {
         
         let mut builder = TlsConnector::builder().unwrap();
-        let mut panic = true;
 
         if host.is_none() {
+            let panic;
             #[cfg(windows)]
             {
                 panic = false;

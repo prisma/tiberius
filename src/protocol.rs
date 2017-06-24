@@ -215,7 +215,7 @@ impl SerializeMessage for PreloginMessage {
 }
 
 impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
-    fn unserialize_message<I: Io>(&self, ctx: &mut TdsTransport<I>) -> TdsResult<PreloginMessage> {
+    fn unserialize_message<I: Io>(&self, _: &mut TdsTransport<I>) -> TdsResult<PreloginMessage> {
         let mut cursor = Cursor::new(self);
         let mut ret = PreloginMessage::new();
 
