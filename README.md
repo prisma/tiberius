@@ -14,7 +14,9 @@ For installing please don't forget the following things:
 As of now only TCP is supported, which is **disabled by default**.  
 Make sure to enable TCP in your [MSSQL settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx).
 
-### a) Make sure to use a trusted certificate
+### Encryption (TLS/SSL)
+
+#### a) Make sure to use a trusted certificate
 Make sure the certificate your using is trusted by your local machine.  
 To create a self-signed certificate that is trusted you can use the following powershell:
 ```powershell
@@ -24,17 +26,18 @@ $rootStore.Open("ReadWrite")
 $rootStore.Add($cert)
 $rootStore.Close();
 ```
-You also have to [change the certificate in the SQL Server settings](https://support.microsoft.com/en-us/help/316898/how-to-enable-ssl-encryption-for-an-instance-of-sql-server-by-using-microsoft-management-console).
+You also have to [change the certificate in the SQL Server settings](https://support.microsoft.com/en-us/help/316898/how-to-enable-ssl-encryption-for-an-instance-of-sql-server-by-using-microsoft-management-console).  
+In a production setting you likely want to use a certificate that is issued by a CA.
 
-### b) Alternatively: Disable Encryption for LOCALHOST
+#### b) Disable certificate validation by using `TrustServerCertificate=true` in your connection string (requires 0.2.2)
+
+#### c) Alternatively: Disable Encryption for LOCALHOST
 For a connection to localhost, which will never leave your machine, it's safe to disable encryption.
 Currently this is only possible by doing someting like the following in your `cargo.toml`:
 ```toml
 tiberius = { version = "0.X", default-features=false,features=["chrono"] }
 ```
 **This will disable encryption for your ENTIRE crate**  
-
-### c) Disable certificate validation by using `TrustServerCertificate=true` in your connection string (requires 0.2.2)
 
 ### SQL Type Mappings
 Any nullable type should be accessed as `Option<T>` where T is any Rust Type listed below.
