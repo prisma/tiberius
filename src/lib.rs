@@ -98,6 +98,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::Deref;
+use std::sync::{Arc, Mutex};
 use std::io;
 use futures::{Async, BoxFuture, Future, Poll, Sink};
 use futures::sync::oneshot;
@@ -253,6 +254,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                         params: pairs.take().map(|x| x.1).unwrap(),
                         state: SqlConnectionNewState::PreLoginSend,
                         transport: trans,
+                        bindings: Arc::new(Mutex::new(None)),
                         wauth_client: None,
                     };
                     SqlConnectionNew::Next(Some(future))
@@ -280,6 +282,8 @@ pub struct SqlConnectionFuture<I: BoxableIo> {
     params: ConnectParams,
     state: SqlConnectionNewState<I>,
     transport: TdsTransport<TransportStream<I>>,
+    /// receiver for channel bindings certificate hash (TLS)
+    bindings: Arc<Mutex<Option<Vec<u8>>>>,
     wauth_client: Option<Box<NextBytes>>,
 }
 
@@ -316,15 +320,19 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     let buf = self.transport.inner.get_packet(header.length as usize);
                     let msg = try!(buf.as_ref().unserialize_message(&mut self.transport));
 
+                    let encr = match (self.params.ssl, msg.encryption) {
+                        (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => EncryptionLevel::NotSupported,
+                        (EncryptionLevel::Off, EncryptionLevel::Off) => EncryptionLevel::Off,
+                        (EncryptionLevel::On, EncryptionLevel::Off) |
+                        (EncryptionLevel::On, EncryptionLevel::NotSupported) => panic!("todo: terminate connection, invalid encryption"),
+                        (_, _) => EncryptionLevel::On,
+                    };
+                    self.params.ssl = encr;
+
                     // move to an TLS stream, if requested
-                    match (self.params.ssl, msg.encryption) {
-                        // encrypt everything
-                        (EncryptionLevel::Required, _) |
-                        (_, EncryptionLevel::Required) |
-                        (EncryptionLevel::On, _) |
-                        (_, EncryptionLevel::On) |
-                        // encrypt login packet only
-                        (EncryptionLevel::Off, EncryptionLevel::Off) => {
+                    match encr {
+                        // encrypt entirely or only logon packet
+                        EncryptionLevel::On | EncryptionLevel::Off | EncryptionLevel::Required => {
                             #[cfg(feature = "tls")]
                             {
                                 match mem::replace(&mut self.transport.inner.io, TransportStream::None) {
@@ -335,7 +343,12 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                                         } else {
                                             Some(&*self.params.host)
                                         };
-                                        let tls_stream = transport::tls::connect_async(wrapped_stream, host);
+                                        let bindings = self.bindings.clone();
+                                        let tls_stream = transport::tls::connect_async(wrapped_stream, host, move |hash| {
+                                            *bindings.lock().unwrap() = Some(
+                                                [b"tls-server-end-point:" as &[u8], hash.as_slice()
+                                            ].concat());
+                                        });
                                         SqlConnectionNewState::TLSPending(Some(tls_stream))
                                     },
                                     _ => unreachable!(),
@@ -345,8 +358,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                             panic!("encryption requested without build support!");
                         }
                         // do not encrypt at all
-                        (EncryptionLevel::NotSupported, _) |
-                        (_, EncryptionLevel::NotSupported) => SqlConnectionNewState::LoginSend
+                        EncryptionLevel::NotSupported => SqlConnectionNewState::LoginSend
                     }
                 },
                 #[cfg(feature = "tls")]
@@ -369,8 +381,12 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     match self.params.auth {
                         #[cfg(windows)]
                         AuthMethod::SSPI_SSO => {
-                            // TODO: integrate channel binding
-                            let mut sso_client = try!(winauth::windows::NtlmSspiBuilder::new().build());
+                            let mut builder = winauth::windows::NtlmSspiBuilder::new()
+                                .target_spn(&self.params.spn);
+                            if let Some(ref hash) = *self.bindings.lock().unwrap() {
+                                builder = builder.channel_bindings(hash);
+                            }
+                            let mut sso_client = try!(builder.build());
                             let buf = try!(sso_client.next_bytes(None)).map(|x| x.to_owned());
                             login_message.integrated_security = buf;
                             self.wauth_client = Some(Box::new(sso_client));
@@ -396,7 +412,15 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                             } else {
                                 (None, username.clone())
                             };
-                            let client = winauth::NtlmV2ClientBuilder::new().build(domain, username, password.clone());
+                            let mut builder = winauth::NtlmV2ClientBuilder::new()
+                                                      .target_spn(self.params.spn.clone());
+                            if let Some(ref hash) = *self.bindings.lock().unwrap() {
+                                println!("{:?}", hash);
+                                builder = builder.channel_bindings(hash);
+                            }
+                            let mut client = builder.build(domain, username, password.clone());
+                            let buf = try!(client.next_bytes(None)).map(|x| x.to_owned());
+                            login_message.integrated_security = buf;
                             self.wauth_client = Some(Box::new(client));
                         }
                     }
@@ -518,6 +542,7 @@ impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
 }
 
 /// The authentication method that should be used during authentication
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 pub enum AuthMethod {
     SqlServer(Cow<'static, str>, Cow<'static, str>),
@@ -535,6 +560,7 @@ pub struct ConnectParams {
     pub trust_cert: bool,
     pub auth: AuthMethod,
     pub target_db: Option<Cow<'static, str>>,
+    pub spn: Cow<'static, str>,
 }
 
 impl ConnectParams {
@@ -550,6 +576,13 @@ impl ConnectParams {
             trust_cert: false,
             auth: AuthMethod::SqlServer("".into(), "".into()),
             target_db: None,
+            spn: Cow::Borrowed(""),
+        }
+    }
+
+    fn set_spn(&mut self, host: &str, port: u16) {
+        if self.spn.is_empty() {
+            self.spn = format!("MSSQLSvc/{}:{}", host, port).into();
         }
     }
 }
@@ -655,7 +688,9 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                         let parts: Vec<_> = value[4..].split(',').collect();
                         assert!(parts.len() <= 2 && !parts.is_empty());
                         connect_params.host = parts[0].to_owned().into();
-                        let addr = match (parts[0], parts[1].parse::<u16>()?).to_socket_addrs()?.nth(0) {
+                        let (host, port) = (parts[0], parts[1].parse::<u16>()?);
+                        connect_params.set_spn(&host, port);
+                        let addr = match (host, port).to_socket_addrs()?.nth(0) {
                             None => return Err(TdsError::Conversion("connection string: could not resolve server address".into())),
                             Some(x) => x,
                         };
@@ -912,7 +947,9 @@ mod tests {
 
     /// allow to modify the
     pub fn connection_string() -> String {
-        env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or("server=tcp:localhost,1433;integratedSecurity=true;".to_owned())
+        // TrustServerCertificate is just for local development, do not use on production!
+        env::var("TIBERIUS_TEST_CONNECTION_STRING")
+            .unwrap_or("server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned())
     }
 
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {

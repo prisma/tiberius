@@ -233,30 +233,45 @@ pub mod tls {
     impl<S: Io> AsyncRead for TransportStream<S> {}
 
     // #WARNING: If no hostname is provided, certificate validation is DISABLED
-    pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> {
-        
+    pub fn connect_async<I, F>(stream: I, host: Option<&str>, callback: F) -> ConnectAsync<I> 
+        where I: Io, F: Fn(Vec<u8>) + Sync + Send + 'static
+    {
+        let disable_verification = host.is_none();
         let mut builder = TlsConnector::builder().unwrap();
 
-        if host.is_none() {
-            let panic;
-            #[cfg(windows)]
-            {
-                panic = false;
-                use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
-                builder.verify_callback(|_| Ok(()));
-            }
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            {
-                panic = false;
-                extern crate openssl;
-                use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
-                println!("builder modifying");
-                builder.builder_mut().builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_PEER, |_, _| true);
-            }
+        let panic;
+        #[cfg(windows)]
+        {
+            panic = false;
+            extern crate schannel;
+            use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
+            builder.verify_callback(move |result| {
+                let chain = result.chain().unwrap();
+                let cert = chain.get(chain.len() - 1).unwrap();
+                let alg = schannel::cert_context::HashAlgorithm::sha256();
+                let hash = cert.fingerprint(alg)?;
+                callback(hash);
+                if disable_verification {
+                    return Ok(());
+                }
+                result.result()
+            });
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            panic = false;
+            extern crate openssl;
+            use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
+            builder.builder_mut().builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_PEER, move |ret, ctx| {
+                let cert = ctx.current_cert().unwrap();
+                let mut hash = cert.fingerprint(openssl::hash::MessageDigest::sha256()).unwrap();
+                callback(hash);
+                disable_verification || ret
+            });
+        }
 
-            if panic {
-                panic!("disabling cert verification is not supported for this target");
-            }
+        if panic {
+            panic!("disabling cert verification is not supported for this target");
         }
 
         let cx = builder.build().unwrap();
