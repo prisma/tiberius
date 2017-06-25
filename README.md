@@ -44,6 +44,7 @@ To ensure `Windows-Authentication` is secure, enable `Extended-Protection`.
 Channel-Bindings only work when `Force Encryption` and `Extended Protection`  
 are enabled in the [SQL Server Settings as described here](https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/connect-to-the-database-engine-using-extended-protection).  
 It also leads to SPN's being used, which makes replay attacks harder.  
+Not supported yet.  
 
 ### SQL Type Mappings
 Any nullable type should be accessed as `Option<T>` where T is any Rust Type listed below.

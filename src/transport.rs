@@ -245,19 +245,20 @@ pub mod tls {
             panic = false;
             extern crate schannel;
             use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
-            builder.verify_callback(move |result| {
-                if disable_verification {
+            if disable_verification {
+                builder.verify_callback(move |result| {
                     return Ok(());
-                }
-                result.result()
-            });
+                });
+            }
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             panic = false;
             extern crate openssl;
             use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
-            builder.builder_mut().builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE);
+            if disable_verification {
+                builder.builder_mut().builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE);
+            }
         }
 
         if panic {
