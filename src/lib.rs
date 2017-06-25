@@ -337,16 +337,18 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                             {
                                 match mem::replace(&mut self.transport.inner.io, TransportStream::None) {
                                     TransportStream::Raw(stream) => {
-                                        let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream, self.transport.inner.next_packet_id);
+                                        let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream);
                                         let host = if self.params.trust_cert {
                                             None
                                         } else {
                                             Some(&*self.params.host)
                                         };
                                         let bindings = self.bindings.clone();
-                                        let tls_stream = transport::tls::connect_async(wrapped_stream, host, move |hash| {
+                                        let tls_stream = transport::tls::connect_async(wrapped_stream, host, move |_| {
                                             *bindings.lock().unwrap() = Some(
-                                                [b"tls-server-end-point:" as &[u8], hash.as_slice()
+                                                // MSSQL requires "tls-unique" bindings and doesn't support
+                                                // "tls-server-end-point" anymore (even if the docs hints otherwise)
+                                                [b"tls-unique:" as &[u8], unimplemented!()
                                             ].concat());
                                         });
                                         SqlConnectionNewState::TLSPending(Some(tls_stream))
@@ -366,7 +368,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                     assert!(connect_async.is_some());
                     let mut stream = try_ready!(connect_async.as_mut().unwrap().poll());
                     connect_async.take();
-                    stream.get_mut().get_mut().wrap_id = None;
+                    stream.get_mut().get_mut().wrap = false;
                     self.transport.inner.io = TransportStream::TLS(stream);
                     SqlConnectionNewState::LoginSend
                 },
@@ -415,7 +417,6 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                             let mut builder = winauth::NtlmV2ClientBuilder::new()
                                                       .target_spn(self.params.spn.clone());
                             if let Some(ref hash) = *self.bindings.lock().unwrap() {
-                                println!("{:?}", hash);
                                 builder = builder.channel_bindings(hash);
                             }
                             let mut client = builder.build(domain, username, password.clone());

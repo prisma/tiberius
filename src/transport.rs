@@ -81,7 +81,7 @@ pub mod tls {
     pub struct TlsTdsWrapper<S: Io> {
         stream: DerefOption<S>,
         /// whether to wrap written/read data into prelogin packets (required for the handshake)
-        pub wrap_id: Option<TdsPacketId>,
+        pub wrap: bool,
         wr: Vec<u8>,
         rd: Vec<u8>,
         bytes_left: usize,
@@ -89,10 +89,10 @@ pub mod tls {
 
 
     impl<S: Io> TlsTdsWrapper<S> {
-        pub fn new(s: S, id: TdsPacketId) -> TlsTdsWrapper<S> {
+        pub fn new(s: S) -> TlsTdsWrapper<S> {
             TlsTdsWrapper {
                 stream: DerefOption::Some(s),
-                wrap_id: Some(id),
+                wrap: true,
                 wr: vec![],
                 rd: Vec::with_capacity(protocol::HEADER_BYTES),
                 bytes_left: 0,
@@ -107,7 +107,7 @@ pub mod tls {
     impl<S: Io> Write for TlsTdsWrapper<S> {
         #[inline]
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            if self.wrap_id.is_none() {
+            if !self.wrap {
                 self.stream.write(buf)
             } else {
                 self.wr.extend_from_slice(buf);
@@ -117,14 +117,14 @@ pub mod tls {
 
         #[inline]
         fn flush(&mut self) -> io::Result<()> {
-            if let Some(ref mut wrap_id) = self.wrap_id {
+            if self.wrap {
                 if self.wr.is_empty() {
                     return Ok(())
                 }
                 let header = PacketHeader {
                     ty: PacketType::PreLogin,
                     status: PacketStatus::EndOfMessage,
-                    ..PacketHeader::new(self.wr.len() + protocol::HEADER_BYTES, wrap_id.next())
+                    ..PacketHeader::new(self.wr.len() + protocol::HEADER_BYTES, 0)
                 };
                 let mut header_bytes = [0u8; protocol::HEADER_BYTES];
                 try!(header.serialize(&mut header_bytes));
@@ -139,7 +139,7 @@ pub mod tls {
     impl<S: Io> Read for TlsTdsWrapper<S> {
         #[inline]
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-            if self.wrap_id.is_none() {
+            if !self.wrap {
                 return self.stream.read(buf)
             }
 
@@ -246,11 +246,6 @@ pub mod tls {
             extern crate schannel;
             use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
             builder.verify_callback(move |result| {
-                let chain = result.chain().unwrap();
-                let cert = chain.get(chain.len() - 1).unwrap();
-                let alg = schannel::cert_context::HashAlgorithm::sha256();
-                let hash = cert.fingerprint(alg)?;
-                callback(hash);
                 if disable_verification {
                     return Ok(());
                 }
@@ -262,12 +257,7 @@ pub mod tls {
             panic = false;
             extern crate openssl;
             use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
-            builder.builder_mut().builder_mut().set_verify_callback(openssl::ssl::SSL_VERIFY_PEER, move |ret, ctx| {
-                let cert = ctx.current_cert().unwrap();
-                let mut hash = cert.fingerprint(openssl::hash::MessageDigest::sha256()).unwrap();
-                callback(hash);
-                disable_verification || ret
-            });
+            builder.builder_mut().builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE);
         }
 
         if panic {
