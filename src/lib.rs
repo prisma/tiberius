@@ -528,7 +528,8 @@ impl<'a> ToIo<TcpStream> for &'a SocketAddr {
     }
 }
 
-enum DynamicConnectionTarget {
+#[doc(hidden)]
+pub enum DynamicConnectionTarget {
     Tcp(SocketAddr),
 }
 
