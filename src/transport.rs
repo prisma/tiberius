@@ -239,7 +239,7 @@ pub mod tls {
         let disable_verification = host.is_none();
         let mut builder = TlsConnector::builder().unwrap();
 
-        let panic;
+        let mut panic = true;
         #[cfg(windows)]
         {
             panic = false;
