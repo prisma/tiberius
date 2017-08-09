@@ -209,7 +209,7 @@ mod chrono {
             ),
             ColumnData::DateTime2(ref dt) => NaiveDateTime::new(
                 from_days(dt.0.days() as i64, 1),
-                NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(dt.1.increments as i64 * ((1e9 as i64) / dt.1.scale as i64))
+                NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(dt.1.increments as i64 / 10i64.pow(dt.1.scale as u32) * 1e9 as i64)
             );
         NaiveDate:      ColumnData::Date(ref date) => from_days(date.days() as i64, 1)
     );
@@ -245,6 +245,18 @@ mod chrono {
                 =  NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S.%f").unwrap()
                 => DATETIME_TEST_STR
         );
+
+        #[test]
+        fn test_datetime2_to_naive_datetime() {
+            let mut lp = Core::new().unwrap();
+            let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
+                .and_then(|conn| conn.simple_query(format!("select cast('{}' as datetime2(7))", DATETIME_TEST_STR)).for_each_row(|row| {
+                    assert_eq!(row.get::<_, NaiveDateTime>(0), NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S.%f").unwrap());
+                    Ok(())
+                })
+            );
+            lp.run(future).unwrap();
+        }
     }
 }
 
