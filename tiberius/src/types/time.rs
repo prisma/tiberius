@@ -270,4 +270,21 @@ mod tests {
         test_time: Time = Time { increments: 123, scale: 5} => "00:00:00.0012300",
         test_datetime2: DateTime2 = DateTime2(Date::new(123), Time { increments: 123, scale: 5}) => "0001-05-04 00:00:00.0012300"
     );
+
+    #[test]
+    fn test_datetime_fixed() {
+        let mut lp = Core::new().unwrap();
+        let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
+            .and_then(|conn| conn.simple_exec("create table #Temp(gg datetime NOT NULL)").single())
+            .and_then(|(_, conn)| {
+                conn.simple_query("insert into #Temp(gg) OUTPUT Inserted.gg VALUES('2014-02-24T18:42:23.000')").for_each_row(|row| {
+                    assert_eq!(row.get::<_, DateTime>(0), DateTime {
+                        days: 41692, //24.02.2014
+                        seconds_fragments: (18*3600 + 42*60 + 23) * 300, // 18:42:23
+                    });
+                    Ok(())
+                })
+            });
+        lp.run(future).unwrap();
+    }
 }

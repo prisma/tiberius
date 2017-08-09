@@ -251,6 +251,22 @@ impl TypeInfo {
     }
 }
 
+fn parse_datetimen<'a, I: Io>(trans: &mut TdsTransport<I>, len: u8) -> TdsResult<ColumnData<'a>> {
+    let datetime = match len {
+        0 => ColumnData::None,
+        4 => ColumnData::SmallDateTime(time::SmallDateTime {
+            days: try!(trans.inner.read_u16::<LittleEndian>()),
+            seconds_fragments: try!(trans.inner.read_u16::<LittleEndian>()),
+        }),
+        8 => ColumnData::DateTime(time::DateTime {
+            days: try!(trans.inner.read_i32::<LittleEndian>()),
+            seconds_fragments: try!(trans.inner.read_u32::<LittleEndian>()),
+        }),
+        _ => return Err(TdsError::Protocol(format!("datetimen: length of {} is invalid", len).into()))
+    };
+    Ok(datetime)
+}
+
 impl<'a> ColumnData<'a> {
     pub fn parse<I: Io>(trans: &mut TdsTransport<I>, meta: &BaseMetaDataColumn) -> Poll<ColumnData<'a>, TdsError> {
         Ok(Async::Ready(match meta.ty {
@@ -258,6 +274,7 @@ impl<'a> ColumnData<'a> {
                 match *fixed_ty {
                     FixedLenType::Int4 => ColumnData::I32(try!(trans.inner.read_i32::<LittleEndian>())),
                     FixedLenType::Int8 => ColumnData::I64(try!(trans.inner.read_i64::<LittleEndian>())),
+                    FixedLenType::Datetime => try!(parse_datetimen(trans, 8)),
                     _ => panic!("unsupported fixed type decoding: {:?}", fixed_ty)
                 }
             },
@@ -408,18 +425,7 @@ impl<'a> ColumnData<'a> {
                     },
                     VarLenType::Datetimen => {
                         let len = try!(trans.inner.read_u8());
-                        match len {
-                            0 => ColumnData::None,
-                            4 => ColumnData::SmallDateTime(time::SmallDateTime {
-                                days: try!(trans.inner.read_u16::<LittleEndian>()),
-                                seconds_fragments: try!(trans.inner.read_u16::<LittleEndian>()),
-                            }),
-                            8 => ColumnData::DateTime(time::DateTime {
-                                days: try!(trans.inner.read_i32::<LittleEndian>()),
-                                seconds_fragments: try!(trans.inner.read_u32::<LittleEndian>()),
-                            }),
-                            _ => return Err(TdsError::Protocol(format!("datetimen: length of {} is invalid", len).into()))
-                        }
+                        try!(parse_datetimen(trans, len))
                     },
                     VarLenType::Daten => {
                         let len = try!(trans.inner.read_u8());
