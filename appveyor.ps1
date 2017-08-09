@@ -39,3 +39,5 @@ sc.exe config "MSSQL`$$instanceName" obj= "LocalSystem" password= "dummy"
 Set-Service SQLBrowser -StartupType Manual
 Start-Service SQLBrowser
 Start-Service "MSSQL`$$instanceName"
+# workaround appveyor failure that we first get a "Start-Service : Failed to start service" error
+Start-Service "MSSQL`$$instanceName"

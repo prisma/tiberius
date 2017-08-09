@@ -21,8 +21,7 @@ install:
   - rustc -V
   - cargo -V
   - ps: .\appveyor.ps1 ${env:MSSQL} ${env:INSTANCE}
-
 build: false
 
 test_script:
-  - cargo test --target %TARGET%
+  - cargo test --target %TARGET% --all
