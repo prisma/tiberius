@@ -57,7 +57,7 @@ type please create an issue, which will make this table grow.
 |uniqueidentifier|tiberius::ty::Guid|
 |DATETIME|tiberius::ty::DateTime
 |DATETIME2|tiberius::ty::DateTime2
-|DATETIME,DATETIME2|chrono::NaiveDatetime|chrono|
+|DATETIME,DATETIME2|chrono::NaiveDateTime|chrono|
 
 Support for versions below 7.4 (to 7.2 so that everything >= SQL Server 2008 works) is desired.
 ## Old State (v0.1)
