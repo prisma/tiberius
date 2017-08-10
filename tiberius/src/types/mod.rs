@@ -312,8 +312,7 @@ impl<'a> ColumnData<'a> {
                         ColumnData::Guid(Cow::Owned(Guid(data)))
                     },
                     VarLenType::NVarchar => {
-                        let old_read_reset = trans.read_reset;
-                        trans.read_reset = false;
+                        trans.last_state = None;
                         // reduce some boilerplate by using RefCell/Rc
                         let mut read_state_mut = &mut trans.read_state;
                         // check if PLP or normal size
@@ -334,8 +333,7 @@ impl<'a> ColumnData<'a> {
                             }
                             let str_ = try!(String::from_utf16(&target[..]));
                             // make sure we do not skip before what we've already read for sure
-                            trans.read_reset = old_read_reset;
-                            trans.last_state = trans.inner.clone();
+                            trans.last_state = Some(trans.inner.clone());
                             ColumnData::String(str_.into())
                         } else {
                             match *read_state_mut {
@@ -345,7 +343,6 @@ impl<'a> ColumnData<'a> {
                                 _ => {
                                     let size = try!(trans.inner.read_u64::<LittleEndian>());
                                     if size == 0xffffffffffffffff {
-                                        trans.read_reset = old_read_reset;
                                         return Ok(Async::Ready(ColumnData::None));
                                     }
                                     let capacity = match size {
@@ -399,8 +396,7 @@ impl<'a> ColumnData<'a> {
                             }
                             let str_ = String::from_utf16(&plp_state.bytes[..])?;
                             // make sure we do not skip before what we've already read for sure
-                            trans.read_reset = old_read_reset;
-                            trans.last_state = trans.inner.clone();
+                            trans.last_state = Some(trans.inner.clone());
                             ColumnData::String(str_.into())
                         }
                     },
