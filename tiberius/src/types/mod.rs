@@ -318,14 +318,14 @@ impl<'a> ColumnData<'a> {
                         // check if PLP or normal size
                         if *len < 0xffff {
                             match *read_state_mut {
-                                ReadState::Type(ReadTyState::NVarchar(_)) => (),
+                                Some(ReadState::Type(ReadTyState::NVarchar(_))) => (),
                                 _ => {
                                     let len = try!(trans.inner.read_u16::<LittleEndian>()) as usize;
-                                    *read_state_mut = ReadState::Type(ReadTyState::NVarchar(Vec::with_capacity(len/2)));
+                                    *read_state_mut = Some(ReadState::Type(ReadTyState::NVarchar(Vec::with_capacity(len/2))));
                                 }
                             };
                             let mut target = match *read_state_mut {
-                                ReadState::Type(ReadTyState::NVarchar(ref mut buf)) => buf,
+                                Some(ReadState::Type(ReadTyState::NVarchar(ref mut buf))) => buf,
                                 _ => unreachable!()
                             };
                             while target.capacity() > target.len() {
@@ -338,7 +338,7 @@ impl<'a> ColumnData<'a> {
                         } else {
                             match *read_state_mut {
                                 // we already have a state
-                                ReadState::Type(ReadTyState::NVarcharPLP(_)) => (),
+                                Some(ReadState::Type(ReadTyState::NVarcharPLP(_))) => (),
                                 // initial call
                                 _ => {
                                     let size = try!(trans.inner.read_u64::<LittleEndian>());
@@ -351,16 +351,16 @@ impl<'a> ColumnData<'a> {
                                         len if len % 2 == 0 => len/2,
                                         _ => return Err(TdsError::Protocol("nvarchar: invalid plp length".into())),
                                     };
-                                    *read_state_mut = ReadState::Type(ReadTyState::NVarcharPLP(NVarcharPLPTyState {
+                                    *read_state_mut = Some(ReadState::Type(ReadTyState::NVarcharPLP(NVarcharPLPTyState {
                                         bytes: Vec::with_capacity(capacity as usize),
                                         chunk_left: None,
                                         leftover: None,
-                                    }));
+                                    })));
                                 }
                             };
                             // get a mutable pointer to our state that is mutable even though it's stored in transport
                             let plp_state = match *read_state_mut {
-                                ReadState::Type(ReadTyState::NVarcharPLP(ref mut plp_state)) => plp_state,
+                                Some(ReadState::Type(ReadTyState::NVarcharPLP(ref mut plp_state))) => plp_state,
                                 _ => unreachable!()
                             };
 

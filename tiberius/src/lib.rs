@@ -1044,13 +1044,25 @@ mod tests {
     }
 
     #[test]
+    fn row_recv_across_packets() {
+        let mut lp = Core::new().unwrap();
+        let c1 = new_connection(&mut lp);
+
+        let future = c1.simple_query("select SPACE(8000)").for_each_row(|row| {
+            assert_eq!(row.get::<_, &str>(0).as_bytes(), vec![b' '; 8000].as_slice());
+            Ok(())
+        });
+        lp.run(future).unwrap();
+    }
+
+    #[test]
     fn rows_recv_across_packets() {
         let mut lp = Core::new().unwrap();
         let c1 = new_connection(&mut lp);
 
-        let future = c1.simple_query("select SPACE(8192)").for_each_row(|row| {
-            // SPACE(n) is capped at 8000 characters, which we also test for here
+        let future = c1.simple_query("select SPACE(8000), SPACE(8000)").for_each_row(|row| {
             assert_eq!(row.get::<_, &str>(0).as_bytes(), vec![b' '; 8000].as_slice());
+            assert_eq!(row.get::<_, &str>(1).as_bytes(), vec![b' '; 8000].as_slice());
             Ok(())
         });
         lp.run(future).unwrap();

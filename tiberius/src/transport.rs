@@ -291,23 +291,21 @@ pub struct NVarcharPLPTyState {
 
 #[derive(Debug)]
 pub enum ReadTyState {
-    None,
     NVarcharPLP(NVarcharPLPTyState),
     NVarchar(Vec<u16>),
 }
 
 #[derive(Debug)]
 pub enum ReadState {
-    None,
     Generic(Tokens, Option<usize>),
-    Row(Tokens, Vec<ColumnData<'static>>, ReadTyState),
+    Row(Tokens, Vec<ColumnData<'static>>, Option<ReadTyState>),
 
     Type(ReadTyState),
 }
 
 pub struct TdsTransport<I: Io> {
     pub inner: TdsTransportInner<I>,
-    pub read_state: ReadState,
+    pub read_state: Option<ReadState>,
     /// the last buffer which will be resetted to if not enough data is available
     /// needed for parsers where simply trying until enough data is available is not expensive enough
     /// that writing a stateful parser would be worth it
@@ -515,7 +513,7 @@ impl<I: Io> TdsTransport<I> {
                 last_meta: None,
                 row_bitmap: None,
             },
-            read_state: ReadState::None,
+            read_state: None,
             last_state: None,
             transaction: 0,
             reinject_token: None,
@@ -535,21 +533,16 @@ impl<I: Io> TdsTransport<I> {
     }
 
     #[inline]
-    pub fn take_read_state(&mut self) -> ReadState {
-        mem::replace(&mut self.read_state, ReadState::None)
-    }
-
-    #[inline]
-    pub fn commit_read_state(&mut self, state: ReadState) {
+    pub fn commit_read_state<S: Into<Option<ReadState>>>(&mut self, state: S) {
         self.last_state = Some(self.inner.rd.clone());
-        self.read_state = state;
+        self.read_state = state.into();
     }
 
     /// returns a parsed token
     fn read_token(&mut self) -> Poll<TdsResponseToken, TdsError> {
         let (token, size_hint) = {
             // read a token
-            if let ReadState::None = self.read_state {
+            if self.read_state.is_none() {
                 let raw_token = try!(self.inner.read_u8());
                 let token = Tokens::from_u8(raw_token);
 
@@ -560,14 +553,14 @@ impl<I: Io> TdsTransport<I> {
             }
 
             // read the associated length for a token, if available
-            if let ReadState::Generic(token, None) = self.read_state {
+            if let Some(ReadState::Generic(token, None)) = self.read_state {
                 let new_state = match token {
                     Tokens::SSPI | Tokens::EnvChange | Tokens::Info | Tokens::Error | Tokens::LoginAck => {
                         ReadState::Generic(token, Some(try!(self.inner.read_u16::<LittleEndian>()) as usize))
                     },
                     Tokens::Row | Tokens::NbcRow => {
                         let len = self.inner.last_meta.as_ref().map(|lm| lm.columns.len()).unwrap_or(0);
-                        ReadState::Row(token, Vec::with_capacity(len), ReadTyState::None)
+                        ReadState::Row(token, Vec::with_capacity(len), None)
                     },
                     _ => {
                         ReadState::Generic(token, Some(0))
@@ -577,14 +570,14 @@ impl<I: Io> TdsTransport<I> {
             }
 
             match self.read_state {
-                ReadState::Generic(token, Some(size_hint)) => (token, size_hint),
-                ReadState::Row(tok, _, _) => (tok, 0),
+                Some(ReadState::Generic(token, Some(size_hint))) => (token, size_hint),
+                Some(ReadState::Row(tok, _, _)) => (tok, 0),
                 _ => unreachable!()
             }
         };
         let ret = self.parse_token(token, size_hint);
         if let Ok(Async::Ready(_)) = ret {
-            self.commit_read_state(ReadState::None);
+            self.commit_read_state(None);
         }
         ret
     }

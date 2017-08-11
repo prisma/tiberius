@@ -398,9 +398,11 @@ impl<I: Io> ParseToken<I> for TokenRow {
         };
 
         // extract the state for the first Type/ColumnData parse call
-        let (row_tok, mut column_data) = match trans.take_read_state() {
-            ReadState::Row(token, column_data, state) => {
-                trans.commit_read_state(ReadState::Type(state));
+        let (row_tok, mut column_data) = match trans.read_state.take() {
+            Some(ReadState::Row(token, column_data, state)) => {
+                if let Some(state) = state.map(ReadState::Type) {
+                    trans.read_state = Some(state);
+                }
                 (token, column_data)
             },
             _ => unreachable!()
@@ -413,26 +415,23 @@ impl<I: Io> ParseToken<I> for TokenRow {
             // only needed for NBCRow, If the column is null (specified by the bitmap), there's nothing to read
             if trans.inner.row_bitmap.as_ref().map(|bm| bm.as_ref()[index] & (1 << bit)).unwrap_or(0) > 0 {
                 column_data.push(ColumnData::None);
-                trans.commit_read_state(ReadState::None);
+                trans.commit_read_state(None);
                 continue;
             }
 
             match ColumnData::parse(trans, &column.base) {
                 Ok(Async::Ready(coldata)) => {
                     column_data.push(coldata);
-                    // make sure to not fall behind this column, since parsing it again with data
-                    // that isn't there anymore would be foolish
-                    trans.last_state = Some(trans.inner.clone());
                     // we don't have a state for the next column yet
-                    trans.commit_read_state(ReadState::None);
+                    trans.commit_read_state(None);
                 },
                 ret => {
                     // reset the read state back to the last state value
-                    let col_state = match trans.take_read_state() {
-                        ReadState::Type(tystate) => tystate,
-                        _ => unreachable!()
+                    let col_state = match trans.read_state.take() {
+                        Some(ReadState::Type(tystate)) => Some(tystate),
+                        _ => None,
                     };
-                    trans.read_state = ReadState::Row(row_tok, column_data, col_state);
+                    trans.read_state = Some(ReadState::Row(row_tok, column_data, col_state));
                     // this closure cannot be executed here since Async::Ready is handled above, only used for type conversion
                     return ret.map(|async| async.map(|_| ((None as Option<TdsResponseToken>).unwrap())));
                 }
