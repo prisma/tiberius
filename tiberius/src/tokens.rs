@@ -252,14 +252,14 @@ impl<I: Io> ParseToken<I> for TokenLoginAck {
 }
 
 bitflags! {
-    pub flags DoneStatus: u16 {
-        const DONE_MORE = 0x1,
-        const DONE_ERROR = 0x2,
-        const DONE_INEXACT = 0x4,
-        const DONE_COUNT = 0x10,
-        const DONE_ATTENTION = 0x20,
-        const DONE_RPC_IN_BATCH  = 0x80,
-        const DONE_SRVERROR = 0x100,
+    pub struct DoneStatus: u16 {
+        const DONE_MORE = 0x1;
+        const DONE_ERROR = 0x2;
+        const DONE_INEXACT = 0x4;
+        const DONE_COUNT = 0x10;
+        const DONE_ATTENTION = 0x20;
+        const DONE_RPC_IN_BATCH  = 0x80;
+        const DONE_SRVERROR = 0x100;
     }
 }
 
@@ -282,20 +282,20 @@ impl<I: Io> ParseToken<I> for TokenDone {
 }
 
 bitflags! {
-    pub flags ColmetaDataFlags: u16 {
-        const CDF_NULLABLE            = 1<<0,
-        const CDF_CASE_SENSITIVE      = 1<<1,
-        const CDF_UPDATEABLE          = 1<<3,
-        const CDF_UPDATEABLE_UNKNOWN  = 1<<4,
-        const CDF_IDENTITY            = 1<<5,
-        const CDF_COMPUTED            = 1<<7,
+    pub struct ColmetaDataFlags: u16 {
+        const CDF_NULLABLE            = 1<<0;
+        const CDF_CASE_SENSITIVE      = 1<<1;
+        const CDF_UPDATEABLE          = 1<<3;
+        const CDF_UPDATEABLE_UNKNOWN  = 1<<4;
+        const CDF_IDENTITY            = 1<<5;
+        const CDF_COMPUTED            = 1<<7;
         // 2 bits reserved for ODBC gateway
-        const CDF_FIXED_LEN_CLR_TYPE  = 1<<10,
-        const CDF_SPARSE_COLUMN_SET   = 1<<11,
-        const CDF_ENCRYPTED           = 1<<12,
-        const CDF_HIDDEN              = 1<<13,
-        const CDF_KEY                 = 1<<14,
-        const CDF_NULLABLE_UNKNOWN    = 1<<15,
+        const CDF_FIXED_LEN_CLR_TYPE  = 1<<10;
+        const CDF_SPARSE_COLUMN_SET   = 1<<11;
+        const CDF_ENCRYPTED           = 1<<12;
+        const CDF_HIDDEN              = 1<<13;
+        const CDF_KEY                 = 1<<14;
+        const CDF_NULLABLE_UNKNOWN    = 1<<15;
     }
 }
 
@@ -573,20 +573,20 @@ pub enum RpcProcIdValue<'a> {
 }
 
 bitflags! {
-    pub flags RpcStatusFlags: u8 {
-        const RPC_PARAM_BY_REF_VALUE    = 0x01,
-        const RPC_PARAM_DEFAULT_VALUE   = 0x02,
+    pub struct RpcStatusFlags: u8 {
+        const RPC_PARAM_BY_REF_VALUE    = 0x01;
+        const RPC_PARAM_DEFAULT_VALUE   = 0x02;
         // <- reserved
-        const RPC_PARAM_ENCRYPTED       = 0x08,
+        const RPC_PARAM_ENCRYPTED       = 0x08;
         // <- 4 bits reserved
     }
 }
 
 bitflags! {
-    pub flags RpcOptionFlags: u16 {
-        const RPC_WITH_RECOMP   = 0x01,
-        const RPC_NO_META       = 0x02,
-        const RPC_REUSE_META    = 0x04,
+    pub struct RpcOptionFlags: u16 {
+        const RPC_WITH_RECOMP   = 0x01;
+        const RPC_NO_META       = 0x02;
+        const RPC_REUSE_META    = 0x04;
         // <- 13 reserved bits
     }
 }
