@@ -295,7 +295,7 @@ impl<'a> ColumnData<'a> {
                             _ => unimplemented!()
                         }
                     },
-                    /// 2.2.5.5.1.5 IEEE754
+                    // 2.2.5.5.1.5 IEEE754
                     VarLenType::Floatn => {
                         let len = try!(trans.inner.read_u8());
                         match len {
@@ -314,7 +314,7 @@ impl<'a> ColumnData<'a> {
                     VarLenType::NVarchar => {
                         trans.last_state = None;
                         // reduce some boilerplate by using RefCell/Rc
-                        let mut read_state_mut = &mut trans.read_state;
+                        let read_state_mut = &mut trans.read_state;
                         // check if PLP or normal size
                         if *len < 0xffff {
                             match *read_state_mut {
@@ -324,7 +324,7 @@ impl<'a> ColumnData<'a> {
                                     *read_state_mut = Some(ReadState::Type(ReadTyState::NVarchar(Vec::with_capacity(len/2))));
                                 }
                             };
-                            let mut target = match *read_state_mut {
+                            let target = match *read_state_mut {
                                 Some(ReadState::Type(ReadTyState::NVarchar(ref mut buf))) => buf,
                                 _ => unreachable!()
                             };

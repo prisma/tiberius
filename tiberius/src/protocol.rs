@@ -447,7 +447,7 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             let new_position = cursor.position() as usize;
             // prepare the password in MS-fashion
             if i == 2 {
-                let mut buffer = cursor.get_mut();
+                let buffer = cursor.get_mut();
                 for idx in data_offset..new_position {
                     let byte = buffer[idx];
                     buffer[idx] = ((byte << 4) & 0xf0 | (byte >> 4) & 0x0f) ^ 0xA5;

@@ -22,7 +22,7 @@ pub fn lcid_to_encoding(locale: u16) -> Option<&'static Encoding> {
         0x0401 => Some(encoding::all::WINDOWS_1256),
         0x0402 => Some(encoding::all::WINDOWS_1251),
         0x0403 => Some(encoding::all::WINDOWS_1252),
-        /// CP950
+        // CP950
         0x0404 | 0x0c04 | 0x1404 => Some(encoding::all::BIG5_2003),
         0x0405 => Some(encoding::all::WINDOWS_1250),
         0x0406 => Some(encoding::all::WINDOWS_1252),
@@ -36,7 +36,7 @@ pub fn lcid_to_encoding(locale: u16) -> Option<&'static Encoding> {
         0x040e => Some(encoding::all::WINDOWS_1250),
         0x040f => Some(encoding::all::WINDOWS_1252),
         0x0410 => Some(encoding::all::WINDOWS_1252),
-        /// CP932
+        // CP932
         0x0411 => Some(encoding::all::WINDOWS_31J),
         0x0412 => Some(encoding::all::WINDOWS_949),
         0x0413 => Some(encoding::all::WINDOWS_1252),
@@ -134,7 +134,7 @@ pub fn lcid_to_encoding(locale: u16) -> Option<&'static Encoding> {
         0x0488 => Some(encoding::all::WINDOWS_1252),
         0x048c => Some(encoding::all::WINDOWS_1256),
         0x0801 => Some(encoding::all::WINDOWS_1256),
-        /// CP936
+        // CP936
         0x0804 | 0x1004 => Some(encoding::all::GB18030),
         0x0807 => Some(encoding::all::WINDOWS_1252),
         0x0809 => Some(encoding::all::WINDOWS_1252),
@@ -306,13 +306,13 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
         184 => Some(encoding::all::WINDOWS_1252),
         185 => Some(encoding::all::WINDOWS_1252),
         186 => Some(encoding::all::WINDOWS_1252),
-        /// CP 932
+        // CP 932
         192 | 193 | 200 => Some(encoding::all::WINDOWS_31J),
         194 => Some(encoding::all::WINDOWS_949),
         195 => Some(encoding::all::WINDOWS_949),
-        /// CP950
+        // CP950
         196 | 197 | 202 => Some(encoding::all::BIG5_2003),
-        /// CP936 (GB18030 is an extension of it with more chars), should be backwards-compatible)
+        // CP936 (GB18030 is an extension of it with more chars), should be backwards-compatible)
         198 | 199 | 203 => Some(encoding::all::GB18030),
         201 => Some(encoding::all::WINDOWS_949),
         204 => Some(encoding::all::WINDOWS_874),

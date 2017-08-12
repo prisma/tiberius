@@ -31,7 +31,7 @@ pub mod tls {
     use futures::Poll;
     use tokio_io::{AsyncRead, AsyncWrite};
     use protocol::{self, PacketHeader, PacketType, PacketStatus};
-    use transport::{Io, TdsPacketId};
+    use transport::Io;
     pub use self::native_tls::TlsConnector;
     pub use self::tokio_tls::{TlsConnectorExt, ConnectAsync, TlsStream};
     use TdsError;
@@ -246,9 +246,7 @@ pub mod tls {
             extern crate schannel;
             use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
             if disable_verification {
-                builder.verify_callback(move |result| {
-                    return Ok(());
-                });
+                builder.verify_callback(|_| Ok(()));
             }
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -474,7 +472,7 @@ impl io::Read for TdsBuf {
 
     #[inline]
     #[allow(unused_io_amount)]
-    fn read_exact(&mut self, mut buf: &mut [u8]) -> io::Result<()> {
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
         try!(self.read(buf));
         Ok(())
     }
