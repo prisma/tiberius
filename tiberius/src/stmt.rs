@@ -1,8 +1,6 @@
 //! Prepared statements
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::ops::Deref;
 use std::sync::Arc;
 use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
@@ -23,31 +21,20 @@ pub struct StatementHandle {
 /// A prepared statement which is prepared on the first execution
 /// (which is a technical requirement since you need to know the types)
 #[derive(Clone)]
-pub struct Statement(Arc<StatementInner>);
-
-impl Deref for Statement {
-    type Target = StatementInner;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub struct Statement {
+    pub(crate) sql: Cow<'static, str>,
+    meta: Option<Arc<TokenColMetaData>>,
+    pub(crate) handle: Arc<Option<StatementHandle>>,
 }
 
-#[doc(hidden)]
-pub struct StatementInner {
-    pub sql: Cow<'static, str>,
-    meta: RefCell<Option<Arc<TokenColMetaData>>>,
-    pub handle: RefCell<Option<StatementHandle>>,
-}
-
-// TODO: implement Drop for StatementInner (channel to the connection which unprepares the statement)
+// TODO: implement Drop for StatementHandle (channel to the connection which unprepares the statement)
 impl Statement {
     pub fn new(sql: Cow<'static, str>) -> Statement {
-        Statement(Arc::new(StatementInner {
+        Statement {
             sql: sql,
-            meta: RefCell::new(None),
-            handle: RefCell::new(None),
-        }))
+            meta: None,
+            handle: Arc::new(None),
+        }
     }
 }
 
@@ -118,18 +105,18 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
             self.receiver = None;
         }
 
-        try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.inner.poll_complete());
+        try_ready!(self.conn.as_mut().map(|x| x.0.transport.inner.poll_complete()).unwrap());
 
         // receive and handle the result of sp_prepare
         while !self.done {
-            let token = try_ready!(self.conn.as_ref().map(|x| x.borrow_mut()).unwrap().transport.next_token())
+            let token = try_ready!(self.conn.as_mut().map(|x| x.0.transport.next_token()).unwrap())
                 .expect("StateStream: expected token");
             let (do_ret, reinject) = match token {
                 TdsResponseToken::ColMetaData(ref meta) => {
                     if !meta.columns.is_empty() {
-                        *self.stmt.meta.borrow_mut() = Some(meta.clone());
+                        self.stmt.meta = Some(meta.clone());
                     }
-                    self.already_triggered = !meta.columns.is_empty() || self.stmt.handle.borrow().is_some();
+                    self.already_triggered = !meta.columns.is_empty() || self.stmt.handle.is_some();
                     (self.already_triggered, false)
                 },
                 TdsResponseToken::DoneProc(ref done) => {
@@ -148,21 +135,33 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                 },
                 TdsResponseToken::ReturnValue(ref retval) => {
                     assert_eq!(retval.param_name.as_str(), "handle");
-                    *self.stmt.handle.borrow_mut() = Some(match retval.value {
+                    let new_handle = match retval.value {
                         ColumnData::I32(val) => StatementHandle {
                             handle: val,
                             signature: self.param_sig.take().unwrap(),
                         },
                         _ => unreachable!()
-                    });
+                    };
+                    // update the handle of the statement, if possible
+                    let new_handle = if let Some(handle) = Arc::get_mut(&mut self.stmt.handle) {
+                        *handle = Some(new_handle);
+                        None
+                    } else {
+                        Some(Arc::new(Some(new_handle)))
+                    };
+
+                    if let Some(new_handle) = new_handle {
+                        self.stmt.handle = new_handle;
+                    }
+                    
                     (false, false)
                 },
                 x => panic!("stmtstream: unexpected token: {:?}", x),
             };
             if do_ret {
-                let conn = self.conn.take().unwrap();
+                let mut conn = self.conn.take().unwrap();
                 if reinject {
-                    conn.borrow_mut().transport.reinject(token);
+                    conn.0.transport.reinject(token);
                 }
                 let (sender, receiver) = oneshot::channel();
                 self.receiver = Some(receiver);

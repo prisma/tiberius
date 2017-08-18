@@ -59,7 +59,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
             let do_ret = match self.conn {
                 None => false,
                 Some(ref mut conn) => {
-                    let mut inner = conn.borrow_mut();
+                    let inner = &mut conn.0;
                     try_ready!(inner.transport.inner.poll_complete());
 
                     let token = try_ready!(inner.transport.next_token())
@@ -127,7 +127,7 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
         assert!(self.0.is_some());
 
         if let Some(ref mut inner) = self.0 {
-            let mut inner = inner.conn.borrow_mut();
+            let inner = &mut inner.conn.0;
             try_ready!(inner.transport.inner.poll_complete());
 
             let token = try_ready!(inner.transport.next_token()).expect("query: expected token");
@@ -179,7 +179,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
 
         let mut ret: u64 = 0;
         if let Some(ref mut inner) = self.inner {
-            let mut inner = inner.conn.borrow_mut();
+            let inner = &mut inner.conn.0;
             try_ready!(inner.transport.inner.poll_complete());
 
             loop {
