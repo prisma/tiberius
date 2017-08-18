@@ -285,6 +285,11 @@ impl QueryRow {
         self.0.columns.len()
     }
 
+    /// Get a column's value for a given column index
+    pub fn name<'a, I: QueryIdx>(&'a self, idx: I) -> Option<&'a str> {
+        idx.to_idx(self).map(|idx| self.0.meta.columns[idx].col_name.as_str())
+    }
+
     /// Attempt to get a column's value for a given column index
     pub fn try_get<'a, I: QueryIdx, R: FromColumnData<'a>>(
         &'a self,
@@ -308,5 +313,70 @@ impl QueryRow {
     /// - the given index does exist (does not have a value associated with it)
     pub fn get<'a, I: QueryIdx, R: FromColumnData<'a>>(&'a self, idx: I) -> R {
         self.try_get(idx).unwrap().unwrap()
+    }
+}
+
+impl<'r> IntoIterator for &'r QueryRow {
+    type Item = QueryRowItem<'r>;
+    type IntoIter = QueryRowIter<'r>;
+    fn into_iter(self) -> Self::IntoIter {
+        QueryRowIter {
+            row: self,
+            idx: 0,
+        }
+    }
+}
+
+/// An iterator over row name-value pairs
+#[derive(Debug)]
+pub struct QueryRowIter<'r>
+{
+    row: &'r QueryRow,
+    idx: usize,
+}
+
+impl<'r> Iterator for QueryRowIter<'r>
+{
+    type Item = QueryRowItem<'r>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx < self.row.len() {
+            let item = QueryRowItem {
+                row: self.row,
+                idx: self.idx,
+            };
+            self.idx += 1;
+            Some(item)
+        } else {
+            None
+        }
+    }
+}
+
+/// An item (column) of the query row
+#[derive(Debug)]
+pub struct QueryRowItem<'r> {
+    row: &'r QueryRow,
+    idx: usize,
+}
+
+impl<'r> QueryRowItem<'r> {
+    /// Get the column name
+    pub fn name(&self) -> &'r str {
+        self.row.name(self.idx).unwrap()
+    }
+
+    /// Attempt to get a column's value
+    pub fn try_get<R: FromColumnData<'r>>(&self) -> Result<Option<R>> {
+        self.row.try_get(self.idx)
+    }
+
+    /// Retrieve a column's value
+    ///
+    /// # Panics
+    /// This panics if:
+    ///
+    /// - the requested type conversion (SQL->Rust) is not possible
+    pub fn get<R: FromColumnData<'r>>(&self) -> R {
+        self.row.get(self.idx)
     }
 }
