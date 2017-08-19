@@ -80,6 +80,7 @@ extern crate bitflags;
 extern crate bytes;
 extern crate byteorder;
 extern crate encoding;
+extern crate fnv;
 #[macro_use]
 extern crate futures;
 extern crate futures_state_stream;
@@ -98,6 +99,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::sync::{Arc, Mutex};
 use std::io;
+use fnv::FnvHashMap;
 use futures::{Async, BoxFuture, Future, Poll, Sink};
 use futures::sync::oneshot;
 use futures::future::FromErr;
@@ -265,6 +267,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                     let trans = future.take().unwrap().transport;
                     let conn = InnerSqlConnection {
                         transport: trans,
+                        stmts: FnvHashMap::default(),
                     };
 
                     return Ok(Async::Ready(SqlConnection(conn)))
@@ -494,6 +497,7 @@ pub trait StmtResult<I: BoxableIo> {
 #[doc(hidden)]
 pub struct InnerSqlConnection<I: BoxableIo> {
     transport: TdsTransport<TransportStream<I>>,
+    stmts: FnvHashMap<String, Vec<(Vec<&'static str>, i32)>>,
 }
 
 /// A connection to a SQL server with an underlying IO (e.g. socket)
@@ -843,14 +847,14 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
-    fn do_exec<'a>(&self, stmt: &Statement, params: &'a [&'a ToSql]) -> TokenRpcRequest<'a> {
+    fn do_exec<'a>(&self, handle: i32, params: &'a [&'a ToSql]) -> TokenRpcRequest<'a> {
         let mut params_meta = vec![
             RpcParam {
                 // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
                 // not specifying the name is better anyways to reduce overhead on execute
                 name: Cow::Borrowed(""),
                 flags: RpcStatusFlags::empty(),
-                value: ColumnData::I32((*stmt.handle).as_ref().map(|h| h.handle).unwrap()),
+                value: ColumnData::I32(handle),
             },
         ];
         for (i, param) in params.iter().enumerate() {
@@ -868,17 +872,11 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
-    fn internal_exec<R: StmtResult<I>>(mut self, mut stmt: Statement, params: &[&ToSql]) -> StmtStream<I, R> {
+    fn internal_exec<R: StmtResult<I>>(mut self, stmt: Statement, params: &[&ToSql]) -> StmtStream<I, R> {
         // call sp_prepare (with valid handle) or sp_prepexec (initializer)
-        let already_prepared = (*stmt.handle).as_ref().map(|handle| {
-            // check if the param-type signature matches, if we have a handle
-            handle.signature.iter().cloned().eq(params.iter().map(|x| x.to_sql()))
-        }).unwrap_or(false);
-
-        let req = if already_prepared {
-            self.do_exec(&stmt.clone(), params)
+        let req = if let Some(handle) = stmt.get_handle_for(&self, &params.iter().map(|x| x.to_sql()).collect::<Vec<_>>()) {
+            self.do_exec(handle, params)
         } else {
-            stmt.handle = Arc::new(None);
             self.do_prepare_exec(&stmt, params)
         };
 

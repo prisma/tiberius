@@ -10,21 +10,12 @@ use tokens::{DoneStatus, TdsResponseToken, TokenColMetaData};
 use types::{ColumnData, ToSql};
 use {BoxableIo, SqlConnection, StmtResult, TdsError};
 
-/// A handle identifying a server-side prepared statement for a specific connection
-/// and a specific set of parameter types
-#[doc(hidden)]
-pub struct StatementHandle {
-    pub handle: i32,
-    pub signature: Vec<&'static str>,
-}
-
 /// A prepared statement which is prepared on the first execution
 /// (which is a technical requirement since you need to know the types)
 #[derive(Clone)]
 pub struct Statement {
     pub(crate) sql: Cow<'static, str>,
     meta: Option<Arc<TokenColMetaData>>,
-    pub(crate) handle: Arc<Option<StatementHandle>>,
 }
 
 // TODO: implement Drop for StatementHandle (channel to the connection which unprepares the statement)
@@ -33,8 +24,18 @@ impl Statement {
         Statement {
             sql: sql,
             meta: None,
-            handle: Arc::new(None),
         }
+    }
+
+    pub(crate) fn get_handle_for<I: BoxableIo>(&self, conn: &SqlConnection<I>, needed: &[&'static str]) -> Option<i32> {
+        if let Some(bindings) = conn.0.stmts.get(&*self.sql) {
+            for binding in bindings {
+                if needed.iter().eq(binding.0.iter()) {
+                    return Some(binding.1)
+                }
+            }
+        }
+        None
     }
 }
 
@@ -116,7 +117,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                     if !meta.columns.is_empty() {
                         self.stmt.meta = Some(meta.clone());
                     }
-                    self.already_triggered = !meta.columns.is_empty() || self.stmt.handle.is_some();
+                    self.already_triggered = !meta.columns.is_empty() || self.stmt.meta.is_some();
                     (self.already_triggered, false)
                 },
                 TdsResponseToken::DoneProc(ref done) => {
@@ -136,22 +137,15 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                 TdsResponseToken::ReturnValue(ref retval) => {
                     assert_eq!(retval.param_name.as_str(), "handle");
                     let new_handle = match retval.value {
-                        ColumnData::I32(val) => StatementHandle {
-                            handle: val,
-                            signature: self.param_sig.take().unwrap(),
-                        },
+                        ColumnData::I32(val) => val,
                         _ => unreachable!()
                     };
-                    // update the handle of the statement, if possible
-                    let new_handle = if let Some(handle) = Arc::get_mut(&mut self.stmt.handle) {
-                        *handle = Some(new_handle);
-                        None
-                    } else {
-                        Some(Arc::new(Some(new_handle)))
-                    };
+                    let signature = self.param_sig.take().unwrap();
 
-                    if let Some(new_handle) = new_handle {
-                        self.stmt.handle = new_handle;
+                    if let Some(ref mut conn) = self.conn {
+                        let target = conn.0.stmts.entry((&*self.stmt.sql).to_owned()).or_insert(Vec::with_capacity(1));
+                        target.retain(|x| x.0 != signature);
+                        target.push((signature, new_handle));
                     }
                     
                     (false, false)
