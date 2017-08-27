@@ -57,6 +57,7 @@ mod time;
 pub mod prelude {
     pub use super::Guid;
     pub use super::time::{Date, DateTime, DateTime2, SmallDateTime, Time};
+    pub use super::ToSql;
 }
 
 #[derive(Copy, Clone, Debug)]
