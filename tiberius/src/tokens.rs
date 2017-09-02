@@ -456,7 +456,6 @@ impl<I: Io> ParseToken<I> for TokenNbcRow {
 
             // calculate size of the null-bitmap and read it
             let bitmap_size = (col_meta.columns.len() + 8 - 1) / 8;
-            println!("{} columns => {} bits", col_meta.columns.len(), bitmap_size);
             trans.inner.row_bitmap = trans.inner.read_bytes(bitmap_size);
         }
 
@@ -613,7 +612,7 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
         };
         let mut writer = PacketWriter::new(&mut trans.inner, header);
 
-          try!(protocol::write_trans_descriptor(&mut writer, trans.transaction));
+        try!(protocol::write_trans_descriptor(&mut writer, trans.transaction));
         match self.proc_id {
             RpcProcIdValue::Id(ref id) => {
                 try!(writer.write_u16::<LittleEndian>(0xffff));

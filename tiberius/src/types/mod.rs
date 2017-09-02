@@ -402,6 +402,7 @@ impl<'a> ColumnData<'a> {
                         }
                     },
                     VarLenType::BigVarChar => {
+                        assert!(*len != 0xffff); // TODO: PLP
                         let bytes = try_ready!(trans.inner.read_varbyte::<u16>());
                         let encoder = try!(collation.as_ref().unwrap().encoding().ok_or(TdsError::Encoding("encoding: unspported encoding".into())));
                         let str_: String = try!(encoder.decode(bytes.as_ref(), DecoderTrap::Strict).map_err(TdsError::Encoding));
@@ -535,7 +536,7 @@ impl<'a> ColumnData<'a> {
                 try!(target.write_all(&[VarLenType::Guid as u8, 0x10, 0x10]));
                 try!(target.write_all(guid.as_bytes()));
             },
-            ColumnData::String(ref str_) if str_.len() <= 8000 => {
+            ColumnData::String(ref str_) if str_.len() <= 4000 => {
                 try!(target.write_u8(VarLenType::NVarchar as u8));
                 try!(target.write_u16::<LittleEndian>(8000)); // NVARCHAR(4000)
                 try!(target.write_all(&[0; 5])); // raw collation
@@ -663,8 +664,8 @@ to_sql!(
 impl<'a> ToSql for &'a str {
     fn to_sql(&self) -> &'static str {
         match self.len() {
-            0...8000 => "NVARCHAR(4000)",
-            8001...MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
+            0...4000 => "NVARCHAR(4000)",
+            4001...MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
             _ => "NTEXT",
         }
     }

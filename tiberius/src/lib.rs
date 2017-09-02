@@ -1057,6 +1057,20 @@ mod tests {
     }
 
     #[test]
+    fn tokenstream_send_across_packets() {
+        let mut lp = Core::new().unwrap();
+        let c1 = new_connection(&mut lp);
+
+        let val = format!("x{:04500}x", 0);
+        let input = format!("select '{}'", &val);
+        let future = c1.query(input.clone(), &[]).for_each_row(|row| {
+            assert_eq!(row.get::<_, &str>(0), val.as_str());
+            Ok(())
+        });
+        lp.run(future).unwrap();
+    }
+
+    #[test]
     fn prepared_ddl_exec() {
         let mut lp = Core::new().unwrap();
         let c1 = new_connection(&mut lp);
