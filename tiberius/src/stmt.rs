@@ -148,7 +148,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                     if let Some(ref mut conn) = self.conn {
                         let target = conn.0.stmts.entry((&*self.stmt.sql).to_owned()).or_insert(Vec::with_capacity(1));
                         target.retain(|x| x.0 != signature);
-                        target.push((signature, new_handle, Some(self.meta.as_ref().cloned().unwrap())));
+                        target.push((signature, new_handle, self.meta.as_ref().cloned()));
                     }
                     
                     (false, false)
