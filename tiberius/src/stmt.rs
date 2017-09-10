@@ -14,24 +14,24 @@ use {BoxableIo, SqlConnection, StmtResult, TdsError};
 /// (which is a technical requirement since you need to know the types)
 #[derive(Clone)]
 pub struct Statement {
-    pub(crate) sql: Cow<'static, str>,
-    meta: Option<Arc<TokenColMetaData>>,
+    pub(crate) sql: Cow<'static, str>
 }
 
 // TODO: implement Drop for StatementHandle (channel to the connection which unprepares the statement)
 impl Statement {
     pub fn new(sql: Cow<'static, str>) -> Statement {
         Statement {
-            sql: sql,
-            meta: None,
+            sql: sql
         }
     }
 
-    pub(crate) fn get_handle_for<I: BoxableIo>(&self, conn: &SqlConnection<I>, needed: &[&'static str]) -> Option<i32> {
+    pub(crate) fn get_handle_for<I: BoxableIo>(&self, conn: &SqlConnection<I>, needed: &[&'static str]) 
+        -> Option<(i32, Option<Arc<TokenColMetaData>>)> 
+    {
         if let Some(bindings) = conn.0.stmts.get(&*self.sql) {
             for binding in bindings {
                 if needed.iter().eq(binding.0.iter()) {
-                    return Some(binding.1)
+                    return Some((binding.1, binding.2.clone()))
                 }
             }
         }
@@ -60,6 +60,7 @@ pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
     param_sig: Option<Vec<&'static str>>,
     receiver: Option<oneshot::Receiver<SqlConnection<I>>>,
     stmt: Statement,
+    meta: Option<Arc<TokenColMetaData>>,
 
     already_triggered: bool,
     /// This marker simply is used to allow this struct to be generic over a possible
@@ -69,7 +70,7 @@ pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
 }
 
 impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
-    pub fn new(conn: SqlConnection<I>, stmt: Statement, params: &[&ToSql]) -> Self {
+    pub fn new(conn: SqlConnection<I>, stmt: Statement, meta: Option<Arc<TokenColMetaData>>, params: &[&ToSql]) -> Self {
         let signature = params.iter().map(|x| x.to_sql()).collect();
         StmtStream {
             err: None,
@@ -77,7 +78,8 @@ impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
             conn: Some(conn),
             param_sig: Some(signature),
             receiver: None,
-            stmt: stmt,
+            stmt,
+            meta,
             already_triggered: false,
             _marker: PhantomData,
         }
@@ -115,9 +117,10 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
             let (do_ret, reinject) = match token {
                 TdsResponseToken::ColMetaData(ref meta) => {
                     if !meta.columns.is_empty() {
-                        self.stmt.meta = Some(meta.clone());
+                        self.meta = Some(meta.clone());
                     }
-                    self.already_triggered = !meta.columns.is_empty() || self.stmt.meta.is_some();
+                    self.already_triggered = !meta.columns.is_empty() || self.meta.is_some();
+
                     (self.already_triggered, false)
                 },
                 TdsResponseToken::DoneProc(ref done) => {
@@ -145,7 +148,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                     if let Some(ref mut conn) = self.conn {
                         let target = conn.0.stmts.entry((&*self.stmt.sql).to_owned()).or_insert(Vec::with_capacity(1));
                         target.retain(|x| x.0 != signature);
-                        target.push((signature, new_handle));
+                        target.push((signature, new_handle, Some(self.meta.as_ref().cloned().unwrap())));
                     }
                     
                     (false, false)

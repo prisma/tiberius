@@ -152,7 +152,7 @@ mod transaction;
 use transport::{Io, TdsTransport, TransportStream};
 use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
 use types::{ColumnData, ToSql};
-use tokens::{TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, WriteToken};
+use tokens::{TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, TokenColMetaData, WriteToken};
 use query::{ResultSetStream, QueryStream, ExecFuture};
 use stmt::{Statement, StmtStream, ResultStreamExt};
 use transaction::new_transaction;
@@ -497,7 +497,7 @@ pub trait StmtResult<I: BoxableIo> {
 #[doc(hidden)]
 pub struct InnerSqlConnection<I: BoxableIo> {
     transport: TdsTransport<TransportStream<I>>,
-    stmts: FnvHashMap<String, Vec<(Vec<&'static str>, i32)>>,
+    stmts: FnvHashMap<String, Vec<(Vec<&'static str>, i32, Option<Arc<TokenColMetaData>>)>>,
 }
 
 /// A connection to a SQL server with an underlying IO (e.g. socket)
@@ -874,15 +874,15 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 
     fn internal_exec<R: StmtResult<I>>(mut self, stmt: Statement, params: &[&ToSql]) -> StmtStream<I, R> {
         // call sp_prepare (with valid handle) or sp_prepexec (initializer)
-        let req = if let Some(handle) = stmt.get_handle_for(&self, &params.iter().map(|x| x.to_sql()).collect::<Vec<_>>()) {
-            self.do_exec(handle, params)
+        let (req, meta) = if let Some((handle, meta)) = stmt.get_handle_for(&self, &params.iter().map(|x| x.to_sql()).collect::<Vec<_>>()) {
+            (self.do_exec(handle, params), meta)
         } else {
-            self.do_prepare_exec(&stmt, params)
+            (self.do_prepare_exec(&stmt, params), None)
         };
 
         // write everything (or atleast queue it for write)
         let result = req.write_token(&mut self.0.transport);
-        let ret = StmtStream::new(self, stmt, params);
+        let ret = StmtStream::new(self, stmt, meta, params);
         match result {
             Ok(_) => ret,
             Err(err) => ret.error(err),
@@ -1076,6 +1076,26 @@ mod tests {
         let c1 = new_connection(&mut lp);
         let stmt = c1.prepare("DECLARE @Mojo int");
         helper_ddl_exec(c1.exec(&stmt, &[]), &mut lp);
+    }
+
+    #[test]
+    fn prepared_select_reexecute() {
+        let mut lp = Core::new().unwrap();
+        let mut conn = new_connection(&mut lp);
+
+        // prepare once
+        let sql = (1..10).map(|_| "SELECT 1").collect::<Vec<_>>().join(" UNION ");
+        let query = conn.prepare(sql);
+
+        // prepare & execute
+        for _ in 0..2 {
+            let query = conn.query(&query, &[]);
+            let future = query.for_each_row(|x| {
+                let _: i32 = x.get(0);
+                Ok(())
+            });
+            conn = lp.run(future).unwrap();
+        }
     }
 
     #[test]
