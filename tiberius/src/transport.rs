@@ -243,7 +243,6 @@ pub mod tls {
         #[cfg(windows)]
         {
             panic = false;
-            extern crate schannel;
             use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
             if disable_verification {
                 builder.verify_callback(|_| Ok(()));

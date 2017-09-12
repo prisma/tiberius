@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use futures::{Async, Future, BoxFuture, Poll, Stream};
+use futures::{Async, Future, Poll, Stream};
 use futures_state_stream::{StateStream, StreamEvent};
 use query::{ResultSetStream, ExecFuture, QueryStream};
 use stmt::{ForEachRow, SingleResultSet, Statement, StmtStream, ResultStreamExt};
@@ -81,34 +81,34 @@ impl<I: BoxableIo + 'static> Transaction<I> {
     }
 
     /// Commits a transaction
-    pub fn commit(self) -> BoxFuture<SqlConnection<I>, TdsError> {
-        self.internal_exec("COMMIT TRAN")
-            .and_then(|trans| trans.finish())
-            .boxed()
+    pub fn commit(self) -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> {
+        Box::new(self
+            .internal_exec("COMMIT TRAN")
+            .and_then(|trans| trans.finish()))
     }
 
     /// Rollback a transaction
-    pub fn rollback(self) -> BoxFuture<SqlConnection<I>, TdsError> {
-        self.internal_exec("ROLLBACK TRAN")
-            .and_then(|trans| trans.finish())
-            .boxed()
+    pub fn rollback(self) -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> {
+        Box::new(self
+            .internal_exec("ROLLBACK TRAN")
+            .and_then(|trans| trans.finish()))
     }
 
     /// convert back to a normal connection (enable auto commit)
-    fn finish(self) -> BoxFuture<SqlConnection<I>, TdsError> {
-        self.internal_exec("set implicit_transactions off")
-            .and_then(|trans| Ok(trans.0))
-            .boxed()
+    fn finish(self) -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> {
+        Box::new(self
+            .internal_exec("set implicit_transactions off")
+            .and_then(|trans| Ok(trans.0)))
     }
 
     /// executes an internal statement and checks if it succeeded
-    fn internal_exec(self, sql: &str) -> BoxFuture<Transaction<I>, TdsError> {
-        self.simple_exec(sql)
+    fn internal_exec(self, sql: &str) -> Box<Future<Item=Transaction<I>, Error=TdsError>> {
+        Box::new(self
+            .simple_exec(sql)
             .single()
             .and_then(|(result, trans)| {
                 assert_eq!(result, 0);
                 Ok(trans)
-            })
-            .boxed()
+            }))
     }
 }

@@ -100,7 +100,7 @@ use std::mem;
 use std::sync::{Arc, Mutex};
 use std::io;
 use fnv::FnvHashMap;
-use futures::{Async, BoxFuture, Future, Poll, Sink};
+use futures::{Async, Future, Poll, Sink};
 use futures::sync::oneshot;
 use futures::future::FromErr;
 use tokio_core::net::{TcpStream, TcpStreamNew};
@@ -528,11 +528,11 @@ pub enum DynamicConnectionTarget {
 }
 
 impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
-    type Result = BoxFuture<Box<BoxableIo>, TdsError>;
+    type Result = Box<Future<Item=Box<BoxableIo>, Error=TdsError> + Send + 'static>;
 
     fn to_io(self, handle: &Handle) -> Self::Result {
         match self {
-            DynamicConnectionTarget::Tcp(ref addr) => addr.to_io(handle).map(|x| Box::new(x) as Box<BoxableIo>).boxed(),
+            DynamicConnectionTarget::Tcp(ref addr) => Box::new(addr.to_io(handle).map(|x| Box::new(x) as Box<BoxableIo>)),
         }
     }
 }
@@ -904,14 +904,14 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     }
 
     /// Start a transaction
-    pub fn transaction(self) -> BoxFuture<Transaction<I>, TdsError> {
-        self.simple_exec("set implicit_transactions on")
+    pub fn transaction(self) -> Box<Future<Item=Transaction<I>, Error=TdsError>> {
+        Box::new(self
+            .simple_exec("set implicit_transactions on")
             .single()
             .and_then(|(result, conn)| {
                 assert_eq!(result, 0);
                 Ok(new_transaction(conn))
-            })
-            .boxed()
+            }))
     }
 
     /// Create a statement associated to a given SQL which can be executed later on
@@ -928,7 +928,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 #[cfg(test)]
 mod tests {
     use std::env;
-    use futures::{Future, BoxFuture};
+    use futures::Future;
     use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
     use query::ExecFuture;
@@ -1113,7 +1113,9 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let connection_string = connection_string();
 
-        fn check_test_value<I: BoxableIo + 'static>(conn: SqlConnection<I>, value: i32) -> BoxFuture<SqlConnection<I>, TdsError> {
+        fn check_test_value<I: BoxableIo + 'static>(conn: SqlConnection<I>, value: i32) 
+            -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> 
+        {
             conn.simple_query("SELECT test FROM #temp;")
                 .for_each_row(move |row| {
                     let val: i32 = row.get(0);
@@ -1123,7 +1125,9 @@ mod tests {
                 .boxed()
         }
 
-        fn update_test_value<I: BoxableIo + 'static>(transaction: Transaction<I>, commit: bool) -> BoxFuture<SqlConnection<I>, TdsError> {
+        fn update_test_value<I: BoxableIo + 'static>(transaction: Transaction<I>, commit: bool)
+            -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> 
+        {
             transaction.simple_exec("UPDATE #Temp SET test=44;").single()
                 .and_then(|(_, trans)| trans.simple_query("SELECT test FROM #Temp;").for_each_row(|row| {
                     let val: i32 = row.get(0);
