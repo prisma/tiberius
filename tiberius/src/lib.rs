@@ -1116,19 +1116,20 @@ mod tests {
         fn check_test_value<I: BoxableIo + 'static>(conn: SqlConnection<I>, value: i32) 
             -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> 
         {
-            conn.simple_query("SELECT test FROM #temp;")
+            Box::new(conn
+                .simple_query("SELECT test FROM #temp;")
                 .for_each_row(move |row| {
                     let val: i32 = row.get(0);
                     assert_eq!(val, value);
                     Ok(())
-                })
-                .boxed()
+                }))
         }
 
         fn update_test_value<I: BoxableIo + 'static>(transaction: Transaction<I>, commit: bool)
             -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> 
         {
-            transaction.simple_exec("UPDATE #Temp SET test=44;").single()
+            Box::new(transaction
+                .simple_exec("UPDATE #Temp SET test=44;").single()
                 .and_then(|(_, trans)| trans.simple_query("SELECT test FROM #Temp;").for_each_row(|row| {
                     let val: i32 = row.get(0);
                     assert_eq!(val, 44i32);
@@ -1138,8 +1139,7 @@ mod tests {
                     trans.commit()
                 } else {
                     trans.rollback()
-                })
-                .boxed()
+                }))
         }
 
         let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
