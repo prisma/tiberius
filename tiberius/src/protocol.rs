@@ -258,62 +258,62 @@ impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
 
 bitflags! {
     pub struct LoginOptionFlags1: u8 {
-        const OF1_BIG_ENDIAN           = 0b00000001;
+        const BIG_ENDIAN           = 0b00000001;
         /// Charset_EBDDIC, default/bit not set = Charset_ASCII
-        const OF1_CHARSET_EBDDIC       = 0b00000010;
+        const CHARSET_EBDDIC       = 0b00000010;
         /// default float is IEEE_754
-        const OF1_FLOAT_VAX            = 0b00000100;
-        const OF1_FLOAT_ND5000         = 0b00001000;
-        const OF1_DUMPLOAD_ON          = 0b00010000;
+        const FLOAT_VAX            = 0b00000100;
+        const FLOAT_ND5000         = 0b00001000;
+        const DUMPLOAD_ON          = 0b00010000;
         /// Set if the client requires warning messages on execution of the USE SQL
         /// statement. If this flag is NOT SET, the server MUST NOT inform the client when the database
         /// changes, and therefore the client will be unaware of any accompanying collation changes.
-        const OF1_USE_DB_NOTIFY        = 0b00100000;
+        const USE_DB_NOTIFY        = 0b00100000;
         /// Set if the change to initial database needs to succeed if the connection is to succeed. (false: warn)
-        const OF1_INITIAL_DB_FATAL     = 0b01000000;
+        const INITIAL_DB_FATAL     = 0b01000000;
         /// Set if the client requires warning messages on execution of a language change statement.
-        const OF1_LANG_CHANGE_WARN     = 0b10000000;
+        const LANG_CHANGE_WARN     = 0b10000000;
     }
 }
 bitflags! {
     pub struct LoginOptionFlags2: u8 {
         /// Set if the change to initial language needs to succeed if the connect is to succeed.
-        const OF2_INIT_LANG_FATAL      = 0b00000001;
+        const INIT_LANG_FATAL      = 0b00000001;
         /// Set if the client is the ODBC driver. This causes the server to set ANSI_DEFAULTS=ON,
         /// CURSOR_CLOSE_ON_COMMIT, IMPLICIT_TRANSACTIONS=OFF, TEXTSIZE=0x7FFFFFFF (2GB) (TDS 7.2 and earlier)
         /// TEXTSIZE to infinite (TDS 7.3), and ROWCOUNT to infinite
         /// (2.2.6.4)
-        const OF2_ODBC_DRIVER          = 0b00000010;
-        const OF2_TRANS_BOUNDARY       = 0b00000100;
-        const OF2_CACHE_CONNECT        = 0b00001000;
+        const ODBC_DRIVER          = 0b00000010;
+        const TRANS_BOUNDARY       = 0b00000100;
+        const CACHE_CONNECT        = 0b00001000;
         /// reserved
-        const OF2_USER_TYPE_SERVER     = 0b00010000;
+        const USER_TYPE_SERVER     = 0b00010000;
         /// Distributed Query login
-        const OF2_USER_TYPE_REM_USER   = 0b00100000;
+        const USER_TYPE_REM_USER   = 0b00100000;
         /// Replication login
-        const OF2_USER_TYPE_SQL_REPL   = 0b00110000;
-        const OF2_INTEGRATED_SECURITY  = 0b10000000;
+        const USER_TYPE_SQL_REPL   = 0b00110000;
+        const INTEGRATED_SECURITY  = 0b10000000;
     }
 }
 bitflags! {
     pub struct LoginTypeFlags: u8 {
         /// use TSQL insteadof DFLT
-        const LTF_SQL_TSQL             = 0b00000001;
+        const SQL_TSQL             = 0b00000001;
         /// Set if the client is the OLEDB driver. This causes the server to set ANSI_DEFAULTS to ON ...
-        const LTF_OLEDB_DRIVER         = 0b00010000;
-        const LTF_READ_ONLY_INTENT     = 0b00100000;
+        const OLEDB_DRIVER         = 0b00010000;
+        const READ_ONLY_INTENT     = 0b00100000;
     }
 }
 bitflags! {
     pub struct LoginOptionFlags3: u8 {
-        const OF3_REQUEST_CHANGE_PWD   = 0b00000001;
+        const REQUEST_CHANGE_PWD   = 0b00000001;
         /// 1 if XML data type instances are returned as binary XML
-        const OF3_SEND_YUKON_BINARY    = 0b00000010;
+        const SEND_YUKON_BINARY    = 0b00000010;
         /// 1 if client is requesting separate process to be spawned as user instance
-        const OF3_SPAWN_USER_INSTANCE  = 0b00000100;
+        const SPAWN_USER_INSTANCE  = 0b00000100;
         /// 0 = The server MUST restrict the collations sent to a specific set of collations.
         /// 1 = The server MAY send any collation that fits in the storage space.
-        const OF3_SUPPORT_UNKNOWN_COLL = 0b00001000;
+        const SUPPORT_UNKNOWN_COLL = 0b00001000;
         // TODO: fExtension?
     }
 }
@@ -360,11 +360,11 @@ impl<'a> LoginMessage<'a> {
             client_prog_ver: 0,
             client_pid: 0,
             connection_id: 0,
-            option_flags_1: OF1_USE_DB_NOTIFY | OF1_INITIAL_DB_FATAL,
-            option_flags_2: OF2_INIT_LANG_FATAL | OF2_ODBC_DRIVER,
+            option_flags_1: LoginOptionFlags1::USE_DB_NOTIFY | LoginOptionFlags1::INITIAL_DB_FATAL,
+            option_flags_2: LoginOptionFlags2::INIT_LANG_FATAL | LoginOptionFlags2::ODBC_DRIVER,
             integrated_security: None,
             type_flags: LoginTypeFlags::empty(),
-            option_flags_3: OF3_SUPPORT_UNKNOWN_COLL,
+            option_flags_3: LoginOptionFlags3::SUPPORT_UNKNOWN_COLL,
             client_timezone: 0, //TODO
             client_lcid: 0, // TODO
             hostname: "".into(),
@@ -385,9 +385,9 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
 
         // ignore the specified value for integrated security since we determine that by the struct field
         let option_flags2 = if self.integrated_security.is_some() {
-            self.option_flags_2 | OF2_INTEGRATED_SECURITY
+            self.option_flags_2 | LoginOptionFlags2::INTEGRATED_SECURITY
         } else {
-            self.option_flags_2 & !OF2_INTEGRATED_SECURITY
+            self.option_flags_2 & !LoginOptionFlags2::INTEGRATED_SECURITY
         };
         // write..
         for val in &[self.tds_version as u32, self.packet_size, self.client_prog_ver, self.client_pid, self.connection_id] {

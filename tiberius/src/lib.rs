@@ -152,7 +152,7 @@ mod transaction;
 use transport::{Io, TdsTransport, TransportStream};
 use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
 use types::{ColumnData, ToSql};
-use tokens::{TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, TokenColMetaData, WriteToken};
+use tokens::{DoneStatus, TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, TokenColMetaData, WriteToken};
 use query::{ResultSetStream, QueryStream, ExecFuture};
 use stmt::{Statement, StmtStream, ResultStreamExt};
 use transaction::new_transaction;
@@ -468,7 +468,7 @@ impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
                         },
                         Some(TdsResponseToken::Done(done)) => {
                             // the connection is ready 2 go, we're done with our initialization
-                            assert_eq!(done.status, tokens::DoneStatus::empty());
+                            assert_eq!(done.status, DoneStatus::empty());
                             break;
                         },
                         Some(_) | None => SqlConnectionNewState::TokenStreamRecv,
@@ -808,7 +808,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         let mut params_meta = vec![
             RpcParam {
                 name: Cow::Borrowed("handle"),
-                flags: tokens::RPC_PARAM_BY_REF_VALUE,
+                flags: RpcStatusFlags::PARAM_BY_REF_VALUE,
                 value: ColumnData::I32(0),
             },
             RpcParam {
@@ -867,7 +867,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 
         TokenRpcRequest {
             proc_id: RpcProcIdValue::Id(RpcProcId::SpExecute),
-            flags: tokens::RPC_NO_META,
+            flags: RpcOptionFlags::NO_META,
             params: params_meta,
         }
     }

@@ -4,7 +4,7 @@ use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
 use stmt::{ForEachRow, SingleResultSet, ResultStreamExt};
-use tokens::{self, TdsResponseToken, TokenRow};
+use tokens::{self, DoneStatus, TdsResponseToken, TokenRow};
 use types::FromColumnData;
 use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
 
@@ -70,7 +70,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
                             (true, false)
                         },
                         TdsResponseToken::Done(ref done) => {
-                            self.done = !done.status.contains(tokens::DONE_MORE);
+                            self.done = !done.status.contains(DoneStatus::MORE);
                             let old = self.already_triggered;
                             self.already_triggered = false;
                             // make sure to return exactly one time for each result set
@@ -136,7 +136,7 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
                     return Ok(Async::Ready(Some(QueryRow(row))));
                 },
                 // if this is the final done token, we need to reinject it for result set stream to handle it
-                TdsResponseToken::Done(ref done) if !done.status.contains(tokens::DONE_MORE) => true,
+                TdsResponseToken::Done(ref done) if !done.status.contains(DoneStatus::MORE) => true,
                 TdsResponseToken::Done(_) | TdsResponseToken::DoneInProc(_) => false,
                 x => panic!("query: unexpected token: {:?}", x),
             };
@@ -195,12 +195,12 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
                             _ => false
                         };
                         
-                        if done.status.contains(tokens::DONE_COUNT) {
+                        if done.status.contains(DoneStatus::COUNT) {
                             ret = done.done_rows;
                         }
                         // if this is the final done token, we need to reinject it for result set stream to handle it
                         // (as in querying, if self.single_token it already was reinjected and would result in an infinite cycle)
-                        let reinject = !done.status.contains(tokens::DONE_MORE) && !self.single_token && final_token;
+                        let reinject = !done.status.contains(DoneStatus::MORE) && !self.single_token && final_token;
                         if !reinject {
                             break;
                         }

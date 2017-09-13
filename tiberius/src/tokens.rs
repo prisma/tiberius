@@ -253,13 +253,13 @@ impl<I: Io> ParseToken<I> for TokenLoginAck {
 
 bitflags! {
     pub struct DoneStatus: u16 {
-        const DONE_MORE = 0x1;
-        const DONE_ERROR = 0x2;
-        const DONE_INEXACT = 0x4;
-        const DONE_COUNT = 0x10;
-        const DONE_ATTENTION = 0x20;
-        const DONE_RPC_IN_BATCH  = 0x80;
-        const DONE_SRVERROR = 0x100;
+        const MORE = 0x1;
+        const ERROR = 0x2;
+        const INEXACT = 0x4;
+        const COUNT = 0x10;
+        const ATTENTION = 0x20;
+        const RPC_IN_BATCH  = 0x80;
+        const SRVERROR = 0x100;
     }
 }
 
@@ -573,19 +573,19 @@ pub enum RpcProcIdValue<'a> {
 
 bitflags! {
     pub struct RpcStatusFlags: u8 {
-        const RPC_PARAM_BY_REF_VALUE    = 0x01;
-        const RPC_PARAM_DEFAULT_VALUE   = 0x02;
+        const PARAM_BY_REF_VALUE    = 0x01;
+        const PARAM_DEFAULT_VALUE   = 0x02;
         // <- reserved
-        const RPC_PARAM_ENCRYPTED       = 0x08;
+        const PARAM_ENCRYPTED       = 0x08;
         // <- 4 bits reserved
     }
 }
 
 bitflags! {
     pub struct RpcOptionFlags: u16 {
-        const RPC_WITH_RECOMP   = 0x01;
-        const RPC_NO_META       = 0x02;
-        const RPC_REUSE_META    = 0x04;
+        const WITH_RECOMP   = 0x01;
+        const NO_META       = 0x02;
+        const REUSE_META    = 0x04;
         // <- 13 reserved bits
     }
 }
