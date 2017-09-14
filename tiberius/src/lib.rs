@@ -523,6 +523,7 @@ impl<'a> ToIo<TcpStream> for &'a SocketAddr {
 }
 
 #[doc(hidden)]
+#[derive(Debug, PartialEq)]
 pub enum DynamicConnectionTarget {
     Tcp(SocketAddr),
 }
@@ -538,7 +539,7 @@ impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
 }
 
 /// The authentication method that should be used during authentication
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum AuthMethod {
     SqlServer(Cow<'static, str>, Cow<'static, str>),
@@ -640,43 +641,67 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
         let mut connect_params = ConnectParams::new();
 
         while !input.is_empty() {
-            let key_end = input.bytes().position(|x| x == b'=');
-            let (key, key_end) = match key_end {
-                None => return Err(TdsError::Conversion("connection string expected key. expected `=` never found".into())),
-                Some(key_end) => ((&input[..key_end]).to_lowercase(), key_end)
-            };
-            input = &input[key_end+1..];
-            // check if an escaped value (e.g. 'my password contains a;' or 'or a \' #kappa' follows)
-            let escaped = input.starts_with('\'');
-            let end = input.bytes().position(|x| x == b';').unwrap_or(input.len());
-
-            let value = if !escaped {
-                let ret = &input[..end];
-                input = &input[cmp::min(end + 1, input.len())..];
-                Cow::Borrowed(ret)
-            } else {
-                let mut val = String::with_capacity(end);
-                loop {
-                    let next = match input.bytes().position(|x| x == b'\'' || x == b'\\') {
-                        None => return Err(TdsError::Conversion("connection string: unterminated escape sequence".into())),
-                        Some(next) => next
-                    };
-                    match input.as_bytes()[next] {
-                        b'\'' => {
-                            val.push_str(&input[..next]);
-                            break;
-                        },
-                        b'\\' if next+1 < input.len() && input.as_bytes()[next+1] == b'\'' => {
-                            val.push('\'');
-                            input = &input[1..]; // <=> &[next+2..] effectively
-                        },
-                        b'\\' => val.push('\\'),
-                        _ => unreachable!()
-                    }
-                    input = &input[next+1..];
+            // (MSDN) The basic format of a connection string includes a series of keyword/value
+            // pairs separated by semicolons. The equal sign (=) connects each keyword and its value.
+            let key = {
+                let mut t = input.splitn(2, '=');
+                let key = t.next().unwrap();
+                if let Some(i) = t.next() {
+                    input = i;
+                } else {
+                    return Err(TdsError::Conversion("connection string expected key. expected `=` never found".into()))
                 }
-                Cow::Owned(val)
+                key.trim().to_lowercase()
             };
+
+            // (MSDN) To include values that contain a semicolon, single-quote character,
+            // or double-quote character, the value must be enclosed in double quotation marks.
+            // If the value contains both a semicolon and a double-quote character, the value can
+            // be enclosed in single quotation marks.
+            let quote_char = match &input[0..1] {
+                "'" => Some('\''),
+                "\"" => Some('"'),
+                _ => None,
+            };
+
+            let value = if let Some(quote_char) = quote_char {
+                let mut value = String::new();
+                loop {
+                    let mut t = input.splitn(3, quote_char);
+                    t.next().unwrap(); // skip first quote character
+                    value.push_str(t.next().unwrap());
+                    input = t.next().unwrap_or("");
+                    if input.starts_with(quote_char) {
+                        // (MSDN) If the value contains both single-quote and double-quote
+                        // characters, the quotation mark character used to enclose the value must
+                        // be doubled every time it occurs within the value.
+                        value.push(quote_char);
+                    } else if input.trim_left().starts_with(";") {
+                        input = input.trim_left().trim_left_matches(";");
+                        break;
+                    } else if input.is_empty() {
+                        break;
+                    } else {
+                        return Err(TdsError::Conversion("connection string: text after escape sequence".into()))
+                    }
+                }
+                Cow::Owned(value)
+            } else {
+                let mut t = input.splitn(2, ';');
+                let value = t.next().unwrap();
+                input = t.next().unwrap_or("");
+                // (MSDN) To include preceding or trailing spaces in the string value, the value
+                // must be enclosed in either single quotation marks or double quotation marks.
+                Cow::Borrowed(value.trim())
+            };
+
+            fn parse_bool<T: AsRef<str>>(v: T) -> Result<bool, TdsError> {
+                match v.as_ref().trim().to_lowercase().as_str() {
+                    "true" | "yes" => Ok(true),
+                    "false" | "no" => Ok(false),
+                    _ => Err(TdsError::Conversion("connection string: not a valid boolean".into()))
+                }
+            }
 
             match key.as_str() {
                 "server" => {
@@ -693,12 +718,14 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                         target = Some(DynamicConnectionTarget::Tcp(addr));
                     }
                 },
-                "integratedsecurity" if ["true", "yes", "sspi"].contains(&value.to_lowercase().as_str()) => {
-                    #[cfg(windows)] {
-                        connect_params.auth = AuthMethod::SSPI_SSO;
-                    }
-                    #[cfg(not(windows))] {
-                        connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
+                "integratedsecurity" => {
+                    if value.to_lowercase() == "sspi" || parse_bool(&value)? {
+                        #[cfg(windows)] {
+                            connect_params.auth = AuthMethod::SSPI_SSO;
+                        }
+                        #[cfg(not(windows))] {
+                            connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
+                        }
                     }
                 },
                 "uid" | "username" | "user" => {
@@ -724,11 +751,17 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                 "database" => {
                     connect_params.target_db = Some(value.into_owned().into());
                 },
-                "trustservercertificate" if ["true", "yes"].contains(&value.to_lowercase().as_str()) => {
-                    connect_params.trust_cert = true;
+                "trustservercertificate" => {
+                    connect_params.trust_cert = parse_bool(value)?;
                 },
-                "encrypt" if ["true", "yes"].contains(&value.to_lowercase().as_str()) => {
-                    connect_params.ssl = EncryptionLevel::Required;
+                "encrypt" => {
+                    connect_params.ssl = if parse_bool(value)? {
+                        EncryptionLevel::Required
+                    } else if let EncryptionLevel::NotSupported = connect_params.ssl {
+                        EncryptionLevel::NotSupported
+                    } else {
+                        EncryptionLevel::Off
+                    };
                 },
                 _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
             }
@@ -945,6 +978,19 @@ mod tests {
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
         let future = SqlConnection::connect(lp.handle(), connection_string().as_str());
         lp.run(future).unwrap()
+    }
+
+    #[test]
+    fn str_to_connect_endpoint() {
+        use ToConnectEndpoint;
+        use super::{DynamicConnectionTarget, AuthMethod};
+        let ep = "server = tcp:127.0.0.1,1234 ; user=\"Test'\"\"User\";password='1''2\"3;4 ' ; integratedSecurity = false"
+            .to_connect_endpoint().unwrap();
+
+        assert_eq!(ep.target, DynamicConnectionTarget::Tcp("127.0.0.1:1234".parse().unwrap()));
+
+        let p = ep.params;
+        assert_eq!(p.auth, AuthMethod::SqlServer("Test'\"User".into(), "1'2\"3;4 ".into()));
     }
 
     #[test]
