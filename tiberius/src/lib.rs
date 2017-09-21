@@ -216,8 +216,10 @@ impl From<std::string::FromUtf16Error> for TdsError {
 pub type TdsResult<T> = Result<T, TdsError>;
 
 /// A connection in a state before any login has happened
-#[doc(hidden)]
-enum SqlConnectionNewState<I: Io> {
+enum SqlConnectionLoginState<I: Io, F: Future<Item=I, Error=TdsError> + Send + Sized> {
+    Connection(Option<(F, ConnectParams)>),
+    Error(Option<TdsError>),
+
     PreLoginSend,
     PreLoginRecv,
     #[cfg(feature = "tls")]
@@ -229,12 +231,26 @@ enum SqlConnectionNewState<I: Io> {
     _Dummy(PhantomData<I>)
 }
 
-/// A representation of the initialization state of an SQL connection (pending connection)
-#[doc(hidden)]
-pub enum SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send + Sized> {
-    Connection(Option<(F, ConnectParams)>),
-    Error(Option<TdsError>),
-    Next(Option<SqlConnectionFuture<I>>),
+/// A representation of the initialization state of an SQL connection (pending connection
+pub struct SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send + Sized> {
+    state: SqlConnectionLoginState<I, F>,
+    context: Option<SqlConnectionContext<I>>,
+}
+
+struct SqlConnectionContext<I: BoxableIo> {
+    params: ConnectParams,
+    transport: TdsTransport<TransportStream<I>>,
+    /// receiver for channel bindings certificate hash (TLS)
+    bindings: Arc<Mutex<Option<Vec<u8>>>>,
+    wauth_client: Option<Box<NextBytes>>,
+}
+
+impl<I: BoxableIo> SqlConnectionContext<I> {
+    /// Queues a simple message which serializes to ONE packet
+    fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
+        let vec = try!(m.serialize_message(&mut self.transport));
+        self.transport.inner.queue_vec(vec)
+    }
 }
 
 impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConnectionNew<I, F> {
@@ -243,246 +259,212 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
 
     fn poll(&mut self) -> Poll<Self::Item, TdsError> {
         loop {
-            *self = match *self {
-                SqlConnectionNew::Connection(ref mut pairs @ Some(_)) => {
+            self.state = match self.state {
+                SqlConnectionLoginState::Connection(ref mut pairs @ Some(_)) => {
                     let trans = try_ready!(pairs.as_mut().map(|x| &mut x.0).unwrap().poll());
                     #[cfg(feature = "tls")]
                     let trans = TransportStream::Raw(trans);
                     let trans = TdsTransport::new(trans);
 
-                    let future = SqlConnectionFuture {
+                    self.context = Some(SqlConnectionContext {
                         params: pairs.take().map(|x| x.1).unwrap(),
-                        state: SqlConnectionNewState::PreLoginSend,
                         transport: trans,
                         bindings: Arc::new(Mutex::new(None)),
                         wauth_client: None,
-                    };
-                    SqlConnectionNew::Next(Some(future))
+                    });
+                    SqlConnectionLoginState::PreLoginSend
                 },
-                SqlConnectionNew::Error(ref mut e @ Some(_)) => {
-                    return Err(e.take().unwrap())
-                },
-                SqlConnectionNew::Next(ref mut future @ Some(_)) => {
-                    try_ready!(future.as_mut().unwrap().poll());
-                    let trans = future.take().unwrap().transport;
-                    let conn = InnerSqlConnection {
-                        transport: trans,
-                        stmts: FnvHashMap::default(),
-                    };
+                ref mut state => {
+                    let ctx = self.context.as_mut().expect("expected context for post-login state");
+                    match *state {
+                        SqlConnectionLoginState::PreLoginSend => {
+                            let mut msg = PreloginMessage::new();
+                            if cfg!(feature = "tls") {
+                                msg.encryption = ctx.params.ssl;
+                            } else if ctx.params.ssl != EncryptionLevel::NotSupported {
+                                panic!("TLS support is not enabled in this build, but required for this configuration!");
+                            }
+                            try_nb!(ctx.queue_simple_message(msg));
+                            SqlConnectionLoginState::PreLoginRecv
+                        },
+                        SqlConnectionLoginState::PreLoginRecv => {
+                            try_ready!(ctx.transport.inner.poll_complete());
+                            let header = try_ready!(ctx.transport.inner.next_packet());
+                            assert_eq!(header.ty, PacketType::TabularResult);
+                            // parse the prelogin packet
+                            let buf = ctx.transport.inner.get_packet(header.length as usize);
+                            let msg = try!(buf.as_ref().unserialize_message(&mut ctx.transport));
 
-                    return Ok(Async::Ready(SqlConnection(conn)))
-                },
-                _ => panic!("SqlConnectionNew polled multiple times. item already consumed"),
-            }
-        }
-    }
-}
+                            let encr = match (ctx.params.ssl, msg.encryption) {
+                                (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => EncryptionLevel::NotSupported,
+                                (EncryptionLevel::Off, EncryptionLevel::Off) => EncryptionLevel::Off,
+                                (EncryptionLevel::On, EncryptionLevel::Off) |
+                                (EncryptionLevel::On, EncryptionLevel::NotSupported) => panic!("todo: terminate connection, invalid encryption"),
+                                (_, _) => EncryptionLevel::On,
+                            };
+                            ctx.params.ssl = encr;
 
-#[doc(hidden)]
-pub struct SqlConnectionFuture<I: BoxableIo> {
-    params: ConnectParams,
-    state: SqlConnectionNewState<I>,
-    transport: TdsTransport<TransportStream<I>>,
-    /// receiver for channel bindings certificate hash (TLS)
-    bindings: Arc<Mutex<Option<Vec<u8>>>>,
-    wauth_client: Option<Box<NextBytes>>,
-}
+                            // move to an TLS stream, if requested
+                            match encr {
+                                // encrypt entirely or only logon packet
+                                EncryptionLevel::On | EncryptionLevel::Off | EncryptionLevel::Required => {
+                                    #[cfg(feature = "tls")]
+                                    {
+                                        match mem::replace(&mut ctx.transport.inner.io, TransportStream::None) {
+                                            TransportStream::Raw(stream) => {
+                                                let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream);
+                                                let host = if ctx.params.trust_cert {
+                                                    None
+                                                } else {
+                                                    Some(&*ctx.params.host)
+                                                };
+                                                let bindings = ctx.bindings.clone();
+                                                let tls_stream = transport::tls::connect_async(wrapped_stream, host, move |_| {
+                                                    *bindings.lock().unwrap() = Some(
+                                                        // MSSQL requires "tls-unique" bindings and doesn't support
+                                                        // "tls-server-end-point" anymore (even if the docs hints otherwise)
+                                                        [b"tls-unique:" as &[u8], unimplemented!()
+                                                    ].concat());
+                                                });
+                                                SqlConnectionLoginState::TLSPending(Some(tls_stream))
+                                            },
+                                            _ => unreachable!(),
+                                        }
+                                    }
+                                    #[cfg(not(feature = "tls"))]
+                                    panic!("encryption requested without build support!");
+                                }
+                                // do not encrypt at all
+                                EncryptionLevel::NotSupported => SqlConnectionLoginState::LoginSend
+                            }
+                        },
+                        #[cfg(feature = "tls")]
+                        SqlConnectionLoginState::TLSPending(ref mut connect_async) => {
+                            assert!(connect_async.is_some());
+                            let mut stream = try_ready!(connect_async.as_mut().unwrap().poll());
+                            connect_async.take();
+                            stream.get_mut().get_mut().wrap = false;
+                            ctx.transport.inner.io = TransportStream::TLS(stream);
+                            SqlConnectionLoginState::LoginSend
+                        },
+                        SqlConnectionLoginState::LoginSend => {
+                            let mut login_message = LoginMessage::new();
 
-impl<I: BoxableIo> SqlConnectionFuture<I> {
-    /// Queues a simple message which serializes to ONE packet
-    pub fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
-        let vec = try!(m.serialize_message(&mut self.transport));
-        self.transport.inner.queue_vec(vec)
-    }
-}
+                            if let Some(ref db) = ctx.params.target_db {
+                                login_message.db_name = db.clone();
+                            }
 
-impl<I: BoxableIo> Future for SqlConnectionFuture<I> {
-    type Item = ();
-    type Error = TdsError;
+                            // authentication
+                            match ctx.params.auth {
+                                #[cfg(windows)]
+                                AuthMethod::SSPI_SSO => {
+                                    let mut builder = winauth::windows::NtlmSspiBuilder::new()
+                                        .target_spn(&ctx.params.spn);
+                                    if let Some(ref hash) = *ctx.bindings.lock().unwrap() {
+                                        builder = builder.channel_bindings(hash);
+                                    }
+                                    let mut sso_client = try!(builder.build());
+                                    let buf = try!(sso_client.next_bytes(None)).map(|x| x.to_owned());
+                                    login_message.integrated_security = buf;
+                                    ctx.wauth_client = Some(Box::new(sso_client));
+                                },
+                                AuthMethod::SqlServer(ref username, ref password) => {
+                                    login_message.username = username.clone();
+                                    login_message.password = password.clone();
+                                },
+                                AuthMethod::WinAuth(ref username, ref password) => {
+                                    // TODO: integrate channel binding
+                                    // TODO: use NEGOTIATE
+                                    let (domain, username) = if let Some(idx) = username.find("\\") {
+                                        match *username {
+                                            Cow::Borrowed(ref x) => {
+                                                let (domain, username) = (&x[..idx], &x[idx+1..]);
+                                                (Some(Cow::Borrowed(domain)), username.into())
+                                            }
+                                            Cow::Owned(ref x) => {
+                                                let (domain, username) = (&x[..idx], &x[idx+1..]);
+                                                (Some(Cow::Owned(domain.to_owned())), username.to_owned().into())
+                                            }
+                                        }
+                                    } else {
+                                        (None, username.clone())
+                                    };
+                                    let mut builder = winauth::NtlmV2ClientBuilder::new()
+                                                            .target_spn(ctx.params.spn.clone());
+                                    if let Some(ref hash) = *ctx.bindings.lock().unwrap() {
+                                        builder = builder.channel_bindings(hash);
+                                    }
+                                    let mut client = builder.build(domain, username, password.clone());
+                                    let buf = try!(client.next_bytes(None)).map(|x| x.to_owned());
+                                    login_message.integrated_security = buf;
+                                    ctx.wauth_client = Some(Box::new(client));
+                                }
+                            }
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            self.state = match self.state {
-                SqlConnectionNewState::PreLoginSend => {
-                    let mut msg = PreloginMessage::new();
-                    if cfg!(feature = "tls") {
-                        msg.encryption = self.params.ssl;
-                    } else if self.params.ssl != EncryptionLevel::NotSupported {
-                        panic!("TLS support is not enabled in this build, but required for this configuration!");
-                    }
-                    try_nb!(self.queue_simple_message(msg));
-                    SqlConnectionNewState::PreLoginRecv
-                },
-                SqlConnectionNewState::PreLoginRecv => {
-                    try_ready!(self.transport.inner.poll_complete());
-                    let header = try_ready!(self.transport.inner.next_packet());
-                    assert_eq!(header.ty, PacketType::TabularResult);
-                    // parse the prelogin packet
-                    let buf = self.transport.inner.get_packet(header.length as usize);
-                    let msg = try!(buf.as_ref().unserialize_message(&mut self.transport));
-
-                    let encr = match (self.params.ssl, msg.encryption) {
-                        (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => EncryptionLevel::NotSupported,
-                        (EncryptionLevel::Off, EncryptionLevel::Off) => EncryptionLevel::Off,
-                        (EncryptionLevel::On, EncryptionLevel::Off) |
-                        (EncryptionLevel::On, EncryptionLevel::NotSupported) => panic!("todo: terminate connection, invalid encryption"),
-                        (_, _) => EncryptionLevel::On,
-                    };
-                    self.params.ssl = encr;
-
-                    // move to an TLS stream, if requested
-                    match encr {
-                        // encrypt entirely or only logon packet
-                        EncryptionLevel::On | EncryptionLevel::Off | EncryptionLevel::Required => {
+                            try_nb!(ctx.queue_simple_message(login_message));
+                            SqlConnectionLoginState::LoginRecv
+                        },
+                        SqlConnectionLoginState::LoginRecv => {
+                            try_ready!(ctx.transport.inner.poll_complete());
+                            // if login only encryption was negotiated, disable encryption
+                            // after we sent the first login packet
                             #[cfg(feature = "tls")]
                             {
-                                match mem::replace(&mut self.transport.inner.io, TransportStream::None) {
-                                    TransportStream::Raw(stream) => {
-                                        let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream);
-                                        let host = if self.params.trust_cert {
-                                            None
-                                        } else {
-                                            Some(&*self.params.host)
-                                        };
-                                        let bindings = self.bindings.clone();
-                                        let tls_stream = transport::tls::connect_async(wrapped_stream, host, move |_| {
-                                            *bindings.lock().unwrap() = Some(
-                                                // MSSQL requires "tls-unique" bindings and doesn't support
-                                                // "tls-server-end-point" anymore (even if the docs hints otherwise)
-                                                [b"tls-unique:" as &[u8], unimplemented!()
-                                            ].concat());
-                                        });
-                                        SqlConnectionNewState::TLSPending(Some(tls_stream))
-                                    },
-                                    _ => unreachable!(),
+                                if ctx.params.ssl == EncryptionLevel::Off {
+                                    let stream = mem::replace(&mut ctx.transport.inner.io, TransportStream::None);
+                                    ctx.transport.inner.io = match stream {
+                                        TransportStream::TLS(mut stream) => TransportStream::Raw(
+                                            stream.get_mut().get_mut().take_stream()
+                                        ),
+                                        x => x,
+                                    };
                                 }
                             }
-                            #[cfg(not(feature = "tls"))]
-                            panic!("encryption requested without build support!");
-                        }
-                        // do not encrypt at all
-                        EncryptionLevel::NotSupported => SqlConnectionNewState::LoginSend
-                    }
-                },
-                #[cfg(feature = "tls")]
-                SqlConnectionNewState::TLSPending(ref mut connect_async) => {
-                    assert!(connect_async.is_some());
-                    let mut stream = try_ready!(connect_async.as_mut().unwrap().poll());
-                    connect_async.take();
-                    stream.get_mut().get_mut().wrap = false;
-                    self.transport.inner.io = TransportStream::TLS(stream);
-                    SqlConnectionNewState::LoginSend
-                },
-                SqlConnectionNewState::LoginSend => {
-                    let mut login_message = LoginMessage::new();
-
-                    if let Some(ref db) = self.params.target_db {
-                        login_message.db_name = db.clone();
-                    }
-
-                    // authentication
-                    match self.params.auth {
-                        #[cfg(windows)]
-                        AuthMethod::SSPI_SSO => {
-                            let mut builder = winauth::windows::NtlmSspiBuilder::new()
-                                .target_spn(&self.params.spn);
-                            if let Some(ref hash) = *self.bindings.lock().unwrap() {
-                                builder = builder.channel_bindings(hash);
-                            }
-                            let mut sso_client = try!(builder.build());
-                            let buf = try!(sso_client.next_bytes(None)).map(|x| x.to_owned());
-                            login_message.integrated_security = buf;
-                            self.wauth_client = Some(Box::new(sso_client));
+                            let header = try_ready!(ctx.transport.inner.next_packet());
+                            assert_eq!(header.ty, PacketType::TabularResult);
+                            SqlConnectionLoginState::TokenStreamRecv
                         },
-                        AuthMethod::SqlServer(ref username, ref password) => {
-                            login_message.username = username.clone();
-                            login_message.password = password.clone();
-                        },
-                        AuthMethod::WinAuth(ref username, ref password) => {
-                            // TODO: integrate channel binding
-                            // TODO: use NEGOTIATE
-                            let (domain, username) = if let Some(idx) = username.find("\\") {
-                                match *username {
-                                    Cow::Borrowed(ref x) => {
-                                        let (domain, username) = (&x[..idx], &x[idx+1..]);
-                                        (Some(Cow::Borrowed(domain)), username.into())
+                        SqlConnectionLoginState::TokenStreamRecv => {
+                            let token = try_ready!(ctx.transport.next_token());
+                            match token {
+                                Some(TdsResponseToken::SSPI(bytes)) => {
+                                    assert!(ctx.wauth_client.is_some());
+                                    match try!(ctx.wauth_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
+                                        Some(bytes) => {
+                                            try!(ctx.queue_simple_message(SspiMessage(bytes)));
+                                            SqlConnectionLoginState::TokenStreamSend
+                                        },
+                                        None => {
+                                            ctx.wauth_client = None;
+                                            SqlConnectionLoginState::TokenStreamRecv
+                                        }
                                     }
-                                    Cow::Owned(ref x) => {
-                                        let (domain, username) = (&x[..idx], &x[idx+1..]);
-                                        (Some(Cow::Owned(domain.to_owned())), username.to_owned().into())
-                                    }
-                                }
-                            } else {
-                                (None, username.clone())
-                            };
-                            let mut builder = winauth::NtlmV2ClientBuilder::new()
-                                                      .target_spn(self.params.spn.clone());
-                            if let Some(ref hash) = *self.bindings.lock().unwrap() {
-                                builder = builder.channel_bindings(hash);
-                            }
-                            let mut client = builder.build(domain, username, password.clone());
-                            let buf = try!(client.next_bytes(None)).map(|x| x.to_owned());
-                            login_message.integrated_security = buf;
-                            self.wauth_client = Some(Box::new(client));
-                        }
-                    }
-
-                    try_nb!(self.queue_simple_message(login_message));
-                    SqlConnectionNewState::LoginRecv
-                },
-                SqlConnectionNewState::LoginRecv => {
-                    try_ready!(self.transport.inner.poll_complete());
-                    // if login only encryption was negotiated, disable encryption
-                    // after we sent the first login packet
-                    #[cfg(feature = "tls")]
-                    {
-                        if self.params.ssl == EncryptionLevel::Off {
-                            let stream = mem::replace(&mut self.transport.inner.io, TransportStream::None);
-                            self.transport.inner.io = match stream {
-                                TransportStream::TLS(mut stream) => TransportStream::Raw(
-                                    stream.get_mut().get_mut().take_stream()
-                                ),
-                                x => x,
-                            };
-                        }
-                    }
-                    let header = try_ready!(self.transport.inner.next_packet());
-                    assert_eq!(header.ty, PacketType::TabularResult);
-                    SqlConnectionNewState::TokenStreamRecv
-                },
-                SqlConnectionNewState::TokenStreamRecv => {
-                    let token = try_ready!(self.transport.next_token());
-                    match token {
-                        Some(TdsResponseToken::SSPI(bytes)) => {
-                            assert!(self.wauth_client.is_some());
-                            match try!(self.wauth_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
-                                Some(bytes) => {
-                                    try!(self.queue_simple_message(SspiMessage(bytes)));
-                                    SqlConnectionNewState::TokenStreamSend
                                 },
-                                None => {
-                                    self.wauth_client = None;
-                                    SqlConnectionNewState::TokenStreamRecv
-                                }
+                                Some(TdsResponseToken::Done(done)) => {
+                                    // the connection is ready 2 go, we're done with our initialization
+                                    assert_eq!(done.status, DoneStatus::empty());
+                                    break;
+                                },
+                                Some(_) | None => SqlConnectionLoginState::TokenStreamRecv,
                             }
                         },
-                        Some(TdsResponseToken::Done(done)) => {
-                            // the connection is ready 2 go, we're done with our initialization
-                            assert_eq!(done.status, DoneStatus::empty());
-                            break;
+                        SqlConnectionLoginState::TokenStreamSend => {
+                            try_ready!(ctx.transport.inner.poll_complete());
+                            SqlConnectionLoginState::TokenStreamRecv
                         },
-                        Some(_) | None => SqlConnectionNewState::TokenStreamRecv,
+                        SqlConnectionLoginState::_Dummy(_) => unreachable!(),
+                        _ => panic!("SqlConnectionNew polled multiple times. item already consumed"),
                     }
-                },
-                SqlConnectionNewState::TokenStreamSend => {
-                    try_ready!(self.transport.inner.poll_complete());
-                    SqlConnectionNewState::TokenStreamRecv
-                },
-                SqlConnectionNewState::_Dummy(_) => unreachable!(),
-            };
+                }
+            }
         }
 
-        Ok(Async::Ready(()))
+        let ctx = self.context.take().expect("expected context after future completion");
+        let conn = InnerSqlConnection {
+            transport: ctx.transport,
+            stmts: FnvHashMap::default(),
+        };
+        return Ok(Async::Ready(SqlConnection(conn)));
     }
 }
 
@@ -494,8 +476,7 @@ pub trait StmtResult<I: BoxableIo> {
 }
 
 /// A representation of an authenticated and ready for use SQL connection
-#[doc(hidden)]
-pub struct InnerSqlConnection<I: BoxableIo> {
+struct InnerSqlConnection<I: BoxableIo> {
     transport: TdsTransport<TransportStream<I>>,
     stmts: FnvHashMap<String, Vec<(Vec<&'static str>, i32, Option<Arc<TokenColMetaData>>)>>,
 }
@@ -783,12 +764,18 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     pub fn connect<E, T: ToIo<I>>(handle: Handle, endpoint: E) -> SqlConnectionNew<I, T::Result>
         where E: ToConnectEndpoint<I, T>
     {
-        let ConnectEndpoint { target, params, .. } = match endpoint.to_connect_endpoint() {
-            Err(x) => return SqlConnectionNew::Error(Some(x)),
-            Ok(x) => x,
+        let state = match endpoint.to_connect_endpoint() {
+            Err(x) => SqlConnectionLoginState::Error(Some(x)),
+            Ok(ConnectEndpoint { target, params, .. }) => {
+                let stream = target.to_io(&handle);
+                SqlConnectionLoginState::Connection(Some((stream, params)))
+            }
         };
-        let stream = target.to_io(&handle);
-        SqlConnectionNew::Connection(Some((stream, params)))
+       
+        SqlConnectionNew {
+            state,
+            context: None
+        }
     }
 
     fn queue_sql_batch<'a, S>(&mut self, stmt: S) -> TdsResult<()> where S: Into<Cow<'a, str>> {
