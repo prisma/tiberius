@@ -232,6 +232,7 @@ enum SqlConnectionLoginState<I: Io, F: Future<Item=I, Error=TdsError> + Send + S
 }
 
 /// A representation of the initialization state of an SQL connection (pending connection
+#[must_use = "futures do nothing unless polled"]
 pub struct SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send + Sized> {
     state: SqlConnectionLoginState<I, F>,
     context: Option<SqlConnectionContext<I>>,

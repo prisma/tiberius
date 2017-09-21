@@ -15,6 +15,7 @@ pub fn new_transaction<I: BoxableIo>(conn: SqlConnection<I>) -> Transaction<I> {
 
 /// A stream which is a result from an operation which is executed within a transaction
 /// This simply wraps the state (which internally is a SqlConnection) in the `Transaction` struct
+#[must_use = "streams do nothing unless polled"]
 pub struct TransactionStream<S> {
     stream: Option<S>,
 }

@@ -53,6 +53,7 @@ impl<S> From<S> for Statement where S: Into<Cow<'static, str>> {
 
 /// A future which handles the execution of a prepared statement and translates it
 /// into the wished result (e.g. `QueryStream`)
+#[must_use = "streams do nothing unless polled"]
 pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
     err: Option<TdsError>,
     done: bool,
@@ -205,7 +206,8 @@ impl<I: BoxableIo, R: StmtResult<I>> ResultStreamExt<I> for StmtStream<I, R> {
     }
 }
 
-/// Extract the result from a single resultset contained in a set of resultsets 
+/// Extract the result from a single resultset contained in a set of resultsets
+#[must_use = "futures do nothing unless polled"]
 pub struct SingleResultSet<I: BoxableIo, S: StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>> {
     stream: S,
     idx: usize,
@@ -259,6 +261,7 @@ impl<I, S> Future for SingleResultSet<I, S>
 /// Iterate over resultsets and only return the rows of the first one
 /// but handle/consume the entire result set so that we're ready to continue
 /// after the execution of this
+#[must_use = "futures do nothing unless polled"]
 pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>, F> {
     stream: S,
     f: F,

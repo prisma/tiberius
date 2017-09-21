@@ -9,6 +9,7 @@ use types::FromColumnData;
 use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
 
 /// A query result consists of multiple query streams (amount of executed queries = amount of results)
+#[must_use = "streams do nothing unless polled"]
 pub struct ResultSetStream<I: BoxableIo, R: StmtResult<I>> {
     err: Option<TdsError>,
     conn: Option<SqlConnection<I>>,
@@ -112,6 +113,7 @@ impl<'a, I: BoxableIo, R: StmtResult<I>> ResultStreamExt<I> for ResultSetStream<
 }
 
 /// A stream of [`Rows`](struct.QueryRow.html) returned for the current resultset
+#[must_use = "streams do nothing unless polled"]
 pub struct QueryStream<I: BoxableIo>(Option<ResultInner<I>>);
 
 struct ResultInner<I: BoxableIo> {
@@ -163,6 +165,7 @@ impl<'a, I: BoxableIo> StmtResult<I> for QueryStream<I> {
 }
 
 /// The result of an execution operation, resolves to the affected rows count for the current resultset
+#[must_use = "futures do nothing unless polled"]
 pub struct ExecFuture<I: BoxableIo> {
     inner: Option<ResultInner<I>>,
     /// Whether only a Done token (that was previously injected) is the contents of this stream
