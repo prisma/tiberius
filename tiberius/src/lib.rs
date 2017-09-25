@@ -93,7 +93,6 @@ extern crate winauth;
 
 use std::borrow::Cow;
 use std::convert::From;
-use std::cmp;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::marker::PhantomData;
 use std::mem;
@@ -1022,36 +1021,6 @@ mod tests {
         lp.run(future).unwrap();
     }
 
-    #[test]
-    fn prepared_select_empty_resultset() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
-
-        let future = c1.query("SELECT TOP 0 NULL AS MyValue", &[]).for_each_row(|_| {
-            unreachable!()
-        });
-        lp.run(future).unwrap();
-    }
-
-    /*#[test]
-    fn prepared_select_reexecute() {
-        let mut lp = Core::new().unwrap();
-        let mut c1 = new_connection(&mut lp);
-
-        let limit = 5i32;
-        let query = (1..2*limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| acc + &format!("union select {} ", x)) + ") U where II<@P1";
-        let stmt = c1.prepare(query);
-
-        for g in 0..2 {
-            lp.run(stmt.query(&[&limit]).for_each_row(|x| {
-                let val: i32 = x.get("II");
-                assert_eq!(val, i - g*limit);
-                Ok(())
-            })).unwrap()
-        }
-        assert_eq!(i, 2*limit);
-    }*/
-
     fn helper_ddl_exec<I: BoxableIo, R: StateStream<Item=ExecFuture<I>, State=SqlConnection<I>, Error=TdsError>>(exec: R, lp: &mut Core) {
         let mut i = 0;
         {
@@ -1130,6 +1099,34 @@ mod tests {
             });
             conn = lp.run(future).unwrap();
         }
+    }
+
+    #[test]
+    fn prepared_select_reexecute_intermediate_query() {
+        let mut lp = Core::new().unwrap();
+        let conn = new_connection(&mut lp);
+        let job = 
+            conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
+                .for_each_row(|_| Ok(()))
+                .and_then(|conn| {
+                    conn.query("SELECT 0", &[])
+                        .for_each_row(|_| Ok(()))
+                }).and_then(|conn| {
+                    conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
+                        .for_each_row(|_| Ok(()))
+                });
+        lp.run(job).unwrap();
+    }
+
+    #[test]
+    fn prepared_select_empty_resultset() {
+        let mut lp = Core::new().unwrap();
+        let c1 = new_connection(&mut lp);
+
+        let future = c1.query("SELECT TOP 0 NULL AS MyValue", &[]).for_each_row(|_| {
+            unreachable!()
+        });
+        lp.run(future).unwrap();
     }
 
     #[test]

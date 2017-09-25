@@ -119,6 +119,11 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                 TdsResponseToken::ColMetaData(ref meta) => {
                     if !meta.columns.is_empty() {
                         self.meta = Some(meta.clone());
+                    } else {
+                        // use the meta data of the current statement for parsing
+                        // TODO: our meta data handling likely wont work with a multi result set 
+                        //       prepared statement like "select 1; select 2;"
+                        self.conn.as_mut().unwrap().0.transport.inner.last_meta = self.meta.clone();
                     }
                     self.already_triggered = !meta.columns.is_empty() || self.meta.is_some();
 

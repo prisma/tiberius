@@ -558,7 +558,7 @@ impl<I: Io> ParseToken<I> for TokenReturnValue {
 /// 2.2.6.6 RPC Request
 #[allow(dead_code)]
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum RpcProcId {
     SpPrepare = 11,
     SpExecute = 12,
@@ -566,6 +566,7 @@ pub enum RpcProcId {
     SpUnprepare = 15,
 }
 
+#[derive(Debug)]
 pub enum RpcProcIdValue<'a> {
     Name(Cow<'a, str>),
     Id(RpcProcId)
@@ -590,12 +591,14 @@ bitflags! {
     }
 }
 
+#[derive(Debug)]
 pub struct RpcParam<'a> {
     pub name: Cow<'a, str>,
     pub flags: RpcStatusFlags,
     pub value: ColumnData<'a>,
 }
 
+#[derive(Debug)]
 pub struct TokenRpcRequest<'a> {
      pub proc_id: RpcProcIdValue<'a>,
      pub flags: RpcOptionFlags,
