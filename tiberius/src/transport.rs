@@ -673,6 +673,9 @@ impl <I: Io> TdsTransportInner<I> {
 
             while self.missing > 0 {
                 let amount = try_nb!(self.io.read(&mut self.hrd[offset..]));
+                if amount == 0 {
+                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected EOF during header retrieval").into());
+                }
                 self.missing -= amount;
                 offset += amount;
             }
@@ -704,10 +707,12 @@ impl <I: Io> TdsTransportInner<I> {
                     let count_result = self.io.read(&mut write_buf.bytes_mut()[..self.missing]);
                     if let Ok(count) = count_result {
                         write_buf.advance_mut(count);
-                        self.missing -= count;
                     }
                     self.rd.0 = write_buf.freeze();
-                    try_nb!(count_result);
+                    self.missing -= match try_nb!(count_result) {
+                        0 => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected EOF in packet body").into()),
+                        count => count,
+                    };
                 }
             }
 
