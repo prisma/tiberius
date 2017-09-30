@@ -2,7 +2,7 @@
 //! handling data split accross packets, etc.
 use std::collections::VecDeque;
 use std::fmt;
-use std::io::{self, Write};
+use std::io::{self, Cursor, Write};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -303,10 +303,9 @@ pub enum ReadState {
 pub struct TdsTransport<I: Io> {
     pub inner: TdsTransportInner<I>,
     pub read_state: Option<ReadState>,
-    /// the last buffer which will be resetted to if not enough data is available
-    /// needed for parsers where simply trying until enough data is available is not expensive enough
-    /// that writing a stateful parser would be worth it
-    pub last_state: Option<TdsBuf>,
+    /// whether the state is tracked using read_state
+    /// if this is false, backtracking (resetting rd.position to 0)
+    pub state_tracked: bool,
     pub transaction: u64,
     reinject_token: Option<TdsResponseToken>,
 }
@@ -328,7 +327,7 @@ pub struct TdsTransportInner<I: Io> {
     pub io: I,
     missing: usize,
     hrd: [u8; protocol::HEADER_BYTES],
-    pub rd: TdsBuf,
+    pub rd: Cursor<Bytes>,
     header: Option<PacketHeader>,
     packets_left: bool,
 
@@ -336,11 +335,11 @@ pub struct TdsTransportInner<I: Io> {
     pub next_packet_id: TdsPacketId,
     pub packet_size: usize,
     pub last_meta: Option<Arc<TokenColMetaData>>,
-    pub row_bitmap: Option<TdsBuf>,
+    pub row_bitmap: Option<Bytes>,
 }
 
 impl<I: Io> Deref for TdsTransportInner<I> {
-    type Target = TdsBuf;
+    type Target = Cursor<Bytes>;
 
     fn deref(&self) -> &Self::Target {
         &self.rd
@@ -393,65 +392,13 @@ impl<W: io::Write> WriteSize<W> for u16 {
         Ok(try!(writer.write_u16::<LittleEndian>(size as u16)))
     }
 }
-
+/*
 #[derive(Clone)]
-pub struct TdsBuf(Bytes);
+pub struct TdsBuf(Cursor<Bytes>);
 
 impl TdsBuf {
     pub fn empty() -> TdsBuf {
-        TdsBuf(Bytes::new())
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn as_str(&self) -> &str {
-        // validation should've already happened in `read_varchar`
-        // maybe use `from_utf8_unchecked` ?
-        str::from_utf8(self.as_ref()).unwrap()
-    }
-
-    /// attempts to read n bytes and returns them as a subslice-buffer
-    pub fn read_bytes(&mut self, n: usize) -> Option<TdsBuf> {
-        if self.len() >= n {
-            return Some(TdsBuf(self.0.split_to(n)))
-        }
-        None
-    }
-
-    /// attempts to read the amount of bytes required to totally fill the given slice (n=target.len())
-    pub fn read_bytes_to(&mut self, target: &mut [u8]) -> Poll<(), io::Error> {
-        let n = target.len();
-        if self.len() >= n {
-            target.clone_from_slice(&self.as_ref()[..n]);
-            self.0 = self.0.slice_from(n);
-            return Ok(Async::Ready(()));
-        }
-        Ok(Async::NotReady)
-    }
-
-    /// read bytes with length prefix
-    pub fn read_varbyte<S: ReadSize<Self>>(&mut self) -> Poll<TdsBuf, io::Error> {
-        let len = try!(S::read_size(self));
-        let ret = match self.read_bytes(len) {
-            Some(bytes) => Async::Ready(bytes),
-            None => Async::NotReady,
-        };
-        Ok(ret)
-    }
-
-    /// read bytes with an length prefix (which either is in bytes or in bytes/2 [u16 characters]) and interpret them as UCS-2 encoded string
-    pub fn read_varchar<S: ReadSize<Self>>(&mut self, size_in_bytes: bool) -> Poll<TdsBuf, TdsError> {
-        let mut len = try!(S::read_size(self));
-        if size_in_bytes {
-            assert_eq!(len % 2, 0);
-            len /= 2;
-        }
-        // this is suboptimal but we need to copy them to be able to interpret these strings properly
-        let data: Vec<u16> = try!(vec![0u16; len].into_iter().map(|_| self.read_u16::<LittleEndian>()).collect());
-        let bytes = try!(String::from_utf16(&data[..])).into_bytes();;
-        Ok(Async::Ready(TdsBuf(bytes.into())))
+        TdsBuf(Cursor::new(Bytes::new()))
     }
 }
 
@@ -490,7 +437,7 @@ impl fmt::Debug for TdsBuf {
             Err(_) => write!(f, "TdsBuf({:?})", self.as_ref()),
         }
     }
-}
+}*/
 
 impl<I: Io> TdsTransport<I> {
     pub fn new(io: I) -> TdsTransport<I> {
@@ -500,7 +447,7 @@ impl<I: Io> TdsTransport<I> {
                 io: io,
                 missing: protocol::HEADER_BYTES,
                 hrd: [0; protocol::HEADER_BYTES],
-                rd: TdsBuf::empty(),
+                rd: Cursor::new(Bytes::new()),
                 header: None,
                 packets_left: true,
                 wr: VecDeque::new(),
@@ -511,7 +458,7 @@ impl<I: Io> TdsTransport<I> {
                 row_bitmap: None,
             },
             read_state: None,
-            last_state: None,
+            state_tracked: false,
             transaction: 0,
             reinject_token: None,
         }
@@ -531,7 +478,7 @@ impl<I: Io> TdsTransport<I> {
 
     #[inline]
     pub fn commit_read_state<S: Into<Option<ReadState>>>(&mut self, state: S) {
-        self.last_state = Some(self.inner.rd.clone());
+        self.inner.commit_rd_buffer();
         self.read_state = state.into();
     }
 
@@ -586,7 +533,7 @@ impl<I: Io> TdsTransport<I> {
         }
 
         loop {
-            self.last_state = Some(self.inner.rd.clone());
+            self.inner.commit_rd_buffer();
 
             let ret = match self.read_token() {
                 Err(TdsError::Io(ref err)) if err.kind() == ::std::io::ErrorKind::UnexpectedEof => {
@@ -600,9 +547,11 @@ impl<I: Io> TdsTransport<I> {
                     return Ok(Async::Ready(None))
                 },
                 Async::NotReady => {
-                    if let Some(last_state) = self.last_state.take() {
-                        self.inner.rd = last_state;
+                    // reset to the last read state
+                    if !self.state_tracked {
+                        self.inner.rd.set_position(0);
                     }
+                    self.state_tracked = false;
                 },
                 Async::Ready(ret) => {
                     // we only limit the current token to the current stream of packets
@@ -631,7 +580,6 @@ impl<I: Io> TdsTransport<I> {
                         },
                         _ => ()
                     }
-                    self.last_state = None;
                     return Ok(Async::Ready(Some(ret)))
                 },
             }
@@ -647,6 +595,22 @@ impl<I: Io> TdsTransport<I> {
     }
 }
 
+pub struct Str(Bytes);
+
+impl Str {
+    pub fn as_str(&self) -> &str {
+        // validation should've already happened in `read_varchar`
+        // maybe use `from_utf8_unchecked` ?
+        str::from_utf8(&self.0).unwrap()
+    }
+}
+
+impl fmt::Debug for Str {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.as_str().fmt(f)
+    }
+}
+
 impl <I: Io> TdsTransportInner<I> {
     /// get the next unused packet id
     #[inline]
@@ -659,8 +623,62 @@ impl <I: Io> TdsTransportInner<I> {
         Ok(())
     }
 
+    #[inline]
+    pub fn commit_rd_buffer(&mut self) {
+        let pos = self.rd.position() as usize;
+        self.rd.get_mut().split_to(pos);
+        self.rd.set_position(0);
+    }
+
+    pub fn len(&self) -> usize {
+        self.rd.get_ref().len() - self.rd.position() as usize
+    }
+
+    /// attempts to read n bytes and returns them as a subslice-buffer
+    pub fn read_bytes(&mut self, n: usize) -> Option<Bytes> {
+        if self.len() >= n {
+            let pos = self.rd.position() as usize;
+            let new_pos = pos + n;
+            self.rd.set_position(new_pos as u64);
+            return Some(self.rd.get_mut().slice(pos, new_pos));
+        }
+        None
+    }
+
+    /// attempts to read the amount of bytes required to totally fill the given slice (n=target.len())
+    pub fn read_bytes_to(&mut self, target: &mut [u8]) -> Poll<(), io::Error> {
+        match self.read_bytes(target.len()) {
+            Some(buf) => target.clone_from_slice(&buf),
+            None => return Ok(Async::NotReady)
+        };
+        Ok(Async::Ready(()))
+    }
+
+    /// read bytes with length prefix
+    pub fn read_varbyte<S: ReadSize<Cursor<Bytes>>>(&mut self) -> Poll<Bytes, io::Error> {
+        let len = try!(S::read_size(&mut self.rd));
+        let ret = match self.read_bytes(len) {
+            Some(bytes) => Async::Ready(bytes),
+            None => Async::NotReady,
+        };
+        Ok(ret)
+    }
+
+    /// read bytes with an length prefix (which either is in bytes or in bytes/2 [u16 characters]) and interpret them as UCS-2 encoded string
+    pub fn read_varchar<S: ReadSize<Cursor<Bytes>>>(&mut self, size_in_bytes: bool) -> Poll<Str, TdsError> {
+        let mut len = try!(S::read_size(&mut self.rd));
+        if size_in_bytes {
+            assert_eq!(len % 2, 0);
+            len /= 2;
+        }
+        // this is suboptimal but we need to copy them to be able to interpret these strings properly
+        let data: Vec<u16> = try!(vec![0u16; len].into_iter().map(|_| self.read_u16::<LittleEndian>()).collect());
+        let bytes = try!(String::from_utf16(&data[..])).into_bytes();;
+        Ok(Async::Ready(Str(bytes.into())))
+    }
+
     /// simply returns a chunk of data with the specified length, adjusting read and write positions
-    pub fn get_packet(&mut self, full_length: usize) -> TdsBuf {
+    pub fn get_packet(&mut self, full_length: usize) -> Bytes {
         let len = full_length-protocol::HEADER_BYTES;
         self.read_bytes(len).unwrap()
     }
@@ -689,7 +707,7 @@ impl <I: Io> TdsTransportInner<I> {
         if self.header.is_some() {
             // make sure the packet body fits into the buffer
             while self.missing > 0 {
-                let buf = mem::replace(&mut self.rd.0, Bytes::new());
+                let buf = mem::replace(self.rd.get_mut(), Bytes::new());
                 let mut write_buf = match buf.try_mut() {
                     Ok(mut buf) => {
                         if buf.remaining_mut() < self.missing {
@@ -708,7 +726,7 @@ impl <I: Io> TdsTransportInner<I> {
                     if let Ok(count) = count_result {
                         write_buf.advance_mut(count);
                     }
-                    self.rd.0 = write_buf.freeze();
+                    mem::replace(self.rd.get_mut(), write_buf.freeze());
                     self.missing -= match try_nb!(count_result) {
                         0 => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected EOF in packet body").into()),
                         count => count,

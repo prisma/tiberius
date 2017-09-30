@@ -7,7 +7,7 @@ use encoding::{DecoderTrap, Encoding};
 use futures::{Async, Poll};
 use tokens::BaseMetaDataColumn;
 use protocol::PLPChunkWriter;
-use transport::{Io, NoLength, ReadState, ReadTyState, NVarcharPLPTyState, TdsBuf, TdsTransport, PrimitiveWrites};
+use transport::{Io, NoLength, ReadState, ReadTyState, Str, NVarcharPLPTyState, TdsTransport, PrimitiveWrites};
 use collation;
 use {FromUint, TdsResult, TdsError};
 
@@ -181,7 +181,7 @@ pub enum ColumnData<'a> {
     /// owned/borrowed rust string
     String(Cow<'a, str>),
     /// a buffer string which is a reference to a buffer of a received packet
-    BString(TdsBuf),
+    BString(Str),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -313,7 +313,7 @@ impl<'a> ColumnData<'a> {
                         ColumnData::Guid(Cow::Owned(Guid(data)))
                     },
                     VarLenType::NVarchar => {
-                        trans.last_state = None;
+                        trans.state_tracked = true;
                         // reduce some boilerplate by using RefCell/Rc
                         let read_state_mut = &mut trans.read_state;
                         // check if PLP or normal size
@@ -334,7 +334,7 @@ impl<'a> ColumnData<'a> {
                             }
                             let str_ = try!(String::from_utf16(&target[..]));
                             // make sure we do not skip before what we've already read for sure
-                            trans.last_state = Some(trans.inner.clone());
+                            trans.state_tracked = false;
                             ColumnData::String(str_.into())
                         } else {
                             match *read_state_mut {
@@ -397,7 +397,7 @@ impl<'a> ColumnData<'a> {
                             }
                             let str_ = String::from_utf16(&plp_state.bytes[..])?;
                             // make sure we do not skip before what we've already read for sure
-                            trans.last_state = Some(trans.inner.clone());
+                            trans.state_tracked = false;
                             ColumnData::String(str_.into())
                         }
                     },

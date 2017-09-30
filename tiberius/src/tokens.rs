@@ -1,9 +1,10 @@
 ///! token stream definitions
 use std::borrow::Cow;
 use std::sync::Arc;
+use bytes::Bytes;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
 use futures::{Async, Poll};
-use transport::{Io, ReadState, TdsBuf, TdsTransport, PrimitiveWrites};
+use transport::{Io, ReadState, Str, TdsTransport, PrimitiveWrites};
 use types::{TypeInfo, ColumnData};
 use protocol::{self, PacketStatus, PacketType, PacketHeader, PacketWriter};
 use {TdsError, TdsResult, FromUint};
@@ -39,7 +40,7 @@ uint_to_enum!(Tokens, ReturnStatus, ColMetaData, Error, Info, Order, ReturnValue
 
 #[derive(Debug)]
 pub enum TdsResponseToken {
-    SSPI(TdsBuf),
+    SSPI(Bytes),
     EnvChange(TokenEnvChange),
     Error(TokenError),
     Info(TokenInfo),
@@ -86,9 +87,9 @@ impl<I: Io> TdsTransport<I> {
 
 #[derive(Debug)]
 pub enum TokenEnvChange {
-    Database(TdsBuf, TdsBuf),
+    Database(Str, Str),
     PacketSize(u32, u32),
-    SqlCollation(TdsBuf, TdsBuf),
+    SqlCollation(Bytes, Bytes),
     BeginTransaction(u64),
     RollbackTransaction(u64),
     CommitTransaction(u64),
@@ -175,9 +176,9 @@ pub struct TokenInfo {
     state: u8,
     /// severity (<10: Info)
     class: u8,
-    message: TdsBuf,
-    server: TdsBuf,
-    procedure: TdsBuf,
+    message: Str,
+    server: Str,
+    procedure: Str,
     line: u32,
 }
 
@@ -234,7 +235,7 @@ pub struct TokenLoginAck {
     /// 1: SQL_TSQL (TSQL is accepted)
     interface: u8,
     tds_version: FeatureLevel,
-    prog_name: TdsBuf,
+    prog_name: Str,
     /// major.minor.buildhigh.buildlow
     version: u32,
 }
@@ -313,7 +314,7 @@ pub struct BaseMetaDataColumn {
 #[derive(Debug)]
 pub struct MetaDataColumn {
     pub base: BaseMetaDataColumn,
-    pub col_name: TdsBuf,
+    pub col_name: Str,
 }
 
 impl BaseMetaDataColumn {
@@ -503,9 +504,9 @@ pub struct TokenError {
     /// The class (severity) of the error
     class: u8,
     /// The error message
-    message: TdsBuf,
-    server: TdsBuf,
-    procedure: TdsBuf,
+    message: Str,
+    server: Str,
+    procedure: Str,
     line: u32,
 }
 
@@ -527,7 +528,7 @@ impl<I: Io> ParseToken<I> for TokenError {
 #[derive(Debug)]
 pub struct TokenReturnValue {
     pub param_ordinal: u16,
-    pub param_name: TdsBuf,
+    pub param_name: Str,
     /// return value of user defined function
     pub udf: bool,
     pub meta: BaseMetaDataColumn,
