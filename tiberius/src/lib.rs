@@ -96,7 +96,7 @@ use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::marker::PhantomData;
 use std::mem;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::io;
 use fnv::FnvHashMap;
 use futures::{Async, Future, Poll, Sink};
@@ -240,8 +240,6 @@ pub struct SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Se
 struct SqlConnectionContext<I: BoxableIo> {
     params: ConnectParams,
     transport: TdsTransport<TransportStream<I>>,
-    /// receiver for channel bindings certificate hash (TLS)
-    bindings: Arc<Mutex<Option<Vec<u8>>>>,
     wauth_client: Option<Box<NextBytes>>,
 }
 
@@ -250,6 +248,10 @@ impl<I: BoxableIo> SqlConnectionContext<I> {
     fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
         let vec = try!(m.serialize_message(&mut self.transport));
         self.transport.inner.queue_vec(vec)
+    }
+
+    fn channel_bindings(&self) -> io::Result<Option<Vec<u8>>> {
+        self.transport.inner.io.channel_bindings()
     }
 }
 
@@ -269,7 +271,6 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                     self.context = Some(SqlConnectionContext {
                         params: pairs.take().map(|x| x.1).unwrap(),
                         transport: trans,
-                        bindings: Arc::new(Mutex::new(None)),
                         wauth_client: None,
                     });
                     SqlConnectionLoginState::PreLoginSend
@@ -318,14 +319,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                                                 } else {
                                                     Some(&*ctx.params.host)
                                                 };
-                                                let bindings = ctx.bindings.clone();
-                                                let tls_stream = transport::tls::connect_async(wrapped_stream, host, move |_| {
-                                                    *bindings.lock().unwrap() = Some(
-                                                        // MSSQL requires "tls-unique" bindings and doesn't support
-                                                        // "tls-server-end-point" anymore (even if the docs hints otherwise)
-                                                        [b"tls-unique:" as &[u8], unimplemented!()
-                                                    ].concat());
-                                                });
+                                                let tls_stream = transport::tls::connect_async(wrapped_stream, host);
                                                 SqlConnectionLoginState::TLSPending(Some(tls_stream))
                                             },
                                             _ => unreachable!(),
@@ -360,7 +354,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                                 AuthMethod::SSPI_SSO => {
                                     let mut builder = winauth::windows::NtlmSspiBuilder::new()
                                         .target_spn(&ctx.params.spn);
-                                    if let Some(ref hash) = *ctx.bindings.lock().unwrap() {
+                                    if let Some(ref hash) = try!(ctx.channel_bindings()) {
                                         builder = builder.channel_bindings(hash);
                                     }
                                     let mut sso_client = try!(builder.build());
@@ -391,7 +385,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                                     };
                                     let mut builder = winauth::NtlmV2ClientBuilder::new()
                                                             .target_spn(ctx.params.spn.clone());
-                                    if let Some(ref hash) = *ctx.bindings.lock().unwrap() {
+                                    if let Some(ref hash) = try!(ctx.channel_bindings()) {
                                         builder = builder.channel_bindings(hash);
                                     }
                                     let mut client = builder.build(domain, username, password.clone());

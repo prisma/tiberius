@@ -319,7 +319,7 @@ pub struct MetaDataColumn {
 
 impl BaseMetaDataColumn {
     fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<BaseMetaDataColumn, TdsError> {
-        let user_ty = try!(trans.inner.read_u32::<LittleEndian>());
+        let _user_ty = try!(trans.inner.read_u32::<LittleEndian>());
 
         let raw_flags = try!(trans.inner.read_u16::<LittleEndian>());
         let flags = ColmetaDataFlags::from_bits(raw_flags).unwrap();
@@ -568,6 +568,7 @@ pub enum RpcProcId {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum RpcProcIdValue<'a> {
     Name(Cow<'a, str>),
     Id(RpcProcId)
@@ -622,7 +623,7 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
                 try!(writer.write_u16::<LittleEndian>(0xffff));
                 try!(writer.write_u16::<LittleEndian>(*id as u16));
             },
-            RpcProcIdValue::Name(ref name) => {
+            RpcProcIdValue::Name(ref _name) => {
                 //let (left_bytes, _) = try!(write_varchar::<u16>(&mut cursor, name, 0));
                 //assert_eq!(left_bytes, 0);
                 unimplemented!()

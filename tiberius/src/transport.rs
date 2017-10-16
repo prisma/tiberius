@@ -87,7 +87,6 @@ pub mod tls {
         bytes_left: usize,
     }
 
-
     impl<S: Io> TlsTdsWrapper<S> {
         pub fn new(s: S) -> TlsTdsWrapper<S> {
             TlsTdsWrapper {
@@ -189,6 +188,21 @@ pub mod tls {
         Raw(S),
     }
 
+    impl<S: Io> TransportStream<S> {
+        pub fn channel_bindings(&self) -> io::Result<Option<Vec<u8>>> {
+            let bytes: Option<&[u8]> = match *self {
+                // TODO: not landed and not working properly yet
+                #[cfg(all(windows, feature="channel_bindings"))]
+                TransportStream::TLS(ref stream) => {
+                    use transport::tls::native_tls::backend::schannel::TlsStreamExt;
+                    Some(try!(stream.get_ref().raw_stream().get_finish()))
+                }
+                _ => None,
+            };
+            Ok(bytes.map(|x| [b"tls-unique:" as &[u8], x].concat()))
+        }
+    }
+
     impl<S: Io> Write for TransportStream<S> {
         #[inline]
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -232,34 +246,31 @@ pub mod tls {
 
     impl<S: Io> AsyncRead for TransportStream<S> {}
 
-    // #WARNING: If no hostname is provided, certificate validation is DISABLED
-    pub fn connect_async<I, F>(stream: I, host: Option<&str>, callback: F) -> ConnectAsync<I> 
-        where I: Io, F: Fn(Vec<u8>) + Sync + Send + 'static
+    /// #WARNING: If no hostname is provided, certificate validation is DISABLED
+    pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> 
     {
         let disable_verification = host.is_none();
         let mut builder = TlsConnector::builder().unwrap();
 
-        let mut panic = true;
-        #[cfg(windows)]
-        {
-            panic = false;
-            use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
-            if disable_verification {
+        if disable_verification {
+            #[allow(unused_assignments)]
+            let mut panic = true;
+            #[cfg(windows)]
+            {
+                panic = false;
+                use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
                 builder.verify_callback(|_| Ok(()));
             }
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            panic = false;
-            extern crate openssl;
-            use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
-            if disable_verification {
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            {
+                panic = false;
+                extern crate openssl;
+                use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
                 builder.builder_mut().builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE);
             }
-        }
-
-        if panic {
-            panic!("disabling cert verification is not supported for this target");
+            if panic {
+                panic!("disabling cert verification is not supported for this target");
+            }
         }
 
         let cx = builder.build().unwrap();
@@ -392,52 +403,6 @@ impl<W: io::Write> WriteSize<W> for u16 {
         Ok(try!(writer.write_u16::<LittleEndian>(size as u16)))
     }
 }
-/*
-#[derive(Clone)]
-pub struct TdsBuf(Cursor<Bytes>);
-
-impl TdsBuf {
-    pub fn empty() -> TdsBuf {
-        TdsBuf(Cursor::new(Bytes::new()))
-    }
-}
-
-impl io::Read for TdsBuf {
-    /// this is basically an exact read (always returns the size of the input buffer)
-    /// or an error that there aren't enough bytes
-    fn read(&mut self, mut buf: &mut [u8]) -> io::Result<usize> {
-        if buf.len() > self.len() {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "not enough bytes"));
-        }
-        let len = buf.len();
-        let written = try!(buf.write(&self.as_ref()[..len]));
-        assert_eq!(written, len);
-        self.0 = self.0.slice_from(written);
-        Ok(written)
-    }
-
-    #[inline]
-    #[allow(unused_io_amount)]
-    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        try!(self.read(buf));
-        Ok(())
-    }
-}
-
-impl AsRef<[u8]> for TdsBuf {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl fmt::Debug for TdsBuf {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match str::from_utf8(self.as_ref()) {
-            Ok(str_) => write!(f, "{:?}", str_),
-            Err(_) => write!(f, "TdsBuf({:?})", self.as_ref()),
-        }
-    }
-}*/
 
 impl<I: Io> TdsTransport<I> {
     pub fn new(io: I) -> TdsTransport<I> {

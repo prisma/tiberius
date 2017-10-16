@@ -4,7 +4,7 @@ use futures::{Async, Future, Poll, Stream, Sink};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
 use stmt::{ForEachRow, SingleResultSet, ResultStreamExt};
-use tokens::{self, DoneStatus, TdsResponseToken, TokenRow};
+use tokens::{DoneStatus, TdsResponseToken, TokenRow};
 use types::FromColumnData;
 use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
 
