@@ -407,9 +407,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                                 if ctx.params.ssl == EncryptionLevel::Off {
                                     let stream = mem::replace(&mut ctx.transport.inner.io, TransportStream::None);
                                     ctx.transport.inner.io = match stream {
-                                        TransportStream::TLS(mut stream) => TransportStream::Raw(
-                                            stream.get_mut().get_mut().take_stream()
-                                        ),
+                                        TransportStream::TLS(stream) => TransportStream::TLSRaw(stream),
                                         x => x,
                                     };
                                 }

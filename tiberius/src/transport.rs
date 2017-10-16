@@ -26,8 +26,6 @@ pub mod tls {
 
     use std::cmp;
     use std::io::{self, Read, Write};
-    use std::ops::{Deref, DerefMut};
-    use std::mem;
     use futures::Poll;
     use tokio_io::{AsyncRead, AsyncWrite};
     use protocol::{self, PacketHeader, PacketType, PacketStatus};
@@ -43,43 +41,9 @@ pub mod tls {
         }
     }
 
-    /// A variant of `Option` that automatically unwraps
-    enum DerefOption<T> {
-        None,
-        Some(T)
-    }
-
-    impl<T> DerefOption<T> {
-        fn take_unwrap(&mut self) -> T {
-            match mem::replace(self, DerefOption::None) {
-                DerefOption::None => panic!("DerefOption: take null"),
-                DerefOption::Some(x) => x,
-            }
-        }
-    }
-
-    impl<T> Deref for DerefOption<T> {
-        type Target = T;
-        fn deref(&self) -> &T {
-            match *self {
-                DerefOption::None => panic!("DerefOption: Null"),
-                DerefOption::Some(ref x) => x,
-            }
-        }
-    }
-
-    impl<T> DerefMut for DerefOption<T> {
-        fn deref_mut(&mut self) -> &mut T {
-            match *self {
-                DerefOption::None => panic!("DerefOption: Null"),
-                DerefOption::Some(ref mut x) => x,
-            }
-        }
-    }
-
     /// wraps written/read data into PRELOGIN packets
-    pub struct TlsTdsWrapper<S: Io> {
-        stream: DerefOption<S>,
+    pub struct TlsTdsWrapper<S> {
+        stream: S,
         /// whether to wrap written/read data into prelogin packets (required for the handshake)
         pub wrap: bool,
         wr: Vec<u8>,
@@ -90,16 +54,12 @@ pub mod tls {
     impl<S: Io> TlsTdsWrapper<S> {
         pub fn new(s: S) -> TlsTdsWrapper<S> {
             TlsTdsWrapper {
-                stream: DerefOption::Some(s),
+                stream: s,
                 wrap: true,
                 wr: vec![],
                 rd: Vec::with_capacity(protocol::HEADER_BYTES),
                 bytes_left: 0,
             }
-        }
-
-        pub fn take_stream(&mut self) -> S {
-            self.stream.take_unwrap()
         }
     }
 
@@ -185,6 +145,7 @@ pub mod tls {
     pub enum TransportStream<S: Io> {
         None,
         TLS(TlsStream<TlsTdsWrapper<S>>),
+        TLSRaw(TlsStream<TlsTdsWrapper<S>>),
         Raw(S),
     }
 
@@ -210,6 +171,7 @@ pub mod tls {
                 TransportStream::None => unreachable!(),
                 TransportStream::Raw(ref mut raw) => raw.write(buf),
                 TransportStream::TLS(ref mut tls) => tls.write(buf),
+                TransportStream::TLSRaw(ref mut tls) => tls.get_mut().get_mut().write(buf),
             }
         }
 
@@ -219,6 +181,7 @@ pub mod tls {
                 TransportStream::None => unreachable!(),
                 TransportStream::Raw(ref mut raw) => raw.flush(),
                 TransportStream::TLS(ref mut tls) => tls.flush(),
+                TransportStream::TLSRaw(ref mut tls) => tls.get_mut().get_mut().flush(),
             }
         }
     }
@@ -230,6 +193,7 @@ pub mod tls {
                 TransportStream::None => unreachable!(),
                 TransportStream::Raw(ref mut raw) => raw.read(buf),
                 TransportStream::TLS(ref mut tls) => tls.read(buf),
+                TransportStream::TLSRaw(ref mut tls) => tls.get_mut().get_mut().read(buf),
             }
         }
     }
@@ -240,6 +204,7 @@ pub mod tls {
                 TransportStream::None => unreachable!(),
                 TransportStream::Raw(ref mut raw) => raw.shutdown(),
                 TransportStream::TLS(ref mut tls) => tls.shutdown(),
+                TransportStream::TLSRaw(ref mut tls) => tls.get_mut().get_mut().shutdown(),
             }
         }
     }
