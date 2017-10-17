@@ -10,9 +10,9 @@ use std::str;
 use tokio_io::{AsyncRead, AsyncWrite};
 use bytes::{BufMut, Bytes, BytesMut};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use futures::{Async, Sink, StartSend, Poll};
+use futures::{Async, Poll, Sink, StartSend};
 use protocol::{self, PacketHeader, PacketStatus};
-use tokens::{TdsResponseToken, Tokens, TokenColMetaData, TokenEnvChange};
+use tokens::{TdsResponseToken, TokenColMetaData, TokenEnvChange, Tokens};
 use types::ColumnData;
 use {FromUint, TdsError};
 
@@ -28,15 +28,15 @@ pub mod tls {
     use std::io::{self, Read, Write};
     use futures::Poll;
     use tokio_io::{AsyncRead, AsyncWrite};
-    use protocol::{self, PacketHeader, PacketType, PacketStatus};
+    use protocol::{self, PacketHeader, PacketStatus, PacketType};
     use transport::Io;
     pub use self::native_tls::TlsConnector;
-    pub use self::tokio_tls::{TlsConnectorExt, ConnectAsync, TlsStream};
+    pub use self::tokio_tls::{ConnectAsync, TlsConnectorExt, TlsStream};
     use TdsError;
 
     impl From<native_tls::Error> for TdsError {
         fn from(e: native_tls::Error) -> TdsError {
-            let err =  format!("{:?}", e);
+            let err = format!("{:?}", e);
             TdsError::Protocol(err.into())
         }
     }
@@ -78,7 +78,7 @@ pub mod tls {
         fn flush(&mut self) -> io::Result<()> {
             if self.wrap {
                 if self.wr.is_empty() {
-                    return Ok(())
+                    return Ok(());
                 }
                 let header = PacketHeader {
                     ty: PacketType::PreLogin,
@@ -86,9 +86,9 @@ pub mod tls {
                     ..PacketHeader::new(self.wr.len() + protocol::HEADER_BYTES, 0)
                 };
                 let mut header_bytes = [0u8; protocol::HEADER_BYTES];
-                try!(header.serialize(&mut header_bytes));
-                try!(self.stream.write_all(&header_bytes));
-                try!(self.stream.write_all(&self.wr));
+                header.serialize(&mut header_bytes)?;
+                self.stream.write_all(&header_bytes)?;
+                self.stream.write_all(&self.wr)?;
                 self.wr.truncate(0);
             }
             self.stream.flush()
@@ -99,20 +99,21 @@ pub mod tls {
         #[inline]
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             if !self.wrap {
-                return self.stream.read(buf)
+                return self.stream.read(buf);
             }
 
             // read a new packet header, when required
             if self.bytes_left == 0 {
-                try!(self.flush());
+                self.flush()?;
                 let mut header_bytes = [0u8; protocol::HEADER_BYTES];
                 let end_pos = header_bytes.len() - self.rd.len();
-                let amount = try!(self.stream.read(&mut header_bytes[..end_pos]));
+                let amount = self.stream.read(&mut header_bytes[..end_pos])?;
 
                 self.rd.extend_from_slice(&header_bytes[..amount]);
                 if self.rd.len() == protocol::HEADER_BYTES {
-                    let header = try!(PacketHeader::unserialize(&self.rd).map_err(|_|
-                        io::Error::new(io::ErrorKind::InvalidInput, "malformed packet header")));
+                    let header = PacketHeader::unserialize(&self.rd).map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "malformed packet header")
+                    })?;
                     self.bytes_left = header.length as usize - protocol::HEADER_BYTES;
                     self.rd.truncate(0);
                 }
@@ -121,7 +122,7 @@ pub mod tls {
             // read as much data as required
             if self.bytes_left > 0 {
                 let end_pos = cmp::min(self.bytes_left, buf.len());
-                let amount = try!(self.stream.read(&mut buf[..end_pos]));
+                let amount = self.stream.read(&mut buf[..end_pos])?;
                 if amount == 0 {
                     return Ok(0);
                 }
@@ -153,10 +154,10 @@ pub mod tls {
         pub fn channel_bindings(&self) -> io::Result<Option<Vec<u8>>> {
             let bytes: Option<&[u8]> = match *self {
                 // TODO: not landed and not working properly yet
-                #[cfg(all(windows, feature="channel_bindings"))]
+                #[cfg(all(windows, feature = "channel_bindings"))]
                 TransportStream::TLS(ref stream) => {
                     use transport::tls::native_tls::backend::schannel::TlsStreamExt;
-                    Some(try!(stream.get_ref().raw_stream().get_finish()))
+                    Some(stream.get_ref().raw_stream().get_finish()?)
                 }
                 _ => None,
             };
@@ -212,8 +213,7 @@ pub mod tls {
     impl<S: Io> AsyncRead for TransportStream<S> {}
 
     /// #WARNING: If no hostname is provided, certificate validation is DISABLED
-    pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> 
-    {
+    pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> {
         let disable_verification = host.is_none();
         let mut builder = TlsConnector::builder().unwrap();
 
@@ -231,7 +231,10 @@ pub mod tls {
                 panic = false;
                 extern crate openssl;
                 use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
-                builder.builder_mut().builder_mut().set_verify(openssl::ssl::SSL_VERIFY_NONE);
+                builder
+                    .builder_mut()
+                    .builder_mut()
+                    .set_verify(openssl::ssl::SSL_VERIFY_NONE);
             }
             if panic {
                 panic!("disabling cert verification is not supported for this target");
@@ -338,16 +341,16 @@ pub trait WriteSize<W: io::Write> {
 
 /// B_VARCHAR
 impl<R: io::Read> ReadSize<R> for u8 {
-     fn read_size(reader: &mut R) -> io::Result<usize> {
-         Ok(try!(reader.read_u8()) as usize)
-     }
+    fn read_size(reader: &mut R) -> io::Result<usize> {
+        Ok(reader.read_u8()? as usize)
+    }
 }
 
 /// US_VARCHAR
 impl<R: io::Read> ReadSize<R> for u16 {
     fn read_size(reader: &mut R) -> io::Result<usize> {
-         Ok(try!(reader.read_u16::<LittleEndian>()) as usize)
-     }
+        Ok(reader.read_u16::<LittleEndian>()? as usize)
+    }
 }
 
 pub struct NoLength;
@@ -359,13 +362,13 @@ impl<W: io::Write> WriteSize<W> for NoLength {
 
 impl<W: io::Write> WriteSize<W> for u8 {
     fn write_size(writer: &mut W, size: usize) -> io::Result<()> {
-        Ok(try!(writer.write_u8(size as u8)))
+        Ok(writer.write_u8(size as u8)?)
     }
 }
 
 impl<W: io::Write> WriteSize<W> for u16 {
     fn write_size(writer: &mut W, size: usize) -> io::Result<()> {
-        Ok(try!(writer.write_u16::<LittleEndian>(size as u16)))
+        Ok(writer.write_u16::<LittleEndian>(size as u16)?)
     }
 }
 
@@ -417,7 +420,7 @@ impl<I: Io> TdsTransport<I> {
         let (token, size_hint) = {
             // read a token
             if self.read_state.is_none() {
-                let raw_token = try!(self.inner.read_u8());
+                let raw_token = self.inner.read_u8()?;
                 let token = Tokens::from_u8(raw_token);
 
                 self.commit_read_state(match token {
@@ -429,16 +432,23 @@ impl<I: Io> TdsTransport<I> {
             // read the associated length for a token, if available
             if let Some(ReadState::Generic(token, None)) = self.read_state {
                 let new_state = match token {
-                    Tokens::SSPI | Tokens::EnvChange | Tokens::Info | Tokens::Error | Tokens::LoginAck => {
-                        ReadState::Generic(token, Some(try!(self.inner.read_u16::<LittleEndian>()) as usize))
-                    },
+                    Tokens::SSPI |
+                    Tokens::EnvChange |
+                    Tokens::Info |
+                    Tokens::Error |
+                    Tokens::LoginAck => ReadState::Generic(
+                        token,
+                        Some(self.inner.read_u16::<LittleEndian>()? as usize),
+                    ),
                     Tokens::Row | Tokens::NbcRow => {
-                        let len = self.inner.last_meta.as_ref().map(|lm| lm.columns.len()).unwrap_or(0);
+                        let len = self.inner
+                            .last_meta
+                            .as_ref()
+                            .map(|lm| lm.columns.len())
+                            .unwrap_or(0);
                         ReadState::Row(token, Vec::with_capacity(len), None)
-                    },
-                    _ => {
-                        ReadState::Generic(token, Some(0))
                     }
+                    _ => ReadState::Generic(token, Some(0)),
                 };
                 self.commit_read_state(new_state);
             }
@@ -446,7 +456,7 @@ impl<I: Io> TdsTransport<I> {
             match self.read_state {
                 Some(ReadState::Generic(token, Some(size_hint))) => (token, size_hint),
                 Some(ReadState::Row(tok, _, _)) => (tok, 0),
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         };
         let ret = self.parse_token(token, size_hint);
@@ -468,21 +478,21 @@ impl<I: Io> TdsTransport<I> {
             let ret = match self.read_token() {
                 Err(TdsError::Io(ref err)) if err.kind() == ::std::io::ErrorKind::UnexpectedEof => {
                     Async::NotReady
-                },
-                x => try!(x)
+                }
+                x => x?,
             };
 
             match ret {
                 Async::NotReady if !self.inner.packets_left && self.inner.len() == 0 => {
                     return Ok(Async::Ready(None))
-                },
+                }
                 Async::NotReady => {
                     // reset to the last read state
                     if !self.state_tracked {
                         self.inner.rd.set_position(0);
                     }
                     self.state_tracked = false;
-                },
+                }
                 Async::Ready(ret) => {
                     // we only limit the current token to the current stream of packets
                     self.inner.packets_left = true;
@@ -492,26 +502,27 @@ impl<I: Io> TdsTransport<I> {
                             match env_change {
                                 TokenEnvChange::PacketSize(new_size, _) => {
                                     self.inner.packet_size = new_size as usize;
-                                },
+                                }
                                 TokenEnvChange::BeginTransaction(trans_id) => {
                                     self.transaction = trans_id;
-                                },
-                                TokenEnvChange::RollbackTransaction(old_trans_id) | TokenEnvChange::CommitTransaction(old_trans_id) => {
+                                }
+                                TokenEnvChange::RollbackTransaction(old_trans_id) |
+                                TokenEnvChange::CommitTransaction(old_trans_id) => {
                                     assert_eq!(self.transaction, old_trans_id);
                                     self.transaction = 0;
-                                },
+                                }
                                 _ => (),
                             }
                             continue;
-                        },
+                        }
                         TdsResponseToken::Info(_) | TdsResponseToken::Order(_) => continue,
                         TdsResponseToken::Error(err) => {
                             return Err(TdsError::Server(err));
-                        },
-                        _ => ()
+                        }
+                        _ => (),
                     }
-                    return Ok(Async::Ready(Some(ret)))
-                },
+                    return Ok(Async::Ready(Some(ret)));
+                }
             }
             // if we aren't done with the packets, load more
             if self.inner.packets_left {
@@ -541,7 +552,7 @@ impl fmt::Debug for Str {
     }
 }
 
-impl <I: Io> TdsTransportInner<I> {
+impl<I: Io> TdsTransportInner<I> {
     /// get the next unused packet id
     #[inline]
     pub fn next_id(&mut self) -> u8 {
@@ -579,14 +590,14 @@ impl <I: Io> TdsTransportInner<I> {
     pub fn read_bytes_to(&mut self, target: &mut [u8]) -> Poll<(), io::Error> {
         match self.read_bytes(target.len()) {
             Some(buf) => target.clone_from_slice(&buf),
-            None => return Ok(Async::NotReady)
+            None => return Ok(Async::NotReady),
         };
         Ok(Async::Ready(()))
     }
 
     /// read bytes with length prefix
     pub fn read_varbyte<S: ReadSize<Cursor<Bytes>>>(&mut self) -> Poll<Bytes, io::Error> {
-        let len = try!(S::read_size(&mut self.rd));
+        let len = S::read_size(&mut self.rd)?;
         let ret = match self.read_bytes(len) {
             Some(bytes) => Async::Ready(bytes),
             None => Async::NotReady,
@@ -595,21 +606,27 @@ impl <I: Io> TdsTransportInner<I> {
     }
 
     /// read bytes with an length prefix (which either is in bytes or in bytes/2 [u16 characters]) and interpret them as UCS-2 encoded string
-    pub fn read_varchar<S: ReadSize<Cursor<Bytes>>>(&mut self, size_in_bytes: bool) -> Poll<Str, TdsError> {
-        let mut len = try!(S::read_size(&mut self.rd));
+    pub fn read_varchar<S: ReadSize<Cursor<Bytes>>>(
+        &mut self,
+        size_in_bytes: bool,
+    ) -> Poll<Str, TdsError> {
+        let mut len = S::read_size(&mut self.rd)?;
         if size_in_bytes {
             assert_eq!(len % 2, 0);
             len /= 2;
         }
         // this is suboptimal but we need to copy them to be able to interpret these strings properly
-        let data: Vec<u16> = try!(vec![0u16; len].into_iter().map(|_| self.read_u16::<LittleEndian>()).collect());
-        let bytes = try!(String::from_utf16(&data[..])).into_bytes();;
+        let data: Vec<u16> = vec![0u16; len]
+            .into_iter()
+            .map(|_| self.read_u16::<LittleEndian>())
+            .collect()?;
+        let bytes = String::from_utf16(&data[..])?.into_bytes();
         Ok(Async::Ready(Str(bytes.into())))
     }
 
     /// simply returns a chunk of data with the specified length, adjusting read and write positions
     pub fn get_packet(&mut self, full_length: usize) -> Bytes {
-        let len = full_length-protocol::HEADER_BYTES;
+        let len = full_length - protocol::HEADER_BYTES;
         self.read_bytes(len).unwrap()
     }
 
@@ -622,13 +639,18 @@ impl <I: Io> TdsTransportInner<I> {
             while self.missing > 0 {
                 let amount = try_nb!(self.io.read(&mut self.hrd[offset..]));
                 if amount == 0 {
-                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected EOF during header retrieval").into());
+                    return Err(
+                        io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "unexpected EOF during header retrieval",
+                        ).into(),
+                    );
                 }
                 self.missing -= amount;
                 offset += amount;
             }
 
-            let header = try!(PacketHeader::unserialize(&self.hrd));
+            let header = PacketHeader::unserialize(&self.hrd)?;
             self.missing = header.length as usize - protocol::HEADER_BYTES;
             self.header = Some(header);
         }
@@ -644,7 +666,7 @@ impl <I: Io> TdsTransportInner<I> {
                             buf.reserve(self.missing);
                         }
                         buf
-                    },
+                    }
                     Err(old_buf) => {
                         let mut buf = BytesMut::with_capacity(old_buf.len() + self.missing);
                         buf.put_slice(old_buf.as_ref());
@@ -658,7 +680,14 @@ impl <I: Io> TdsTransportInner<I> {
                     }
                     mem::replace(self.rd.get_mut(), write_buf.freeze());
                     self.missing -= match try_nb!(count_result) {
-                        0 => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected EOF in packet body").into()),
+                        0 => {
+                            return Err(
+                                io::Error::new(
+                                    io::ErrorKind::UnexpectedEof,
+                                    "unexpected EOF in packet body",
+                                ).into(),
+                            )
+                        }
                         count => count,
                     };
                 }
@@ -706,13 +735,15 @@ impl<I: Io> Sink for TdsTransportInner<I> {
 }
 
 pub trait PrimitiveWrites: Write {
-    fn write_varchar<S: WriteSize<Self>>(&mut self, str_: &str) -> io::Result<()> where Self: Sized;
+    fn write_varchar<S: WriteSize<Self>>(&mut self, str_: &str) -> io::Result<()>
+    where
+        Self: Sized;
 }
 impl<W: Write> PrimitiveWrites for W {
     fn write_varchar<S: WriteSize<Self>>(&mut self, str_: &str) -> io::Result<()> {
-        try!(S::write_size(self, str_.len()));
+        S::write_size(self, str_.len())?;
         for chr in str_.encode_utf16() {
-            try!(self.write_u16::<LittleEndian>(chr));
+            self.write_u16::<LittleEndian>(chr)?;
         }
         Ok(())
     }

@@ -7,9 +7,10 @@ use encoding::{DecoderTrap, Encoding};
 use futures::{Async, Poll};
 use tokens::BaseMetaDataColumn;
 use protocol::PLPChunkWriter;
-use transport::{Io, NoLength, ReadState, ReadTyState, Str, NVarcharPLPTyState, TdsTransport, PrimitiveWrites};
+use transport::{Io, NVarcharPLPTyState, NoLength, PrimitiveWrites, ReadState, ReadTyState, Str,
+                TdsTransport};
 use collation;
-use {FromUint, TdsResult, TdsError};
+use {FromUint, TdsError, TdsResult};
 
 macro_rules! from_column_data {
     ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
@@ -63,20 +64,34 @@ pub mod prelude {
 #[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 pub enum FixedLenType {
-    Null        = 0x1F,
-    Int1        = 0x30,
-    Bit         = 0x32,
-    Int2        = 0x34,
-    Int4        = 0x38,
-    Datetime4   = 0x3A,
-    Float4      = 0x3B,
-    Money       = 0x3C,
-    Datetime    = 0x3D,
-    Float8      = 0x3E,
-    Money4      = 0x7A,
-    Int8        = 0x7F
+    Null = 0x1F,
+    Int1 = 0x30,
+    Bit = 0x32,
+    Int2 = 0x34,
+    Int4 = 0x38,
+    Datetime4 = 0x3A,
+    Float4 = 0x3B,
+    Money = 0x3C,
+    Datetime = 0x3D,
+    Float8 = 0x3E,
+    Money4 = 0x7A,
+    Int8 = 0x7F,
 }
-uint_to_enum!(FixedLenType, Null, Int1, Bit, Int2, Int4, Datetime4, Float4, Money, Datetime, Float8, Money4, Int8);
+uint_to_enum!(
+    FixedLenType,
+    Null,
+    Int1,
+    Bit,
+    Int2,
+    Int4,
+    Datetime4,
+    Float4,
+    Money,
+    Datetime,
+    Float8,
+    Money4,
+    Int8
+);
 
 /// 2.2.5.4.2
 #[derive(Copy, Clone, Debug)]
@@ -112,19 +127,43 @@ pub enum VarLenType {
     Image = 0x22,
     NText = 0x63,
     // not supported yet
-    SSVariant = 0x62
-    // legacy types (not supported since post-7.2):
-    // Char = 0x2F,
-    // VarChar = 0x27,
-    // Binary = 0x2D,
-    // VarBinary = 0x25,
-    // Numeric = 0x3F,
-    // Decimal = 0x37,
+    SSVariant = 0x62, // legacy types (not supported since post-7.2):
+                      // Char = 0x2F,
+                      // VarChar = 0x27,
+                      // Binary = 0x2D,
+                      // VarBinary = 0x25,
+                      // Numeric = 0x3F,
+                      // Decimal = 0x37
 }
-uint_to_enum!(VarLenType, Guid, Intn, Bitn, Decimaln, Numericn, Floatn, Money, Datetimen, Daten, Timen, Datetime2, DatetimeOffsetn,
-    BigVarBin, BigVarChar, BigBinary, BigChar, NVarchar, NChar, Xml, Udt, Text, Image, NText, SSVariant);
+uint_to_enum!(
+    VarLenType,
+    Guid,
+    Intn,
+    Bitn,
+    Decimaln,
+    Numericn,
+    Floatn,
+    Money,
+    Datetimen,
+    Daten,
+    Timen,
+    Datetime2,
+    DatetimeOffsetn,
+    BigVarBin,
+    BigVarChar,
+    BigBinary,
+    BigChar,
+    NVarchar,
+    NChar,
+    Xml,
+    Udt,
+    Text,
+    Image,
+    NText,
+    SSVariant
+);
 
-const MAX_NVARCHAR_SIZE: usize = 1<<30;
+const MAX_NVARCHAR_SIZE: usize = 1 << 30;
 
 #[derive(Debug)]
 pub struct Collation {
@@ -159,7 +198,7 @@ pub enum TypeInfo {
         size: usize,
         precision: u8,
         scale: u8,
-    }
+    },
 }
 
 #[derive(Debug)]
@@ -202,53 +241,74 @@ impl Guid {
 
 impl fmt::Display for Guid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
+        write!(
+            f,
             "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            self.0[3], self.0[2], self.0[1], self.0[0], self.0[5], self.0[4],
-            self.0[7], self.0[6], self.0[8], self.0[9], self.0[10], self.0[11],
-            self.0[12], self.0[13], self.0[14], self.0[15]
+            self.0[3],
+            self.0[2],
+            self.0[1],
+            self.0[0],
+            self.0[5],
+            self.0[4],
+            self.0[7],
+            self.0[6],
+            self.0[8],
+            self.0[9],
+            self.0[10],
+            self.0[11],
+            self.0[12],
+            self.0[13],
+            self.0[14],
+            self.0[15]
         )
     }
 }
 
 impl TypeInfo {
     pub fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<TypeInfo, TdsError> {
-        let ty = try!(trans.inner.read_u8());
+        let ty = trans.inner.read_u8()?;
         if let Some(ty) = FixedLenType::from_u8(ty) {
-            return Ok(Async::Ready(TypeInfo::FixedLen(ty)))
+            return Ok(Async::Ready(TypeInfo::FixedLen(ty)));
         }
         if let Some(ty) = VarLenType::from_u8(ty) {
             let len = match ty {
-                VarLenType::Bitn | VarLenType::Intn | VarLenType::Floatn | VarLenType::Decimaln |
-                VarLenType::Numericn | VarLenType::Guid | VarLenType::Money | VarLenType::Datetimen |
-                VarLenType::Timen | VarLenType::Datetime2 => try!(trans.inner.read_u8()) as usize,
+                VarLenType::Bitn |
+                VarLenType::Intn |
+                VarLenType::Floatn |
+                VarLenType::Decimaln |
+                VarLenType::Numericn |
+                VarLenType::Guid |
+                VarLenType::Money |
+                VarLenType::Datetimen |
+                VarLenType::Timen |
+                VarLenType::Datetime2 => trans.inner.read_u8()? as usize,
                 VarLenType::NVarchar | VarLenType::BigVarChar => {
-                    try!(trans.inner.read_u16::<LittleEndian>()) as usize
-                },
+                    trans.inner.read_u16::<LittleEndian>()? as usize
+                }
                 VarLenType::Daten => 3,
-                _ => unimplemented!()
+                _ => unimplemented!(),
             };
             let collation = match ty {
-                VarLenType::NVarchar | VarLenType::BigVarChar => {
-                    Some(Collation {
-                        info: try!(trans.inner.read_u32::<LittleEndian>()),
-                        sort_id: try!(trans.inner.read_u8()),
-                    })
-                },
-                _ => None
+                VarLenType::NVarchar | VarLenType::BigVarChar => Some(Collation {
+                    info: trans.inner.read_u32::<LittleEndian>()?,
+                    sort_id: trans.inner.read_u8()?,
+                }),
+                _ => None,
             };
             let vty = match ty {
                 VarLenType::Decimaln | VarLenType::Numericn => TypeInfo::VarLenSizedPrecision {
                     ty: ty,
                     size: len,
-                    precision: try!(trans.inner.read_u8()),
-                    scale: try!(trans.inner.read_u8()),
+                    precision: trans.inner.read_u8()?,
+                    scale: trans.inner.read_u8()?,
                 },
                 _ => TypeInfo::VarLenSized(ty, len, collation),
             };
-            return Ok(Async::Ready(vty))
+            return Ok(Async::Ready(vty));
         }
-        Err(TdsError::Protocol(format!("invalid or unsupported column type: {:?}", ty).into()))
+        Err(TdsError::Protocol(
+            format!("invalid or unsupported column type: {:?}", ty).into(),
+        ))
     }
 }
 
@@ -256,62 +316,71 @@ fn parse_datetimen<'a, I: Io>(trans: &mut TdsTransport<I>, len: u8) -> TdsResult
     let datetime = match len {
         0 => ColumnData::None,
         4 => ColumnData::SmallDateTime(time::SmallDateTime {
-            days: try!(trans.inner.read_u16::<LittleEndian>()),
-            seconds_fragments: try!(trans.inner.read_u16::<LittleEndian>()),
+            days: trans.inner.read_u16::<LittleEndian>()?,
+            seconds_fragments: trans.inner.read_u16::<LittleEndian>()?,
         }),
         8 => ColumnData::DateTime(time::DateTime {
-            days: try!(trans.inner.read_i32::<LittleEndian>()),
-            seconds_fragments: try!(trans.inner.read_u32::<LittleEndian>()),
+            days: trans.inner.read_i32::<LittleEndian>()?,
+            seconds_fragments: trans.inner.read_u32::<LittleEndian>()?,
         }),
-        _ => return Err(TdsError::Protocol(format!("datetimen: length of {} is invalid", len).into()))
+        _ => {
+            return Err(TdsError::Protocol(
+                format!("datetimen: length of {} is invalid", len).into(),
+            ))
+        }
     };
     Ok(datetime)
 }
 
 impl<'a> ColumnData<'a> {
-    pub fn parse<I: Io>(trans: &mut TdsTransport<I>, meta: &BaseMetaDataColumn) -> Poll<ColumnData<'a>, TdsError> {
+    pub fn parse<I: Io>(
+        trans: &mut TdsTransport<I>,
+        meta: &BaseMetaDataColumn,
+    ) -> Poll<ColumnData<'a>, TdsError> {
         Ok(Async::Ready(match meta.ty {
-            TypeInfo::FixedLen(ref fixed_ty) => {
-                match *fixed_ty {
-                    FixedLenType::Int4 => ColumnData::I32(try!(trans.inner.read_i32::<LittleEndian>())),
-                    FixedLenType::Int8 => ColumnData::I64(try!(trans.inner.read_i64::<LittleEndian>())),
-                    FixedLenType::Datetime => try!(parse_datetimen(trans, 8)),
-                    _ => panic!("unsupported fixed type decoding: {:?}", fixed_ty)
-                }
+            TypeInfo::FixedLen(ref fixed_ty) => match *fixed_ty {
+                FixedLenType::Int4 => ColumnData::I32(trans.inner.read_i32::<LittleEndian>()?),
+                FixedLenType::Int8 => ColumnData::I64(trans.inner.read_i64::<LittleEndian>()?),
+                FixedLenType::Datetime => parse_datetimen(trans, 8)?,
+                _ => panic!("unsupported fixed type decoding: {:?}", fixed_ty),
             },
             TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
                 match *ty {
                     VarLenType::Bitn => {
-                        assert_eq!(try!(trans.inner.read_u8()) as usize, *len);
-                        ColumnData::Bit(try!(trans.inner.read_u8()) > 0)
-                    },
+                        assert_eq!(trans.inner.read_u8()? as usize, *len);
+                        ColumnData::Bit(trans.inner.read_u8()? > 0)
+                    }
                     VarLenType::Intn => {
                         assert!(collation.is_none());
-                        assert_eq!(try!(trans.inner.read_u8()) as usize, *len);
+                        assert_eq!(trans.inner.read_u8()? as usize, *len);
                         match *len {
-                            1 => ColumnData::I8(try!(trans.inner.read_i8())),
-                            2 => ColumnData::I16(try!(trans.inner.read_i16::<LittleEndian>())),
-                            4 => ColumnData::I32(try!(trans.inner.read_i32::<LittleEndian>())),
-                            8 => ColumnData::I64(try!(trans.inner.read_i64::<LittleEndian>())),
-                            _ => unimplemented!()
+                            1 => ColumnData::I8(trans.inner.read_i8()?),
+                            2 => ColumnData::I16(trans.inner.read_i16::<LittleEndian>()?),
+                            4 => ColumnData::I32(trans.inner.read_i32::<LittleEndian>()?),
+                            8 => ColumnData::I64(trans.inner.read_i64::<LittleEndian>()?),
+                            _ => unimplemented!(),
                         }
-                    },
+                    }
                     // 2.2.5.5.1.5 IEEE754
                     VarLenType::Floatn => {
-                        let len = try!(trans.inner.read_u8());
+                        let len = trans.inner.read_u8()?;
                         match len {
                             0 => ColumnData::None,
-                            4 => ColumnData::F32(try!(trans.inner.read_f32::<LittleEndian>())),
-                            8 => ColumnData::F64(try!(trans.inner.read_f64::<LittleEndian>())),
-                            _ => return Err(TdsError::Protocol(format!("floatn: length of {} is invalid", len).into()))
+                            4 => ColumnData::F32(trans.inner.read_f32::<LittleEndian>()?),
+                            8 => ColumnData::F64(trans.inner.read_f64::<LittleEndian>()?),
+                            _ => {
+                                return Err(TdsError::Protocol(
+                                    format!("floatn: length of {} is invalid", len).into(),
+                                ))
+                            }
                         }
-                    },
+                    }
                     VarLenType::Guid => {
-                        assert_eq!(try!(trans.inner.read_u8()) as usize, *len);
+                        assert_eq!(trans.inner.read_u8()? as usize, *len);
                         let mut data = [0u8; 16];
                         try_ready!(trans.inner.read_bytes_to(&mut data));
                         ColumnData::Guid(Cow::Owned(Guid(data)))
-                    },
+                    }
                     VarLenType::NVarchar => {
                         trans.state_tracked = true;
                         // reduce some boilerplate by using RefCell/Rc
@@ -321,18 +390,20 @@ impl<'a> ColumnData<'a> {
                             match *read_state_mut {
                                 Some(ReadState::Type(ReadTyState::NVarchar(_))) => (),
                                 _ => {
-                                    let len = try!(trans.inner.read_u16::<LittleEndian>()) as usize;
-                                    *read_state_mut = Some(ReadState::Type(ReadTyState::NVarchar(Vec::with_capacity(len/2))));
+                                    let len = trans.inner.read_u16::<LittleEndian>()? as usize;
+                                    *read_state_mut = Some(ReadState::Type(
+                                        ReadTyState::NVarchar(Vec::with_capacity(len / 2)),
+                                    ));
                                 }
                             };
                             let target = match *read_state_mut {
                                 Some(ReadState::Type(ReadTyState::NVarchar(ref mut buf))) => buf,
-                                _ => unreachable!()
+                                _ => unreachable!(),
                             };
                             while target.capacity() > target.len() {
-                                target.push(try!(trans.inner.read_u16::<LittleEndian>()));
+                                target.push(trans.inner.read_u16::<LittleEndian>()?);
                             }
-                            let str_ = try!(String::from_utf16(&target[..]));
+                            let str_ = String::from_utf16(&target[..])?;
                             // make sure we do not skip before what we've already read for sure
                             trans.state_tracked = false;
                             ColumnData::String(str_.into())
@@ -342,32 +413,41 @@ impl<'a> ColumnData<'a> {
                                 Some(ReadState::Type(ReadTyState::NVarcharPLP(_))) => (),
                                 // initial call
                                 _ => {
-                                    let size = try!(trans.inner.read_u64::<LittleEndian>());
+                                    let size = trans.inner.read_u64::<LittleEndian>()?;
                                     if size == 0xffffffffffffffff {
                                         return Ok(Async::Ready(ColumnData::None));
                                     }
                                     let capacity = match size {
                                         // unsized PLPs, allocate some space
-                                        0xfffffffffffffffe => 1<<7,
-                                        len if len % 2 == 0 => len/2,
-                                        _ => return Err(TdsError::Protocol("nvarchar: invalid plp length".into())),
+                                        0xfffffffffffffffe => 1 << 7,
+                                        len if len % 2 == 0 => len / 2,
+                                        _ => {
+                                            return Err(TdsError::Protocol(
+                                                "nvarchar: invalid plp length".into(),
+                                            ))
+                                        }
                                     };
-                                    *read_state_mut = Some(ReadState::Type(ReadTyState::NVarcharPLP(NVarcharPLPTyState {
-                                        bytes: Vec::with_capacity(capacity as usize),
-                                        chunk_left: None,
-                                        leftover: None,
-                                    })));
+                                    *read_state_mut = Some(ReadState::Type(
+                                        ReadTyState::NVarcharPLP(NVarcharPLPTyState {
+                                            bytes: Vec::with_capacity(capacity as usize),
+                                            chunk_left: None,
+                                            leftover: None,
+                                        }),
+                                    ));
                                 }
                             };
                             // get a mutable pointer to our state that is mutable even though it's stored in transport
                             let plp_state = match *read_state_mut {
-                                Some(ReadState::Type(ReadTyState::NVarcharPLP(ref mut plp_state))) => plp_state,
-                                _ => unreachable!()
+                                Some(
+                                    ReadState::Type(ReadTyState::NVarcharPLP(ref mut plp_state)),
+                                ) => plp_state,
+                                _ => unreachable!(),
                             };
 
                             loop {
                                 if plp_state.chunk_left.is_none() {
-                                    let chunk_size = try!(trans.inner.read_u32::<LittleEndian>()) as usize;
+                                    let chunk_size =
+                                        trans.inner.read_u32::<LittleEndian>()? as usize;
                                     if chunk_size == 0 {
                                         break;
                                     }
@@ -375,22 +455,28 @@ impl<'a> ColumnData<'a> {
                                     plp_state.chunk_left = Some(chunk_size);
                                 }
                                 // byte from last chunk
-                                if let NVarcharPLPTyState { ref mut bytes, chunk_left: Some(ref mut chunk_left), ref mut leftover, .. } = *plp_state {
+                                if let NVarcharPLPTyState {
+                                    ref mut bytes,
+                                    chunk_left: Some(ref mut chunk_left),
+                                    ref mut leftover,
+                                    ..
+                                } = *plp_state
+                                {
                                     if let Some(ref leftover) = *leftover {
-                                        let buf = [*leftover, try!(trans.inner.read_u8())];
+                                        let buf = [*leftover, trans.inner.read_u8()?];
                                         bytes.push(LittleEndian::read_u16(&buf));
                                         *chunk_left -= 1;
                                     }
                                     *leftover = None;
 
-                                    for _ in 0..*chunk_left/2 {
-                                        bytes.push(try!(trans.inner.read_u16::<LittleEndian>()));
+                                    for _ in 0..*chunk_left / 2 {
+                                        bytes.push(trans.inner.read_u16::<LittleEndian>()?);
                                         *chunk_left -= 2;
                                     }
 
                                     // queue the last byte for the next chunk
                                     if *chunk_left % 2 == 1 {
-                                        *leftover = Some(try!(trans.inner.read_u8()));
+                                        *leftover = Some(trans.inner.read_u8()?);
                                     }
                                 }
                                 plp_state.chunk_left = None;
@@ -400,59 +486,77 @@ impl<'a> ColumnData<'a> {
                             trans.state_tracked = false;
                             ColumnData::String(str_.into())
                         }
-                    },
+                    }
                     VarLenType::BigVarChar => {
                         assert!(*len != 0xffff); // TODO: PLP
                         let bytes = try_ready!(trans.inner.read_varbyte::<u16>());
-                        let encoder = try!(collation.as_ref().unwrap().encoding().ok_or(TdsError::Encoding("encoding: unspported encoding".into())));
-                        let str_: String = try!(encoder.decode(bytes.as_ref(), DecoderTrap::Strict).map_err(TdsError::Encoding));
+                        let encoder = collation
+                            .as_ref()
+                            .unwrap()
+                            .encoding()
+                            .ok_or(TdsError::Encoding("encoding: unspported encoding".into()))?;
+                        let str_: String = encoder
+                            .decode(bytes.as_ref(), DecoderTrap::Strict)
+                            .map_err(TdsError::Encoding)?;
                         ColumnData::String(str_.into())
-                    },
+                    }
                     VarLenType::Money => {
-                        let len = try!(trans.inner.read_u8());
+                        let len = trans.inner.read_u8()?;
                         match len {
                             0 => ColumnData::None,
-                            4 => ColumnData::F64(try!(trans.inner.read_i32::<LittleEndian>()) as f64 / 1e4),
+                            4 => ColumnData::F64(
+                                trans.inner.read_i32::<LittleEndian>()? as f64 / 1e4,
+                            ),
                             8 => ColumnData::F64({
-                                let high = try!(trans.inner.read_i32::<LittleEndian>()) as i64;
-                                let low = try!(trans.inner.read_u32::<LittleEndian>()) as f64;
+                                let high = trans.inner.read_i32::<LittleEndian>()? as i64;
+                                let low = trans.inner.read_u32::<LittleEndian>()? as f64;
                                 ((high << 32) as f64 + low) / 1e4
                             }),
-                            _ => return Err(TdsError::Protocol(format!("money: length of {} is invalid", len).into()))
+                            _ => {
+                                return Err(TdsError::Protocol(
+                                    format!("money: length of {} is invalid", len).into(),
+                                ))
+                            }
                         }
-                    },
+                    }
                     VarLenType::Datetimen => {
-                        let len = try!(trans.inner.read_u8());
-                        try!(parse_datetimen(trans, len))
-                    },
+                        let len = trans.inner.read_u8()?;
+                        parse_datetimen(trans, len)?
+                    }
                     VarLenType::Daten => {
-                        let len = try!(trans.inner.read_u8());
+                        let len = trans.inner.read_u8()?;
                         match len {
                             0 => ColumnData::None,
                             3 => {
                                 let mut bytes = [0u8; 4];
                                 try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
                                 ColumnData::Date(time::Date::new(LittleEndian::read_u32(&bytes)))
-                            },
-                            _ => return Err(TdsError::Protocol(format!("daten: length of {} is invalid", len).into()))
+                            }
+                            _ => {
+                                return Err(TdsError::Protocol(
+                                    format!("daten: length of {} is invalid", len).into(),
+                                ))
+                            }
                         }
-                    },
+                    }
                     VarLenType::Timen => {
-                        let rlen = try!(trans.inner.read_u8());
-                        ColumnData::Time(try!(time::Time::decode(&mut *trans.inner, *len, rlen)))
-                    },
+                        let rlen = trans.inner.read_u8()?;
+                        ColumnData::Time(time::Time::decode(&mut *trans.inner, *len, rlen)?)
+                    }
                     VarLenType::Datetime2 => {
-                        let rlen = try!(trans.inner.read_u8()) - 3;
-                        let time = try!(time::Time::decode(&mut *trans.inner, *len, rlen));
+                        let rlen = trans.inner.read_u8()? - 3;
+                        let time = time::Time::decode(&mut *trans.inner, *len, rlen)?;
                         let mut bytes = [0u8; 4];
                         try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
                         let date = time::Date::new(LittleEndian::read_u32(&bytes));
                         ColumnData::DateTime2(time::DateTime2(date, time))
-                    },
-                    _ => unimplemented!()
+                    }
+                    _ => unimplemented!(),
                 }
-            },
-            TypeInfo::VarLenSizedPrecision { ref ty, ref scale, .. } => {
+            }
+            TypeInfo::VarLenSizedPrecision {
+                ref ty, ref scale, ..
+            } => {
                 match *ty {
                     // Our representation causes loss of information and is only a very approximate representation
                     // while decimal on the side of MSSQL is an exact representation
@@ -467,7 +571,7 @@ impl<'a> ColumnData<'a> {
                             let high_part = match buf.len() {
                                 12 => LittleEndian::read_u32(&buf[8..]) as f64,
                                 16 => LittleEndian::read_u64(&buf[8..]) as f64,
-                                _ => unreachable!()
+                                _ => unreachable!(),
                             };
 
                             // swap high&low for big endian
@@ -478,75 +582,84 @@ impl<'a> ColumnData<'a> {
                             low_part + high_part
                         }
 
-                        let len = try!(trans.inner.read_u8());
-                        let sign = match try!(trans.inner.read_u8()) {
+                        let len = trans.inner.read_u8()?;
+                        let sign = match trans.inner.read_u8()? {
                             0 => -1f64,
                             1 => 1f64,
                             _ => return Err(TdsError::Protocol("decimal: invalid sign".into())),
                         };
                         let value = sign * match len {
-                            5 => try!(trans.inner.read_u32::<LittleEndian>()) as f64,
-                            9 => try!(trans.inner.read_u64::<LittleEndian>()) as f64,
+                            5 => trans.inner.read_u32::<LittleEndian>()? as f64,
+                            9 => trans.inner.read_u64::<LittleEndian>()? as f64,
                             // the following two cases are even more approximate
                             13 => {
                                 let mut bytes = [0u8; 12]; //u96
-                                try!(trans.inner.read_bytes_to(&mut bytes));
+                                trans.inner.read_bytes_to(&mut bytes)?;
                                 read_d128(&bytes)
-                            },
+                            }
                             17 => {
                                 let mut bytes = [0u8; 16]; //u128
-                                try!(trans.inner.read_bytes_to(&mut bytes));
+                                trans.inner.read_bytes_to(&mut bytes)?;
                                 read_d128(&bytes)
-                            },
-                            x => return Err(TdsError::Protocol(format!("decimal/numeric: invalid length of {} received", x).into()))
+                            }
+                            x => {
+                                return Err(TdsError::Protocol(
+                                    format!("decimal/numeric: invalid length of {} received", x)
+                                        .into(),
+                                ))
+                            }
                         };
                         ColumnData::F64(value / 10f64.powi(*scale as i32))
-                    },
+                    }
                     _ => unimplemented!(),
                 }
-            },
+            }
         }))
     }
 
     pub fn serialize<W: Write>(&self, mut target: W) -> TdsResult<()> {
         match *self {
-            ColumnData::Bit(ref val) => try!(target.write(&[VarLenType::Bitn as u8, 1, 1, *val as u8]).map(|_| ())),
-            ColumnData::I8(ref val) => try!(target.write(&[VarLenType::Intn as u8, 1, 1, *val as u8]).map(|_| ())),
+            ColumnData::Bit(ref val) => target
+                .write(&[VarLenType::Bitn as u8, 1, 1, *val as u8])
+                .map(|_| ())?,
+            ColumnData::I8(ref val) => target
+                .write(&[VarLenType::Intn as u8, 1, 1, *val as u8])
+                .map(|_| ())?,
             ColumnData::I16(ref val) => {
-                try!(target.write_all(&[VarLenType::Intn as u8, 2, 2]));
-                try!(target.write_i16::<LittleEndian>(*val));
-            },
+                target.write_all(&[VarLenType::Intn as u8, 2, 2])?;
+                target.write_i16::<LittleEndian>(*val)?;
+            }
             ColumnData::I32(ref val) => {
-                try!(target.write_all(&[VarLenType::Intn as u8, 4, 4]));
-                try!(target.write_i32::<LittleEndian>(*val));
-            },
+                target.write_all(&[VarLenType::Intn as u8, 4, 4])?;
+                target.write_i32::<LittleEndian>(*val)?;
+            }
             ColumnData::I64(ref val) => {
-                try!(target.write_all(&[VarLenType::Intn as u8, 8, 8]));
-                try!(target.write_i64::<LittleEndian>(*val));
-            },
+                target.write_all(&[VarLenType::Intn as u8, 8, 8])?;
+                target.write_i64::<LittleEndian>(*val)?;
+            }
             ColumnData::F32(ref val) => {
-                try!(target.write_all(&[VarLenType::Floatn as u8, 4, 4]));
-                try!(target.write_f32::<LittleEndian>(*val));
-            },
+                target.write_all(&[VarLenType::Floatn as u8, 4, 4])?;
+                target.write_f32::<LittleEndian>(*val)?;
+            }
             ColumnData::F64(ref val) => {
-                try!(target.write_all(&[VarLenType::Floatn as u8, 8, 8]));
-                try!(target.write_f64::<LittleEndian>(*val));
-            },
+                target.write_all(&[VarLenType::Floatn as u8, 8, 8])?;
+                target.write_f64::<LittleEndian>(*val)?;
+            }
             ColumnData::Guid(ref guid) => {
-                try!(target.write_all(&[VarLenType::Guid as u8, 0x10, 0x10]));
-                try!(target.write_all(guid.as_bytes()));
-            },
+                target.write_all(&[VarLenType::Guid as u8, 0x10, 0x10])?;
+                target.write_all(guid.as_bytes())?;
+            }
             ColumnData::String(ref str_) if str_.len() <= 4000 => {
-                try!(target.write_u8(VarLenType::NVarchar as u8));
-                try!(target.write_u16::<LittleEndian>(8000)); // NVARCHAR(4000)
-                try!(target.write_all(&[0; 5])); // raw collation
-                try!(target.write_u16::<LittleEndian>(2*str_.len() as u16));
-                try!(target.write_varchar::<NoLength>(str_));
-            },
+                target.write_u8(VarLenType::NVarchar as u8)?;
+                target.write_u16::<LittleEndian>(8000)?; // NVARCHAR(4000)
+                target.write_all(&[0; 5])?; // raw collation
+                target.write_u16::<LittleEndian>(2 * str_.len() as u16)?;
+                target.write_varchar::<NoLength>(str_)?;
+            }
             ColumnData::String(ref str_) => {
                 // length: 0xffff and raw collation
-                try!(target.write_all(&[VarLenType::NVarchar as u8, 0xff, 0xff, 0, 0, 0, 0, 0]));
-                try!(target.write_u64::<LittleEndian>(2*str_.len() as u64));
+                target.write_all(&[VarLenType::NVarchar as u8, 0xff, 0xff, 0, 0, 0, 0, 0])?;
+                target.write_u64::<LittleEndian>(2 * str_.len() as u64)?;
 
                 // write PLP chunks
                 {
@@ -554,45 +667,45 @@ impl<'a> ColumnData<'a> {
                         target: &mut target,
                         buf: Vec::with_capacity(0xffff),
                     };
-                    try!(writer.write_varchar::<NoLength>(str_));
-                    try!(writer.flush());
+                    writer.write_varchar::<NoLength>(str_)?;
+                    writer.flush()?;
                 }
 
-                try!(target.write_u32::<LittleEndian>(0)); //PLP_TERMINATOR
-            },
+                target.write_u32::<LittleEndian>(0)?; //PLP_TERMINATOR
+            }
             ColumnData::DateTime(ref dt) => {
-                try!(target.write_all(&[VarLenType::Datetimen as u8, 8, 8]));
-                try!(target.write_i32::<LittleEndian>(dt.days));
-                try!(target.write_u32::<LittleEndian>(dt.seconds_fragments));
-            },
+                target.write_all(&[VarLenType::Datetimen as u8, 8, 8])?;
+                target.write_i32::<LittleEndian>(dt.days)?;
+                target.write_u32::<LittleEndian>(dt.seconds_fragments)?;
+            }
             ColumnData::SmallDateTime(ref dt) => {
-                try!(target.write_all(&[VarLenType::Datetimen as u8, 4, 4]));
-                try!(target.write_u16::<LittleEndian>(dt.days));
-                try!(target.write_u16::<LittleEndian>(dt.seconds_fragments));
-            },
+                target.write_all(&[VarLenType::Datetimen as u8, 4, 4])?;
+                target.write_u16::<LittleEndian>(dt.days)?;
+                target.write_u16::<LittleEndian>(dt.seconds_fragments)?;
+            }
             ColumnData::Date(ref dt) => {
-                try!(target.write_all(&[VarLenType::Daten as u8, 3]));
+                target.write_all(&[VarLenType::Daten as u8, 3])?;
                 let mut tmp = [0u8; 4];
                 LittleEndian::write_u32(&mut tmp, dt.days());
                 assert_eq!(tmp[3], 0);
-                try!(target.write_all(&tmp[0..3]));
-            },
+                target.write_all(&tmp[0..3])?;
+            }
             ColumnData::Time(ref t) => {
-                 let len = try!(t.len());
-                 try!(target.write_all(&[VarLenType::Timen as u8, t.scale, len]));
-                 try!(t.encode_to(&mut target));
-            },
+                let len = t.len()?;
+                target.write_all(&[VarLenType::Timen as u8, t.scale, len])?;
+                t.encode_to(&mut target)?;
+            }
             ColumnData::DateTime2(ref dt) => {
-                let len = try!(dt.1.len()) + 3;
-                try!(target.write_all(&[VarLenType::Datetime2 as u8, dt.1.scale, len]));
-                try!(dt.1.encode_to(&mut target));
+                let len = dt.1.len()? + 3;
+                target.write_all(&[VarLenType::Datetime2 as u8, dt.1.scale, len])?;
+                dt.1.encode_to(&mut target)?;
                 // date
                 let mut tmp = [0u8; 4];
                 LittleEndian::write_u32(&mut tmp, dt.0.days());
                 assert_eq!(tmp[3], 0);
-                try!(target.write_all(&tmp[0..3]));
-            },
-            _ => unimplemented!()
+                target.write_all(&tmp[0..3])?;
+            }
+            _ => unimplemented!(),
         }
         Ok(())
     }
@@ -608,7 +721,7 @@ pub trait ToColumnData {
 
 /// a type which can be translated as an SQL type (e.g. nvarchar) and is serializable (as `ColumnData`)
 /// e.g. for usage within a ROW token
-pub trait ToSql : ToColumnData {
+pub trait ToSql: ToColumnData {
     fn to_sql(&self) -> &'static str;
 }
 
@@ -723,23 +836,29 @@ mod tests {
     #[test]
     fn test_decimal_numeric() {
         let mut lp = Core::new().unwrap();
-        let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
-            .and_then(|conn| conn.simple_query("select 18446744073709554899982888888888").for_each_row(|row| {
-                assert_eq!(row.get::<_, f64>(0), 18446744073709554000000000000000f64);
-                Ok(())
-            }));
+        let future =
+            SqlConnection::connect(lp.handle(), connection_string().as_ref()).and_then(|conn| {
+                conn.simple_query("select 18446744073709554899982888888888")
+                    .for_each_row(|row| {
+                        assert_eq!(row.get::<_, f64>(0), 18446744073709554000000000000000f64);
+                        Ok(())
+                    })
+            });
         lp.run(future).unwrap();
     }
 
     #[test]
     fn test_money() {
         let mut lp = Core::new().unwrap();
-        let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
-            .and_then(|conn| conn.simple_query("select cast(32.32 as smallmoney), cast(3333333 as money)").for_each_row(|row| {
-                assert_eq!(row.get::<_, f64>(0), 32.32f64);
-                assert_eq!(row.get::<_, f64>(1), 3333333f64);
-                Ok(())
-            }));
+        let future =
+            SqlConnection::connect(lp.handle(), connection_string().as_ref()).and_then(|conn| {
+                conn.simple_query("select cast(32.32 as smallmoney), cast(3333333 as money)")
+                    .for_each_row(|row| {
+                        assert_eq!(row.get::<_, f64>(0), 32.32f64);
+                        assert_eq!(row.get::<_, f64>(1), 3333333f64);
+                        Ok(())
+                    })
+            });
         lp.run(future).unwrap();
     }
 }

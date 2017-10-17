@@ -90,8 +90,8 @@ pub struct Time {
 
 impl PartialEq for Time {
     fn eq(&self, t: &Time) -> bool {
-        self.increments as f64 / 10f64.powi(self.scale as i32) ==
-        t.increments as f64 / 10f64.powi(t.scale as i32)
+        self.increments as f64 / 10f64.powi(self.scale as i32)
+            == t.increments as f64 / 10f64.powi(t.scale as i32)
     }
 }
 
@@ -102,26 +102,30 @@ impl Time {
             0...2 => 3,
             3...4 => 4,
             5...7 => 5,
-            _ => return Err(TdsError::Protocol(format!("timen: invalid scale {}", self.scale).into()))
+            _ => {
+                return Err(TdsError::Protocol(
+                    format!("timen: invalid scale {}", self.scale).into(),
+                ))
+            }
         })
     }
 
     pub fn encode_to<W: Write>(&self, mut wr: W) -> TdsResult<()> {
-        match try!(self.len()) {
+        match self.len()? {
             3 => {
                 assert_eq!(self.increments >> 24, 0);
-                try!(wr.write_u16::<LittleEndian>(self.increments as u16));
-                try!(wr.write_u8((self.increments >> 16) as u8));
-            },
+                wr.write_u16::<LittleEndian>(self.increments as u16)?;
+                wr.write_u8((self.increments >> 16) as u8)?;
+            }
             4 => {
-            assert_eq!(self.increments >> 32, 0);
-            try!(wr.write_u32::<LittleEndian>(self.increments as u32));
-            },
+                assert_eq!(self.increments >> 32, 0);
+                wr.write_u32::<LittleEndian>(self.increments as u32)?;
+            }
             5 => {
                 assert_eq!(self.increments >> 40, 0);
-                try!(wr.write_u32::<LittleEndian>(self.increments as u32));
-                try!(wr.write_u8((self.increments >> 32) as u8));
-            },
+                wr.write_u32::<LittleEndian>(self.increments as u32)?;
+                wr.write_u8((self.increments >> 32) as u8)?;
+            }
             _ => unreachable!(),
         }
         Ok(())
@@ -129,10 +133,14 @@ impl Time {
 
     pub fn decode<R: Read>(mut rd: R, n: usize, len: u8) -> TdsResult<Time> {
         let val = match (n, len) {
-            (0...2, 3) => try!(rd.read_u16::<LittleEndian>()) as u64 | (try!(rd.read_u8()) as u64) << 16,
-            (3...4, 4) => try!(rd.read_u32::<LittleEndian>()) as u64,
-            (5...7, 5) => try!(rd.read_u32::<LittleEndian>()) as u64 | (try!(rd.read_u8()) as u64) << 32,
-            _ => return Err(TdsError::Protocol(format!("timen: invalid length {}", n).into()))
+            (0...2, 3) => rd.read_u16::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 16,
+            (3...4, 4) => rd.read_u32::<LittleEndian>()? as u64,
+            (5...7, 5) => rd.read_u32::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 32,
+            _ => {
+                return Err(TdsError::Protocol(
+                    format!("timen: invalid length {}", n).into(),
+                ))
+            }
         };
         Ok(Time {
             increments: val,
@@ -179,22 +187,25 @@ mod chrono {
 
     #[inline]
     fn from_days(days: i64, start_year: i32) -> NaiveDate {
-        NaiveDate::from_ymd(start_year, 1,1) + Duration::days(days as i64)
+        NaiveDate::from_ymd(start_year, 1, 1) + Duration::days(days as i64)
     }
 
     #[inline]
     fn from_sec_fragments(sec_fragments: i64) -> NaiveTime {
-        NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(sec_fragments * (1e9 as i64) / 300)
+        NaiveTime::from_hms(0, 0, 0) + Duration::nanoseconds(sec_fragments * (1e9 as i64) / 300)
     }
 
     #[inline]
     fn to_days(date: &NaiveDate, start_year: i32) -> i64 {
-        date.signed_duration_since(NaiveDate::from_ymd(start_year, 1, 1)).num_days()
+        date.signed_duration_since(NaiveDate::from_ymd(start_year, 1, 1))
+            .num_days()
     }
 
     #[inline]
     fn to_sec_fragments(time: &NaiveTime) -> i64 {
-        time.signed_duration_since(NaiveTime::from_hms(0, 0, 0)).num_nanoseconds().unwrap() * 300 / (1e9 as i64)
+        time.signed_duration_since(NaiveTime::from_hms(0, 0, 0))
+            .num_nanoseconds()
+            .unwrap() * 300 / (1e9 as i64)
     }
 
     from_column_data!(
@@ -250,11 +261,21 @@ mod chrono {
         fn test_datetime2_to_naive_datetime() {
             let mut lp = Core::new().unwrap();
             let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
-                .and_then(|conn| conn.simple_query(format!("select cast('{}' as datetime2(7))", DATETIME_TEST_STR)).for_each_row(|row| {
-                    assert_eq!(row.get::<_, NaiveDateTime>(0), NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S.%f").unwrap());
-                    Ok(())
-                })
-            );
+                .and_then(|conn| {
+                    conn.simple_query(format!(
+                        "select cast('{}' as datetime2(7))",
+                        DATETIME_TEST_STR
+                    )).for_each_row(|row| {
+                            assert_eq!(
+                                row.get::<_, NaiveDateTime>(0),
+                                NaiveDateTime::parse_from_str(
+                                    DATETIME_TEST_STR,
+                                    "%Y-%m-%d %H:%M:%S.%f"
+                                ).unwrap()
+                            );
+                            Ok(())
+                        })
+                });
             lp.run(future).unwrap();
         }
     }
@@ -264,7 +285,7 @@ mod chrono {
 mod tests {
     use futures::Future;
     use tokio_core::reactor::Core;
-    use super::{Date, DateTime, SmallDateTime, Time, DateTime2};
+    use super::{Date, DateTime, DateTime2, SmallDateTime, Time};
     use stmt::ResultStreamExt;
     use SqlConnection;
     use tests::connection_string;
@@ -287,15 +308,23 @@ mod tests {
     fn test_datetime_fixed() {
         let mut lp = Core::new().unwrap();
         let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
-            .and_then(|conn| conn.simple_exec("create table #Temp(gg datetime NOT NULL)").single())
+            .and_then(|conn| {
+                conn.simple_exec("create table #Temp(gg datetime NOT NULL)")
+                    .single()
+            })
             .and_then(|(_, conn)| {
-                conn.simple_query("insert into #Temp(gg) OUTPUT Inserted.gg VALUES('2014-02-24T18:42:23.000')").for_each_row(|row| {
-                    assert_eq!(row.get::<_, DateTime>(0), DateTime {
-                        days: 41692, //24.02.2014
-                        seconds_fragments: (18*3600 + 42*60 + 23) * 300, // 18:42:23
-                    });
-                    Ok(())
-                })
+                conn.simple_query(
+                    "insert into #Temp(gg) OUTPUT Inserted.gg VALUES('2014-02-24T18:42:23.000')",
+                ).for_each_row(|row| {
+                        assert_eq!(
+                            row.get::<_, DateTime>(0),
+                            DateTime {
+                                days: 41692,                                         //24.02.2014
+                                seconds_fragments: (18 * 3600 + 42 * 60 + 23) * 300, // 18:42:23
+                            }
+                        );
+                        Ok(())
+                    })
             });
         lp.run(future).unwrap();
     }

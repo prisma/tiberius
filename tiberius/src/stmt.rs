@@ -2,7 +2,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use futures::{Async, Future, Poll, Stream, Sink};
+use futures::{Async, Future, Poll, Sink, Stream};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
 use query::{ExecFuture, QueryStream};
@@ -14,24 +14,24 @@ use {BoxableIo, SqlConnection, StmtResult, TdsError};
 /// (which is a technical requirement since you need to know the types)
 #[derive(Clone)]
 pub struct Statement {
-    pub(crate) sql: Cow<'static, str>
+    pub(crate) sql: Cow<'static, str>,
 }
 
 // TODO: implement Drop for StatementHandle (channel to the connection which unprepares the statement)
 impl Statement {
     pub fn new(sql: Cow<'static, str>) -> Statement {
-        Statement {
-            sql: sql
-        }
+        Statement { sql: sql }
     }
 
-    pub(crate) fn get_handle_for<I: BoxableIo>(&self, conn: &SqlConnection<I>, needed: &[&'static str]) 
-        -> Option<(i32, Option<Arc<TokenColMetaData>>)> 
-    {
+    pub(crate) fn get_handle_for<I: BoxableIo>(
+        &self,
+        conn: &SqlConnection<I>,
+        needed: &[&'static str],
+    ) -> Option<(i32, Option<Arc<TokenColMetaData>>)> {
         if let Some(bindings) = conn.0.stmts.get(&*self.sql) {
             for binding in bindings {
                 if needed.iter().eq(binding.0.iter()) {
-                    return Some((binding.1, binding.2.clone()))
+                    return Some((binding.1, binding.2.clone()));
                 }
             }
         }
@@ -45,7 +45,10 @@ impl<'a> From<&'a Statement> for Statement {
     }
 }
 
-impl<S> From<S> for Statement where S: Into<Cow<'static, str>> {
+impl<S> From<S> for Statement
+where
+    S: Into<Cow<'static, str>>,
+{
     fn from(sql: S) -> Statement {
         Statement::new(sql.into())
     }
@@ -71,7 +74,12 @@ pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
 }
 
 impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
-    pub fn new(conn: SqlConnection<I>, stmt: Statement, meta: Option<Arc<TokenColMetaData>>, params: &[&ToSql]) -> Self {
+    pub fn new(
+        conn: SqlConnection<I>,
+        stmt: Statement,
+        meta: Option<Arc<TokenColMetaData>>,
+        params: &[&ToSql],
+    ) -> Self {
         let signature = params.iter().map(|x| x.to_sql()).collect();
         StmtStream {
             err: None,
@@ -105,30 +113,45 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
 
         // attempt to receive the connection back to continue receiving further resultsets
         if self.receiver.is_some() {
-            self.conn = Some(try_ready!(self.receiver.as_mut().unwrap().poll().map_err(|_| TdsError::Canceled)));
+            self.conn = Some(try_ready!(
+                self.receiver
+                    .as_mut()
+                    .unwrap()
+                    .poll()
+                    .map_err(|_| TdsError::Canceled)
+            ));
             self.receiver = None;
         }
 
-        try_ready!(self.conn.as_mut().map(|x| x.0.transport.inner.poll_complete()).unwrap());
+        try_ready!(
+            self.conn
+                .as_mut()
+                .map(|x| x.0.transport.inner.poll_complete())
+                .unwrap()
+        );
 
         // receive and handle the result of sp_prepare
         while !self.done {
-            let token = try_ready!(self.conn.as_mut().map(|x| x.0.transport.next_token()).unwrap())
-                .expect("StateStream: expected token");
+            let token = try_ready!(
+                self.conn
+                    .as_mut()
+                    .map(|x| x.0.transport.next_token())
+                    .unwrap()
+            ).expect("StateStream: expected token");
             let (do_ret, reinject) = match token {
                 TdsResponseToken::ColMetaData(ref meta) => {
                     if !meta.columns.is_empty() {
                         self.meta = Some(meta.clone());
                     } else {
                         // use the meta data of the current statement for parsing
-                        // TODO: our meta data handling likely wont work with a multi result set 
+                        // TODO: our meta data handling likely wont work with a multi result set
                         //       prepared statement like "select 1; select 2;"
                         self.conn.as_mut().unwrap().0.transport.inner.last_meta = self.meta.clone();
                     }
                     self.already_triggered = !meta.columns.is_empty() || self.meta.is_some();
 
                     (self.already_triggered, false)
-                },
+                }
                 TdsResponseToken::DoneProc(ref done) => {
                     // we've read each query result, we're done with the current sp_exec, this stream may rest
                     assert_eq!(done.status, DoneStatus::empty());
@@ -136,29 +159,32 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                     self.already_triggered = false;
                     self.done = true;
                     (!old, !old) //reinject if !old, see below
-                },
+                }
                 // this simply notifies us that a DoneProc is following (DONE_MORE)
                 TdsResponseToken::DoneInProc(_) => (false, false),
                 TdsResponseToken::ReturnStatus(ref status) => {
                     assert_eq!(status & 1, 0); // ensure that failure is no part of status
                     (false, false)
-                },
+                }
                 TdsResponseToken::ReturnValue(ref retval) => {
                     assert_eq!(retval.param_name.as_str(), "handle");
                     let new_handle = match retval.value {
                         ColumnData::I32(val) => val,
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     };
                     let signature = self.param_sig.take().unwrap();
 
                     if let Some(ref mut conn) = self.conn {
-                        let target = conn.0.stmts.entry((&*self.stmt.sql).to_owned()).or_insert(Vec::with_capacity(1));
+                        let target = conn.0
+                            .stmts
+                            .entry((&*self.stmt.sql).to_owned())
+                            .or_insert(Vec::with_capacity(1));
                         target.retain(|x| x.0 != signature);
                         target.push((signature, new_handle, self.meta.as_ref().cloned()));
                     }
-                    
+
                     (false, false)
-                },
+                }
                 x => panic!("stmtstream: unexpected token: {:?}", x),
             };
             if do_ret {
@@ -168,7 +194,9 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                 }
                 let (sender, receiver) = oneshot::channel();
                 self.receiver = Some(receiver);
-                return Ok(Async::Ready(StreamEvent::Next(R::from_connection(conn, sender))));
+                return Ok(Async::Ready(
+                    StreamEvent::Next(R::from_connection(conn, sender)),
+                ));
             }
         }
 
@@ -185,27 +213,31 @@ pub trait ResultStreamExt<I: BoxableIo>: StateStream {
     /// # Panics
     /// This will panic if there is more than 1 resultset
     fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
-        where Self: Sized + StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
-                 F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>;
+    where
+        Self: Sized + StateStream<Item = QueryStream<I>, Error = <QueryStream<I> as Stream>::Error>,
+        F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>;
 
     /// Expect 1 resultset and unpacks the single underlying ExecFuture
     //
     /// # Panics
     /// This will panic if there is more than 1 resultset
     fn single(self) -> SingleResultSet<I, Self>
-        where Self: Sized + StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>;
+    where
+        Self: Sized + StateStream<Item = ExecFuture<I>, Error = <ExecFuture<I> as Future>::Error>;
 }
 
 impl<I: BoxableIo, R: StmtResult<I>> ResultStreamExt<I> for StmtStream<I, R> {
     fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
-        where Self: Sized + StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
-                 F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
+    where
+        Self: Sized + StateStream<Item = QueryStream<I>, Error = <QueryStream<I> as Stream>::Error>,
+        F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>,
     {
         ForEachRow::new(self, f)
     }
 
     fn single(self) -> SingleResultSet<I, Self>
-        where Self: Sized + StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error> 
+    where
+        Self: Sized + StateStream<Item = ExecFuture<I>, Error = <ExecFuture<I> as Future>::Error>,
     {
         SingleResultSet::new(self)
     }
@@ -213,30 +245,35 @@ impl<I: BoxableIo, R: StmtResult<I>> ResultStreamExt<I> for StmtStream<I, R> {
 
 /// Extract the result from a single resultset contained in a set of resultsets
 #[must_use = "futures do nothing unless polled"]
-pub struct SingleResultSet<I: BoxableIo, S: StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>> {
+pub struct SingleResultSet<
+    I: BoxableIo,
+    S: StateStream<Item = ExecFuture<I>, Error = <ExecFuture<I> as Future>::Error>,
+> {
     stream: S,
     idx: usize,
     resultset: Option<ExecFuture<I>>,
     result: Option<<ExecFuture<I> as Future>::Item>,
 }
 
-impl<I, S> SingleResultSet<I, S> 
-    where I: BoxableIo, 
-          S: StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>
+impl<I, S> SingleResultSet<I, S>
+where
+    I: BoxableIo,
+    S: StateStream<Item = ExecFuture<I>, Error = <ExecFuture<I> as Future>::Error>,
 {
     pub fn new(stream: S) -> SingleResultSet<I, S> {
-        SingleResultSet { 
-            stream, 
-            idx: 0, 
+        SingleResultSet {
+            stream,
+            idx: 0,
             resultset: None,
-            result: None 
+            result: None,
         }
     }
 }
 
-impl<I, S> Future for SingleResultSet<I, S> 
-    where I: BoxableIo,
-          S: StateStream<Item=ExecFuture<I>, Error=<ExecFuture<I> as Future>::Error>
+impl<I, S> Future for SingleResultSet<I, S>
+where
+    I: BoxableIo,
+    S: StateStream<Item = ExecFuture<I>, Error = <ExecFuture<I> as Future>::Error>,
 {
     type Item = (<ExecFuture<I> as Future>::Item, S::State);
     type Error = <ExecFuture<I> as Future>::Error;
@@ -251,7 +288,9 @@ impl<I, S> Future for SingleResultSet<I, S>
             self.resultset = match try_ready!(self.stream.poll()) {
                 StreamEvent::Next(resultset) => Some(resultset),
                 StreamEvent::Done(conn) => {
-                    let result = self.result.take().expect("single expected 1 resultset, got none");
+                    let result = self.result
+                        .take()
+                        .expect("single expected 1 resultset, got none");
                     return Ok(Async::Ready((result, conn)));
                 }
             };
@@ -267,7 +306,11 @@ impl<I, S> Future for SingleResultSet<I, S>
 /// but handle/consume the entire result set so that we're ready to continue
 /// after the execution of this
 #[must_use = "futures do nothing unless polled"]
-pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>, F> {
+pub struct ForEachRow<
+    I: BoxableIo,
+    S: StateStream<Item = QueryStream<I>, Error = <QueryStream<I> as Stream>::Error>,
+    F,
+> {
     stream: S,
     f: F,
     idx: usize,
@@ -275,8 +318,9 @@ pub struct ForEachRow<I: BoxableIo, S: StateStream<Item=QueryStream<I>, Error=<Q
 }
 
 impl<I: BoxableIo, S, F> ForEachRow<I, S, F>
-     where S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
-           F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
+where
+    S: StateStream<Item = QueryStream<I>, Error = <QueryStream<I> as Stream>::Error>,
+    F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>,
 {
     pub fn new(stream: S, f: F) -> ForEachRow<I, S, F> {
         ForEachRow {
@@ -289,8 +333,9 @@ impl<I: BoxableIo, S, F> ForEachRow<I, S, F>
 }
 
 impl<I: BoxableIo, S, F> Future for ForEachRow<I, S, F>
-    where S: StateStream<Item=QueryStream<I>, Error=<QueryStream<I> as Stream>::Error>,
-          F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>
+where
+    S: StateStream<Item = QueryStream<I>, Error = <QueryStream<I> as Stream>::Error>,
+    F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>,
 {
     type Item = S::State;
     type Error = <QueryStream<I> as Stream>::Error;
@@ -300,7 +345,7 @@ impl<I: BoxableIo, S, F> Future for ForEachRow<I, S, F>
             while let Some(ref mut resultset) = self.resultset {
                 match try_ready!(resultset.poll()) {
                     None => break,
-                    Some(row) => try!((self.f)(row)),
+                    Some(row) => (self.f)(row)?,
                 }
             }
             // ensure we do not poll the same resultset again

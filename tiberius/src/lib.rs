@@ -77,8 +77,8 @@
 
 #[macro_use]
 extern crate bitflags;
-extern crate bytes;
 extern crate byteorder;
+extern crate bytes;
 extern crate encoding;
 extern crate fnv;
 #[macro_use]
@@ -106,7 +106,10 @@ use tokio_core::net::{TcpStream, TcpStreamNew};
 use tokio_core::reactor::Handle;
 
 /// Trait to convert a u8 to a `enum` representation
-trait FromUint where Self: Sized {
+trait FromUint
+where
+    Self: Sized,
+{
     fn from_u8(n: u8) -> Option<Self>;
     fn from_u32(n: u32) -> Option<Self>;
 }
@@ -149,11 +152,13 @@ pub mod stmt;
 mod transaction;
 
 use transport::{Io, TdsTransport, TransportStream};
-use protocol::{PacketType, PreloginMessage, LoginMessage, SspiMessage, SerializeMessage, UnserializeMessage};
+use protocol::{LoginMessage, PacketType, PreloginMessage, SerializeMessage, SspiMessage,
+               UnserializeMessage};
 use types::{ColumnData, ToSql};
-use tokens::{DoneStatus, TdsResponseToken, RpcParam, RpcProcIdValue, RpcProcId, RpcOptionFlags, RpcStatusFlags, TokenRpcRequest, TokenColMetaData, WriteToken};
-use query::{ResultSetStream, QueryStream, ExecFuture};
-use stmt::{Statement, StmtStream, ResultStreamExt};
+use tokens::{DoneStatus, RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags,
+             TdsResponseToken, TokenColMetaData, TokenRpcRequest, WriteToken};
+use query::{ExecFuture, QueryStream, ResultSetStream};
+use stmt::{ResultStreamExt, Statement, StmtStream};
 use transaction::new_transaction;
 use winauth::NextBytes;
 pub use protocol::EncryptionLevel;
@@ -169,7 +174,9 @@ fn get_driver_version() -> u64 {
     env!("CARGO_PKG_VERSION")
         .splitn(6, '.')
         .enumerate()
-        .fold(0u64, |acc, part| acc | (part.1.parse::<u64>().unwrap() << (part.0*8)))
+        .fold(0u64, |acc, part| {
+            acc | (part.1.parse::<u64>().unwrap() << (part.0 * 8))
+        })
 }
 
 /// A unified error enum that contains several errors that might occurr during the lifecycle of this driver
@@ -215,7 +222,7 @@ impl From<std::string::FromUtf16Error> for TdsError {
 pub type TdsResult<T> = Result<T, TdsError>;
 
 /// A connection in a state before any login has happened
-enum SqlConnectionLoginState<I: Io, F: Future<Item=I, Error=TdsError> + Send + Sized> {
+enum SqlConnectionLoginState<I: Io, F: Future<Item = I, Error = TdsError> + Send + Sized> {
     Connection(Option<(F, ConnectParams)>),
     Error(Option<TdsError>),
 
@@ -227,12 +234,12 @@ enum SqlConnectionLoginState<I: Io, F: Future<Item=I, Error=TdsError> + Send + S
     LoginRecv,
     TokenStreamRecv,
     TokenStreamSend,
-    _Dummy(PhantomData<I>)
+    _Dummy(PhantomData<I>),
 }
 
 /// A representation of the initialization state of an SQL connection (pending connection
 #[must_use = "futures do nothing unless polled"]
-pub struct SqlConnectionNew<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send + Sized> {
+pub struct SqlConnectionNew<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send + Sized> {
     state: SqlConnectionLoginState<I, F>,
     context: Option<SqlConnectionContext<I>>,
 }
@@ -246,7 +253,7 @@ struct SqlConnectionContext<I: BoxableIo> {
 impl<I: BoxableIo> SqlConnectionContext<I> {
     /// Queues a simple message which serializes to ONE packet
     fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
-        let vec = try!(m.serialize_message(&mut self.transport));
+        let vec = m.serialize_message(&mut self.transport)?;
         self.transport.inner.queue_vec(vec)
     }
 
@@ -255,7 +262,7 @@ impl<I: BoxableIo> SqlConnectionContext<I> {
     }
 }
 
-impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConnectionNew<I, F> {
+impl<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send> Future for SqlConnectionNew<I, F> {
     type Item = SqlConnection<I>;
     type Error = TdsError;
 
@@ -274,33 +281,43 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                         wauth_client: None,
                     });
                     SqlConnectionLoginState::PreLoginSend
-                },
+                }
                 ref mut state => {
-                    let ctx = self.context.as_mut().expect("expected context for post-login state");
+                    let ctx = self.context
+                        .as_mut()
+                        .expect("expected context for post-login state");
                     match *state {
                         SqlConnectionLoginState::PreLoginSend => {
                             let mut msg = PreloginMessage::new();
                             if cfg!(feature = "tls") {
                                 msg.encryption = ctx.params.ssl;
                             } else if ctx.params.ssl != EncryptionLevel::NotSupported {
-                                panic!("TLS support is not enabled in this build, but required for this configuration!");
+                                panic!(
+                                    "TLS support is not enabled in this build, but required for this configuration!"
+                                );
                             }
                             try_nb!(ctx.queue_simple_message(msg));
                             SqlConnectionLoginState::PreLoginRecv
-                        },
+                        }
                         SqlConnectionLoginState::PreLoginRecv => {
                             try_ready!(ctx.transport.inner.poll_complete());
                             let header = try_ready!(ctx.transport.inner.next_packet());
                             assert_eq!(header.ty, PacketType::TabularResult);
                             // parse the prelogin packet
                             let buf = ctx.transport.inner.get_packet(header.length as usize);
-                            let msg = try!(buf.as_ref().unserialize_message(&mut ctx.transport));
+                            let msg = buf.as_ref().unserialize_message(&mut ctx.transport)?;
 
                             let encr = match (ctx.params.ssl, msg.encryption) {
-                                (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => EncryptionLevel::NotSupported,
-                                (EncryptionLevel::Off, EncryptionLevel::Off) => EncryptionLevel::Off,
+                                (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
+                                    EncryptionLevel::NotSupported
+                                }
+                                (EncryptionLevel::Off, EncryptionLevel::Off) => {
+                                    EncryptionLevel::Off
+                                }
                                 (EncryptionLevel::On, EncryptionLevel::Off) |
-                                (EncryptionLevel::On, EncryptionLevel::NotSupported) => panic!("todo: terminate connection, invalid encryption"),
+                                (EncryptionLevel::On, EncryptionLevel::NotSupported) => {
+                                    panic!("todo: terminate connection, invalid encryption")
+                                }
                                 (_, _) => EncryptionLevel::On,
                             };
                             ctx.params.ssl = encr;
@@ -308,20 +325,31 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                             // move to an TLS stream, if requested
                             match encr {
                                 // encrypt entirely or only logon packet
-                                EncryptionLevel::On | EncryptionLevel::Off | EncryptionLevel::Required => {
+                                EncryptionLevel::On |
+                                EncryptionLevel::Off |
+                                EncryptionLevel::Required => {
                                     #[cfg(feature = "tls")]
                                     {
-                                        match mem::replace(&mut ctx.transport.inner.io, TransportStream::None) {
+                                        match mem::replace(
+                                            &mut ctx.transport.inner.io,
+                                            TransportStream::None,
+                                        ) {
                                             TransportStream::Raw(stream) => {
-                                                let wrapped_stream = transport::tls::TlsTdsWrapper::new(stream);
+                                                let wrapped_stream =
+                                                    transport::tls::TlsTdsWrapper::new(stream);
                                                 let host = if ctx.params.trust_cert {
                                                     None
                                                 } else {
                                                     Some(&*ctx.params.host)
                                                 };
-                                                let tls_stream = transport::tls::connect_async(wrapped_stream, host);
-                                                SqlConnectionLoginState::TLSPending(Some(tls_stream))
-                                            },
+                                                let tls_stream = transport::tls::connect_async(
+                                                    wrapped_stream,
+                                                    host,
+                                                );
+                                                SqlConnectionLoginState::TLSPending(
+                                                    Some(tls_stream),
+                                                )
+                                            }
                                             _ => unreachable!(),
                                         }
                                     }
@@ -329,9 +357,9 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                                     panic!("encryption requested without build support!");
                                 }
                                 // do not encrypt at all
-                                EncryptionLevel::NotSupported => SqlConnectionLoginState::LoginSend
+                                EncryptionLevel::NotSupported => SqlConnectionLoginState::LoginSend,
                             }
-                        },
+                        }
                         #[cfg(feature = "tls")]
                         SqlConnectionLoginState::TLSPending(ref mut connect_async) => {
                             assert!(connect_async.is_some());
@@ -340,7 +368,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                             stream.get_mut().get_mut().wrap = false;
                             ctx.transport.inner.io = TransportStream::TLS(stream);
                             SqlConnectionLoginState::LoginSend
-                        },
+                        }
                         SqlConnectionLoginState::LoginSend => {
                             let mut login_message = LoginMessage::new();
 
@@ -354,42 +382,47 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                                 AuthMethod::SSPI_SSO => {
                                     let mut builder = winauth::windows::NtlmSspiBuilder::new()
                                         .target_spn(&ctx.params.spn);
-                                    if let Some(ref hash) = try!(ctx.channel_bindings()) {
+                                    if let Some(ref hash) = ctx.channel_bindings()? {
                                         builder = builder.channel_bindings(hash);
                                     }
-                                    let mut sso_client = try!(builder.build());
-                                    let buf = try!(sso_client.next_bytes(None)).map(|x| x.to_owned());
+                                    let mut sso_client = builder.build()?;
+                                    let buf = sso_client.next_bytes(None)?.map(|x| x.to_owned());
                                     login_message.integrated_security = buf;
                                     ctx.wauth_client = Some(Box::new(sso_client));
-                                },
+                                }
                                 AuthMethod::SqlServer(ref username, ref password) => {
                                     login_message.username = username.clone();
                                     login_message.password = password.clone();
-                                },
+                                }
                                 AuthMethod::WinAuth(ref username, ref password) => {
                                     // TODO: integrate channel binding
                                     // TODO: use NEGOTIATE
-                                    let (domain, username) = if let Some(idx) = username.find("\\") {
+                                    let (domain, username) = if let Some(idx) = username.find("\\")
+                                    {
                                         match *username {
                                             Cow::Borrowed(ref x) => {
-                                                let (domain, username) = (&x[..idx], &x[idx+1..]);
+                                                let (domain, username) = (&x[..idx], &x[idx + 1..]);
                                                 (Some(Cow::Borrowed(domain)), username.into())
                                             }
                                             Cow::Owned(ref x) => {
-                                                let (domain, username) = (&x[..idx], &x[idx+1..]);
-                                                (Some(Cow::Owned(domain.to_owned())), username.to_owned().into())
+                                                let (domain, username) = (&x[..idx], &x[idx + 1..]);
+                                                (
+                                                    Some(Cow::Owned(domain.to_owned())),
+                                                    username.to_owned().into(),
+                                                )
                                             }
                                         }
                                     } else {
                                         (None, username.clone())
                                     };
                                     let mut builder = winauth::NtlmV2ClientBuilder::new()
-                                                            .target_spn(ctx.params.spn.clone());
-                                    if let Some(ref hash) = try!(ctx.channel_bindings()) {
+                                        .target_spn(ctx.params.spn.clone());
+                                    if let Some(ref hash) = ctx.channel_bindings()? {
                                         builder = builder.channel_bindings(hash);
                                     }
-                                    let mut client = builder.build(domain, username, password.clone());
-                                    let buf = try!(client.next_bytes(None)).map(|x| x.to_owned());
+                                    let mut client =
+                                        builder.build(domain, username, password.clone());
+                                    let buf = client.next_bytes(None)?.map(|x| x.to_owned());
                                     login_message.integrated_security = buf;
                                     ctx.wauth_client = Some(Box::new(client));
                                 }
@@ -397,7 +430,7 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
 
                             try_nb!(ctx.queue_simple_message(login_message));
                             SqlConnectionLoginState::LoginRecv
-                        },
+                        }
                         SqlConnectionLoginState::LoginRecv => {
                             try_ready!(ctx.transport.inner.poll_complete());
                             // if login only encryption was negotiated, disable encryption
@@ -405,9 +438,14 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                             #[cfg(feature = "tls")]
                             {
                                 if ctx.params.ssl == EncryptionLevel::Off {
-                                    let stream = mem::replace(&mut ctx.transport.inner.io, TransportStream::None);
+                                    let stream = mem::replace(
+                                        &mut ctx.transport.inner.io,
+                                        TransportStream::None,
+                                    );
                                     ctx.transport.inner.io = match stream {
-                                        TransportStream::TLS(stream) => TransportStream::TLSRaw(stream),
+                                        TransportStream::TLS(stream) => {
+                                            TransportStream::TLSRaw(stream)
+                                        }
                                         x => x,
                                     };
                                 }
@@ -415,43 +453,51 @@ impl<I: BoxableIo, F: Future<Item=I, Error=TdsError> + Send> Future for SqlConne
                             let header = try_ready!(ctx.transport.inner.next_packet());
                             assert_eq!(header.ty, PacketType::TabularResult);
                             SqlConnectionLoginState::TokenStreamRecv
-                        },
+                        }
                         SqlConnectionLoginState::TokenStreamRecv => {
                             let token = try_ready!(ctx.transport.next_token());
                             match token {
                                 Some(TdsResponseToken::SSPI(bytes)) => {
                                     assert!(ctx.wauth_client.is_some());
-                                    match try!(ctx.wauth_client.as_mut().unwrap().next_bytes(Some(bytes.as_ref()))) {
+                                    match ctx.wauth_client
+                                        .as_mut()
+                                        .unwrap()
+                                        .next_bytes(Some(bytes.as_ref()))?
+                                    {
                                         Some(bytes) => {
-                                            try!(ctx.queue_simple_message(SspiMessage(bytes)));
+                                            ctx.queue_simple_message(SspiMessage(bytes))?;
                                             SqlConnectionLoginState::TokenStreamSend
-                                        },
+                                        }
                                         None => {
                                             ctx.wauth_client = None;
                                             SqlConnectionLoginState::TokenStreamRecv
                                         }
                                     }
-                                },
+                                }
                                 Some(TdsResponseToken::Done(done)) => {
                                     // the connection is ready 2 go, we're done with our initialization
                                     assert_eq!(done.status, DoneStatus::empty());
                                     break;
-                                },
+                                }
                                 Some(_) | None => SqlConnectionLoginState::TokenStreamRecv,
                             }
-                        },
+                        }
                         SqlConnectionLoginState::TokenStreamSend => {
                             try_ready!(ctx.transport.inner.poll_complete());
                             SqlConnectionLoginState::TokenStreamRecv
-                        },
+                        }
                         SqlConnectionLoginState::_Dummy(_) => unreachable!(),
-                        _ => panic!("SqlConnectionNew polled multiple times. item already consumed"),
+                        _ => {
+                            panic!("SqlConnectionNew polled multiple times. item already consumed")
+                        }
                     }
                 }
             }
         }
 
-        let ctx = self.context.take().expect("expected context after future completion");
+        let ctx = self.context
+            .take()
+            .expect("expected context after future completion");
         let conn = InnerSqlConnection {
             transport: ctx.transport,
             stmts: FnvHashMap::default(),
@@ -482,9 +528,11 @@ impl<I: Io + Send> BoxableIo for I {}
 
 /// Something that can be converted to an underlying IO
 pub trait ToIo<I: BoxableIo + Sized> {
-    type Result: Future<Item=I, Error=TdsError> + Send + Sized + 'static;
+    type Result: Future<Item = I, Error = TdsError> + Send + Sized + 'static;
 
-    fn to_io(self, handle: &Handle) -> Self::Result where Self: Sized;
+    fn to_io(self, handle: &Handle) -> Self::Result
+    where
+        Self: Sized;
 }
 
 impl<'a> ToIo<TcpStream> for &'a SocketAddr {
@@ -502,11 +550,13 @@ pub enum DynamicConnectionTarget {
 }
 
 impl ToIo<Box<BoxableIo>> for DynamicConnectionTarget {
-    type Result = Box<Future<Item=Box<BoxableIo>, Error=TdsError> + Send + 'static>;
+    type Result = Box<Future<Item = Box<BoxableIo>, Error = TdsError> + Send + 'static>;
 
     fn to_io(self, handle: &Handle) -> Self::Result {
         match self {
-            DynamicConnectionTarget::Tcp(ref addr) => Box::new(addr.to_io(handle).map(|x| Box::new(x) as Box<BoxableIo>)),
+            DynamicConnectionTarget::Tcp(ref addr) => {
+                Box::new(addr.to_io(handle).map(|x| Box::new(x) as Box<BoxableIo>))
+            }
         }
     }
 }
@@ -560,9 +610,9 @@ impl ConnectParams {
 /// A target address and connection settings = all that's required to connect to a SQL server
 ///
 /// # Example
-/// This allows to explicitly construct the connection parameters.  
-/// This might be useful for connecting to an underlying IO that isn't supported  
-/// within a connection string, such as through a custom protocol implementation.  
+/// This allows to explicitly construct the connection parameters.
+/// This might be useful for connecting to an underlying IO that isn't supported
+/// within a connection string, such as through a custom protocol implementation.
 ///
 /// (In theory it's slightly more efficient, since it should require less dynamic dispatch
 ///  but is also less flexible because the connection method has to be known at compile time)
@@ -580,7 +630,10 @@ impl ConnectParams {
 /// let handle = unsafe { ::std::mem::zeroed() };
 /// SqlConnection::connect(handle, (&addr, params));
 /// ```
-pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Sized + 'static {
+pub struct ConnectEndpoint<I, T: ToIo<I>>
+where
+    I: BoxableIo + Sized + 'static,
+{
     params: ConnectParams,
     target: T,
     _marker: PhantomData<*const I>,
@@ -589,16 +642,23 @@ pub struct ConnectEndpoint<I, T: ToIo<I>> where I: BoxableIo + Sized + 'static {
 /// Something that's able to construct all that's required to connect to an endpoint
 ///
 /// This is for example implemented for a connection string parser
-pub trait ToConnectEndpoint<I, T> where I: BoxableIo + Sized + 'static, T: ToIo<I> {
+pub trait ToConnectEndpoint<I, T>
+where
+    I: BoxableIo + Sized + 'static,
+    T: ToIo<I>,
+{
     fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<I, T>>;
 }
 
-impl<I: 'static, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams) where I: BoxableIo {
+impl<I: 'static, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams)
+where
+    I: BoxableIo,
+{
     fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<I, T>> {
         Ok(ConnectEndpoint {
             params: self.1,
             target: self.0,
-            _marker: PhantomData
+            _marker: PhantomData,
         })
     }
 }
@@ -606,8 +666,9 @@ impl<I: 'static, T: ToIo<I>> ToConnectEndpoint<I, T> for (T, ConnectParams) wher
 /// Parse connection strings
 /// https://msdn.microsoft.com/de-de/library/system.data.sqlclient.sqlconnection.connectionstring(v=vs.110).aspx
 impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str {
-    fn to_connect_endpoint(self) -> TdsResult<ConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget>>
-    {
+    fn to_connect_endpoint(
+        self,
+    ) -> TdsResult<ConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget>> {
         let mut input = &self[..];
 
         let mut target: Option<DynamicConnectionTarget> = None;
@@ -622,7 +683,9 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                 if let Some(i) = t.next() {
                     input = i;
                 } else {
-                    return Err(TdsError::Conversion("connection string expected key. expected `=` never found".into()))
+                    return Err(TdsError::Conversion(
+                        "connection string expected key. expected `=` never found".into(),
+                    ));
                 }
                 key.trim().to_lowercase()
             };
@@ -655,7 +718,9 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                     } else if input.is_empty() {
                         break;
                     } else {
-                        return Err(TdsError::Conversion("connection string: text after escape sequence".into()))
+                        return Err(TdsError::Conversion(
+                            "connection string: text after escape sequence".into(),
+                        ));
                     }
                 }
                 Cow::Owned(value)
@@ -672,61 +737,71 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                 match v.as_ref().trim().to_lowercase().as_str() {
                     "true" | "yes" => Ok(true),
                     "false" | "no" => Ok(false),
-                    _ => Err(TdsError::Conversion("connection string: not a valid boolean".into()))
+                    _ => Err(TdsError::Conversion(
+                        "connection string: not a valid boolean".into(),
+                    )),
                 }
             }
 
             match key.as_str() {
-                "server" => {
-                    if value.starts_with("tcp:") {
-                        let parts: Vec<_> = value[4..].split(',').collect();
-                        assert!(parts.len() <= 2 && !parts.is_empty());
-                        connect_params.host = parts[0].to_owned().into();
-                        let (host, port) = (parts[0], parts[1].parse::<u16>()?);
-                        connect_params.set_spn(&host, port);
-                        let addr = match (host, port).to_socket_addrs()?.nth(0) {
-                            None => return Err(TdsError::Conversion("connection string: could not resolve server address".into())),
-                            Some(x) => x,
-                        };
-                        target = Some(DynamicConnectionTarget::Tcp(addr));
-                    }
+                "server" => if value.starts_with("tcp:") {
+                    let parts: Vec<_> = value[4..].split(',').collect();
+                    assert!(parts.len() <= 2 && !parts.is_empty());
+                    connect_params.host = parts[0].to_owned().into();
+                    let (host, port) = (parts[0], parts[1].parse::<u16>()?);
+                    connect_params.set_spn(&host, port);
+                    let addr = match (host, port).to_socket_addrs()?.nth(0) {
+                        None => {
+                            return Err(TdsError::Conversion(
+                                "connection string: could not resolve server address".into(),
+                            ))
+                        }
+                        Some(x) => x,
+                    };
+                    target = Some(DynamicConnectionTarget::Tcp(addr));
                 },
-                "integratedsecurity" => {
-                    if value.to_lowercase() == "sspi" || parse_bool(&value)? {
-                        #[cfg(windows)] {
-                            connect_params.auth = AuthMethod::SSPI_SSO;
-                        }
-                        #[cfg(not(windows))] {
-                            connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
-                        }
+                "integratedsecurity" => if value.to_lowercase() == "sspi" || parse_bool(&value)? {
+                    #[cfg(windows)]
+                    {
+                        connect_params.auth = AuthMethod::SSPI_SSO;
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
                     }
                 },
                 "uid" | "username" | "user" => {
                     connect_params.auth = match connect_params.auth {
-                        AuthMethod::SqlServer(ref mut username, _) | AuthMethod::WinAuth(ref mut username, _) => {
+                        AuthMethod::SqlServer(ref mut username, _) |
+                        AuthMethod::WinAuth(ref mut username, _) => {
                             *username = value.into_owned().into();
                             continue;
-                        },
+                        }
                         #[cfg(windows)]
-                        AuthMethod::SSPI_SSO => AuthMethod::WinAuth(value.into_owned().into(), "".into()),
+                        AuthMethod::SSPI_SSO => {
+                            AuthMethod::WinAuth(value.into_owned().into(), "".into())
+                        }
                     };
-                },
+                }
                 "password" | "pwd" => {
                     connect_params.auth = match connect_params.auth {
-                        AuthMethod::SqlServer(_, ref mut password) | AuthMethod::WinAuth(_, ref mut password) => {
+                        AuthMethod::SqlServer(_, ref mut password) |
+                        AuthMethod::WinAuth(_, ref mut password) => {
                             *password = value.into_owned().into();
                             continue;
-                        },
+                        }
                         #[cfg(windows)]
-                        AuthMethod::SSPI_SSO => AuthMethod::WinAuth("".into(), value.into_owned().into()),
+                        AuthMethod::SSPI_SSO => {
+                            AuthMethod::WinAuth("".into(), value.into_owned().into())
+                        }
                     };
-                },
+                }
                 "database" => {
                     connect_params.target_db = Some(value.into_owned().into());
-                },
+                }
                 "trustservercertificate" => {
                     connect_params.trust_cert = parse_bool(value)?;
-                },
+                }
                 "encrypt" => {
                     connect_params.ssl = if parse_bool(value)? {
                         EncryptionLevel::Required
@@ -735,12 +810,19 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
                     } else {
                         EncryptionLevel::Off
                     };
-                },
-                _ => return Err(TdsError::Conversion(format!("connection string: unknown config option: {:?}", key).into())),
+                }
+                _ => {
+                    return Err(TdsError::Conversion(
+                        format!("connection string: unknown config option: {:?}", key).into(),
+                    ))
+                }
             }
         }
         if target.is_none() {
-            return Err(TdsError::Conversion("connection string pointing into the void. no connection endpoint specified.".into()))
+            return Err(TdsError::Conversion(
+                "connection string pointing into the void. no connection endpoint specified."
+                    .into(),
+            ));
         }
         let endpoint = ConnectEndpoint {
             params: connect_params,
@@ -754,7 +836,8 @@ impl<'a> ToConnectEndpoint<Box<BoxableIo>, DynamicConnectionTarget> for &'a str 
 impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Naive connection function for the SQL client
     pub fn connect<E, T: ToIo<I>>(handle: Handle, endpoint: E) -> SqlConnectionNew<I, T::Result>
-        where E: ToConnectEndpoint<I, T>
+    where
+        E: ToConnectEndpoint<I, T>,
     {
         let state = match endpoint.to_connect_endpoint() {
             Err(x) => SqlConnectionLoginState::Error(Some(x)),
@@ -763,32 +846,38 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
                 SqlConnectionLoginState::Connection(Some((stream, params)))
             }
         };
-       
+
         SqlConnectionNew {
             state,
-            context: None
+            context: None,
         }
     }
 
-    fn queue_sql_batch<'a, S>(&mut self, stmt: S) -> TdsResult<()> where S: Into<Cow<'a, str>> {
+    fn queue_sql_batch<'a, S>(&mut self, stmt: S) -> TdsResult<()>
+    where
+        S: Into<Cow<'a, str>>,
+    {
         let sql = stmt.into();
         let inner = &mut self.0;
 
-        let batch_packet = try!(protocol::build_sql_batch(&mut inner.transport, &sql));
-        try!(inner.transport.inner.queue_vec(batch_packet));
+        let batch_packet = protocol::build_sql_batch(&mut inner.transport, &sql)?;
+        inner.transport.inner.queue_vec(batch_packet)?;
 
         // attempt to send right now, if it works great, if not ready yet, it will be done later
         // simply ensures that data is sent as fast as possible
-        let _ = try!(inner.transport.inner.poll_complete());
+        let _ = inner.transport.inner.poll_complete()?;
         Ok(())
     }
 
-    fn simple_exec_internal<'a, Q, R: StmtResult<I>>(mut self, query: Q) -> ResultSetStream<I, R> where Q: Into<Cow<'a, str>> {
+    fn simple_exec_internal<'a, Q, R: StmtResult<I>>(mut self, query: Q) -> ResultSetStream<I, R>
+    where
+        Q: Into<Cow<'a, str>>,
+    {
         let result = self.queue_sql_batch(query);
 
         let ret = ResultSetStream::new(self);
         if let Err(err) = result {
-            return ret.error(err)
+            return ret.error(err);
         }
         ret
     }
@@ -800,7 +889,10 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// # Warning
     /// Do not use this with any user specified input.
     /// Please resort to prepared statements in order to prevent SQL-Injections.
-    pub fn simple_query<'a, Q>(self, query: Q) -> ResultSetStream<I, QueryStream<I>> where Q: Into<Cow<'a, str>> {
+    pub fn simple_query<'a, Q>(self, query: Q) -> ResultSetStream<I, QueryStream<I>>
+    where
+        Q: Into<Cow<'a, str>>,
+    {
         self.simple_exec_internal(query)
     }
 
@@ -810,11 +902,18 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Do not use this with any user specified input.
     /// Please resort to prepared statements in order to prevent SQL-Injections.
     /// You can access each resultset (in most cases only one) using [`for_each`](struct.ResultSetStream.html#method.for_each)
-    pub fn simple_exec<'a, Q>(self, query: Q) -> ResultSetStream<I, ExecFuture<I>> where Q: Into<Cow<'a, str>> {
+    pub fn simple_exec<'a, Q>(self, query: Q) -> ResultSetStream<I, ExecFuture<I>>
+    where
+        Q: Into<Cow<'a, str>>,
+    {
         self.simple_exec_internal(query)
     }
 
-    fn do_prepare_exec<'b>(&self, stmt: &Statement, params: &'b [&'b ToSql]) -> TokenRpcRequest<'b> {
+    fn do_prepare_exec<'b>(
+        &self,
+        stmt: &Statement,
+        params: &'b [&'b ToSql],
+    ) -> TokenRpcRequest<'b> {
         let mut param_str = String::with_capacity(10 * params.len());
 
         let mut params_meta = vec![
@@ -832,7 +931,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
                 name: Cow::Borrowed("stmt"),
                 flags: RpcStatusFlags::empty(),
                 value: ColumnData::String(stmt.sql.clone()),
-            }
+            },
         ];
 
         // determine the types from the given params
@@ -844,7 +943,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
             param_str.push_str(param.to_sql());
 
             params_meta.push(RpcParam {
-                name: Cow::Owned(format!("@P{}", i+1)),
+                name: Cow::Owned(format!("@P{}", i + 1)),
                 flags: RpcStatusFlags::empty(),
                 value: param.to_column_data(),
             });
@@ -871,7 +970,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         ];
         for (i, param) in params.iter().enumerate() {
             params_meta.push(RpcParam {
-                name: Cow::Owned(format!("@P{}", i+1)),
+                name: Cow::Owned(format!("@P{}", i + 1)),
                 flags: RpcStatusFlags::empty(),
                 value: param.to_column_data(),
             });
@@ -884,9 +983,16 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
-    fn internal_exec<R: StmtResult<I>>(mut self, stmt: Statement, params: &[&ToSql]) -> StmtStream<I, R> {
+    fn internal_exec<R: StmtResult<I>>(
+        mut self,
+        stmt: Statement,
+        params: &[&ToSql],
+    ) -> StmtStream<I, R> {
         // call sp_prepare (with valid handle) or sp_prepexec (initializer)
-        let (req, meta) = if let Some((handle, meta)) = stmt.get_handle_for(&self, &params.iter().map(|x| x.to_sql()).collect::<Vec<_>>()) {
+        let (req, meta) = if let Some((handle, meta)) = stmt.get_handle_for(
+            &self,
+            &params.iter().map(|x| x.to_sql()).collect::<Vec<_>>(),
+        ) {
             (self.do_exec(handle, params), meta)
         } else {
             (self.do_prepare_exec(&stmt, params), None)
@@ -904,26 +1010,35 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Execute a prepared statement and return each resultset and their associated rows
     /// Usually only one resultset will be interesting for which you can use
     /// [`for_each_row`](struct.StmtStream.html#method.for_each_row)
-    pub fn query<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> StmtStream<I, QueryStream<I>> {
+    pub fn query<S: Into<Statement>>(
+        self,
+        stmt: S,
+        params: &[&ToSql],
+    ) -> StmtStream<I, QueryStream<I>> {
         self.internal_exec(stmt.into(), params)
     }
 
     /// Execute a prepared statement and return the affected rows for each resultset
     ///
     /// You can access each resultset (in most cases only one) using [`for_each`](struct.StmtStream.html#method.for_each)
-    pub fn exec<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> StmtStream<I, ExecFuture<I>> {
+    pub fn exec<S: Into<Statement>>(
+        self,
+        stmt: S,
+        params: &[&ToSql],
+    ) -> StmtStream<I, ExecFuture<I>> {
         self.internal_exec(stmt.into(), params)
     }
 
     /// Start a transaction
-    pub fn transaction(self) -> Box<Future<Item=Transaction<I>, Error=TdsError>> {
-        Box::new(self
-            .simple_exec("set implicit_transactions on")
-            .single()
-            .and_then(|(result, conn)| {
-                assert_eq!(result, 0);
-                Ok(new_transaction(conn))
-            }))
+    pub fn transaction(self) -> Box<Future<Item = Transaction<I>, Error = TdsError>> {
+        Box::new(
+            self.simple_exec("set implicit_transactions on")
+                .single()
+                .and_then(|(result, conn)| {
+                    assert_eq!(result, 0);
+                    Ok(new_transaction(conn))
+                }),
+        )
     }
 
     /// Create a statement associated to a given SQL which can be executed later on
@@ -932,7 +1047,10 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// The statement is prepared with the sql-types of the given parameters.
     /// It will only be reprepared if the given parameter's rust-types resolve to
     /// different sql-types as given for the first execution.
-    pub fn prepare<S>(&self, stmt: S) -> Statement where S: Into<Cow<'static, str>> {
+    pub fn prepare<S>(&self, stmt: S) -> Statement
+    where
+        S: Into<Cow<'static, str>>,
+    {
         Statement::new(stmt.into())
     }
 }
@@ -945,13 +1063,15 @@ mod tests {
     use tokio_core::reactor::Core;
     use query::ExecFuture;
     use stmt::ResultStreamExt;
-    use super::{BoxableIo, SqlConnection, Transaction, TdsError};
+    use super::{BoxableIo, SqlConnection, TdsError, Transaction};
 
     /// allow to modify the
     pub fn connection_string() -> String {
         // TrustServerCertificate is just for local development, do not use on production!
-        env::var("TIBERIUS_TEST_CONNECTION_STRING")
-            .unwrap_or("server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned())
+        env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+            "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true"
+                .to_owned(),
+        )
     }
 
     pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
@@ -962,14 +1082,21 @@ mod tests {
     #[test]
     fn str_to_connect_endpoint() {
         use ToConnectEndpoint;
-        use super::{DynamicConnectionTarget, AuthMethod};
+        use super::{AuthMethod, DynamicConnectionTarget};
         let ep = "server = tcp:127.0.0.1,1234 ; user=\"Test'\"\"User\";password='1''2\"3;4 ' ; integratedSecurity = false"
-            .to_connect_endpoint().unwrap();
+            .to_connect_endpoint()
+            .unwrap();
 
-        assert_eq!(ep.target, DynamicConnectionTarget::Tcp("127.0.0.1:1234".parse().unwrap()));
+        assert_eq!(
+            ep.target,
+            DynamicConnectionTarget::Tcp("127.0.0.1:1234".parse().unwrap())
+        );
 
         let p = ep.params;
-        assert_eq!(p.auth, AuthMethod::SqlServer("Test'\"User".into(), "1'2\"3;4 ".into()));
+        assert_eq!(
+            p.auth,
+            AuthMethod::SqlServer("Test'\"User".into(), "1'2\"3;4 ".into())
+        );
     }
 
     #[test]
@@ -979,7 +1106,9 @@ mod tests {
 
         let limit = 5i32;
         let post_sql = format!("where II<{}", limit);
-        let sql = (1..2*limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| acc + &format!("union select {} ", x)) + ") U " + &post_sql;
+        let sql = (1..2 * limit).fold("select II FROM (select 0 as II ".to_owned(), |acc, x| {
+            acc + &format!("union select {} ", x)
+        }) + ") U " + &post_sql;
         let query = c1.simple_query(sql);
         let mut i = 0;
         {
@@ -1003,8 +1132,20 @@ mod tests {
         let query = c1.simple_query(sql);
         let future = query.for_each_row(|x| {
             let expected_results: Vec<Option<i32>> = vec![
-                None, None, None, None, Some(1),
-                None, None, None, Some(2), None, None, Some(3), None, Some(4)
+                None,
+                None,
+                None,
+                None,
+                Some(1),
+                None,
+                None,
+                None,
+                Some(2),
+                None,
+                None,
+                Some(3),
+                None,
+                Some(4),
             ];
             let results: Vec<Option<i32>> = (0..expected_results.len()).map(|i| x.get(i)).collect();
             assert_eq!(results, expected_results);
@@ -1013,7 +1154,13 @@ mod tests {
         lp.run(future).unwrap();
     }
 
-    fn helper_ddl_exec<I: BoxableIo, R: StateStream<Item=ExecFuture<I>, State=SqlConnection<I>, Error=TdsError>>(exec: R, lp: &mut Core) {
+    fn helper_ddl_exec<
+        I: BoxableIo,
+        R: StateStream<Item = ExecFuture<I>, State = SqlConnection<I>, Error = TdsError>,
+    >(
+        exec: R,
+        lp: &mut Core,
+    ) {
         let mut i = 0;
         {
             let future = exec.and_then(|x| x).for_each(|_| {
@@ -1032,7 +1179,10 @@ mod tests {
         let c1 = new_connection(&mut lp);
 
         let future = c1.simple_query("select SPACE(8000)").for_each_row(|row| {
-            assert_eq!(row.get::<_, &str>(0).as_bytes(), vec![b' '; 8000].as_slice());
+            assert_eq!(
+                row.get::<_, &str>(0).as_bytes(),
+                vec![b' '; 8000].as_slice()
+            );
             Ok(())
         });
         lp.run(future).unwrap();
@@ -1043,11 +1193,18 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let c1 = new_connection(&mut lp);
 
-        let future = c1.simple_query("select SPACE(8000), SPACE(8000)").for_each_row(|row| {
-            assert_eq!(row.get::<_, &str>(0).as_bytes(), vec![b' '; 8000].as_slice());
-            assert_eq!(row.get::<_, &str>(1).as_bytes(), vec![b' '; 8000].as_slice());
-            Ok(())
-        });
+        let future = c1.simple_query("select SPACE(8000), SPACE(8000)")
+            .for_each_row(|row| {
+                assert_eq!(
+                    row.get::<_, &str>(0).as_bytes(),
+                    vec![b' '; 8000].as_slice()
+                );
+                assert_eq!(
+                    row.get::<_, &str>(1).as_bytes(),
+                    vec![b' '; 8000].as_slice()
+                );
+                Ok(())
+            });
         lp.run(future).unwrap();
     }
 
@@ -1079,7 +1236,10 @@ mod tests {
         let mut conn = new_connection(&mut lp);
 
         // prepare once
-        let sql = (1..10).map(|_| "SELECT 1").collect::<Vec<_>>().join(" UNION ");
+        let sql = (1..10)
+            .map(|_| "SELECT 1")
+            .collect::<Vec<_>>()
+            .join(" UNION ");
         let query = conn.prepare(sql);
 
         // prepare & execute
@@ -1097,16 +1257,13 @@ mod tests {
     fn prepared_select_reexecute_intermediate_query() {
         let mut lp = Core::new().unwrap();
         let conn = new_connection(&mut lp);
-        let job = 
-            conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
-                .for_each_row(|_| Ok(()))
-                .and_then(|conn| {
-                    conn.query("SELECT 0", &[])
-                        .for_each_row(|_| Ok(()))
-                }).and_then(|conn| {
-                    conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
-                        .for_each_row(|_| Ok(()))
-                });
+        let job = conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
+            .for_each_row(|_| Ok(()))
+            .and_then(|conn| conn.query("SELECT 0", &[]).for_each_row(|_| Ok(())))
+            .and_then(|conn| {
+                conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
+                    .for_each_row(|_| Ok(()))
+            });
         lp.run(job).unwrap();
     }
 
@@ -1115,9 +1272,8 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let c1 = new_connection(&mut lp);
 
-        let future = c1.query("SELECT TOP 0 NULL AS MyValue", &[]).for_each_row(|_| {
-            unreachable!()
-        });
+        let future = c1.query("SELECT TOP 0 NULL AS MyValue", &[])
+            .for_each_row(|_| unreachable!());
         lp.run(future).unwrap();
     }
 
@@ -1136,37 +1292,51 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let connection_string = connection_string();
 
-        fn check_test_value<I: BoxableIo + 'static>(conn: SqlConnection<I>, value: i32) 
-            -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> 
-        {
-            Box::new(conn
-                .simple_query("SELECT test FROM #temp;")
-                .for_each_row(move |row| {
+        fn check_test_value<I: BoxableIo + 'static>(
+            conn: SqlConnection<I>,
+            value: i32,
+        ) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
+            Box::new(conn.simple_query("SELECT test FROM #temp;").for_each_row(
+                move |row| {
                     let val: i32 = row.get(0);
                     assert_eq!(val, value);
                     Ok(())
-                }))
+                },
+            ))
         }
 
-        fn update_test_value<I: BoxableIo + 'static>(transaction: Transaction<I>, commit: bool)
-            -> Box<Future<Item=SqlConnection<I>, Error=TdsError>> 
-        {
-            Box::new(transaction
-                .simple_exec("UPDATE #Temp SET test=44;").single()
-                .and_then(|(_, trans)| trans.simple_query("SELECT test FROM #Temp;").for_each_row(|row| {
-                    let val: i32 = row.get(0);
-                    assert_eq!(val, 44i32);
-                    Ok(())
-                }))
-                .and_then(move |trans| if commit {
-                    trans.commit()
-                } else {
-                    trans.rollback()
-                }))
+        fn update_test_value<I: BoxableIo + 'static>(
+            transaction: Transaction<I>,
+            commit: bool,
+        ) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
+            Box::new(
+                transaction
+                    .simple_exec("UPDATE #Temp SET test=44;")
+                    .single()
+                    .and_then(|(_, trans)| {
+                        trans
+                            .simple_query("SELECT test FROM #Temp;")
+                            .for_each_row(|row| {
+                                let val: i32 = row.get(0);
+                                assert_eq!(val, 44i32);
+                                Ok(())
+                            })
+                    })
+                    .and_then(move |trans| if commit {
+                        trans.commit()
+                    } else {
+                        trans.rollback()
+                    }),
+            )
         }
 
         let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
-            .and_then(|conn| conn.simple_exec("CREATE TABLE #Temp(test int); INSERT INTO #Temp (test) VALUES (42);").and_then(|r| r).collect())
+            .and_then(|conn| {
+                conn.simple_exec(
+                    "CREATE TABLE #Temp(test int); INSERT INTO #Temp (test) VALUES (42);",
+                ).and_then(|r| r)
+                    .collect()
+            })
             .and_then(|(_, conn)| conn.transaction())
             .and_then(|trans| update_test_value(trans, false))
             .and_then(|conn| check_test_value(conn, 42))
@@ -1181,22 +1351,30 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let connection_string = connection_string();
 
-        let future = SqlConnection::connect(lp.handle(), connection_string.as_str()).and_then(|conn| {
-            ::futures::finished((conn.prepare("SELECT @P1 + @P2"), conn))
-        }).and_then(|(stmt, conn)| {
-            fn handle_row(row: ::query::QueryRow) -> ::TdsResult<()> {
-                let val: i32 = row.get(0);
-                assert_eq!(val, 3i32);
-                Ok(())
-            }
-            // TODO: figure out some syntax sugar here, -> doc tests
-            conn
-                .query(&stmt, &[&1i32, &2i32]).for_each_row(handle_row)
-                .map(|conn| (conn, stmt))
-                .and_then(|(conn, stmt)| conn.query(&stmt, &[&2i32, &1i32]).for_each_row(handle_row).map(|conn| (conn, stmt)))
-                .and_then(|(conn, stmt)| conn.query(&stmt, &[&4i32, &-1i32]).for_each_row(handle_row))
-                .map(|x| x.0)
-        });
+        let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
+            .and_then(|conn| {
+                ::futures::finished((conn.prepare("SELECT @P1 + @P2"), conn))
+            })
+            .and_then(|(stmt, conn)| {
+                fn handle_row(row: ::query::QueryRow) -> ::TdsResult<()> {
+                    let val: i32 = row.get(0);
+                    assert_eq!(val, 3i32);
+                    Ok(())
+                }
+                // TODO: figure out some syntax sugar here, -> doc tests
+                conn.query(&stmt, &[&1i32, &2i32])
+                    .for_each_row(handle_row)
+                    .map(|conn| (conn, stmt))
+                    .and_then(|(conn, stmt)| {
+                        conn.query(&stmt, &[&2i32, &1i32])
+                            .for_each_row(handle_row)
+                            .map(|conn| (conn, stmt))
+                    })
+                    .and_then(|(conn, stmt)| {
+                        conn.query(&stmt, &[&4i32, &-1i32]).for_each_row(handle_row)
+                    })
+                    .map(|x| x.0)
+            });
         lp.run(future).unwrap();
     }
 }

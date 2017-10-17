@@ -6,7 +6,7 @@ use std::mem;
 use futures::Sink;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use transport::{Io, TdsTransport, TdsTransportInner};
-use {TdsError, TdsResult, FromUint, DRIVER_VERSION};
+use {FromUint, TdsError, TdsResult, DRIVER_VERSION};
 
 /// The amount of bytes a packet header consists of
 pub const HEADER_BYTES: usize = 8;
@@ -39,8 +39,20 @@ pub enum PacketType {
     SSPI = 17,
     PreLogin = 18,
 }
-uint_to_enum!(PacketType, SQLBatch, PreTDSv7Login, RPC, TabularResult, AttentionSignal,
-            BulkLoad, Fat, TransactionManagerReq, TDSv7Login, SSPI, PreLogin);
+uint_to_enum!(
+    PacketType,
+    SQLBatch,
+    PreTDSv7Login,
+    RPC,
+    TabularResult,
+    AttentionSignal,
+    BulkLoad,
+    Fat,
+    TransactionManagerReq,
+    TDSv7Login,
+    SSPI,
+    PreLogin
+);
 
 /// the message state [2.2.3.1.2]
 #[repr(u8)]
@@ -55,7 +67,14 @@ pub enum PacketStatus {
     /// [client to server ONLY] [>= TDSv7.3]
     ResetConnectionSkipTran = 0x10,
 }
-uint_to_enum!(PacketStatus, NormalMessage, EndOfMessage, IgnoreEvent, ResetConnection, ResetConnectionSkipTran);
+uint_to_enum!(
+    PacketStatus,
+    NormalMessage,
+    EndOfMessage,
+    IgnoreEvent,
+    ResetConnection,
+    ResetConnectionSkipTran
+);
 
 /// packet header consisting of 8 bytes [2.2.3.1]
 #[derive(Debug)]
@@ -91,24 +110,26 @@ impl PacketHeader {
 impl PacketHeader {
     pub fn serialize(&self, target: &mut [u8]) -> io::Result<()> {
         let mut writer = Cursor::new(target);
-        try!(writer.write_u8(self.ty as u8));
-        try!(writer.write_u8(self.status as u8));
-        try!(writer.write_u16::<BigEndian>(self.length));
-        try!(writer.write_u16::<BigEndian>(self.spid));
-        try!(writer.write_u8(self.id));
+        writer.write_u8(self.ty as u8)?;
+        writer.write_u8(self.status as u8)?;
+        writer.write_u16::<BigEndian>(self.length)?;
+        writer.write_u16::<BigEndian>(self.spid)?;
+        writer.write_u8(self.id)?;
         writer.write_u8(self.window)
     }
 
     pub fn unserialize(buf: &[u8]) -> TdsResult<PacketHeader> {
         let mut cursor = Cursor::new(buf);
         Ok(PacketHeader {
-            ty: try!(PacketType::from_u8(try!(cursor.read_u8())).ok_or(TdsError::Protocol("header: invalid packet type".into()))),
-            status: try!(PacketStatus::from_u8(try!(cursor.read_u8())).ok_or(TdsError::Protocol("header: invalid packet status".into()))),
-            length: try!(cursor.read_u16::<BigEndian>()),
-            spid: try!(cursor.read_u16::<BigEndian>()),
-            id: try!(cursor.read_u8()),
-            window: try!(cursor.read_u8()),
-         })
+            ty: PacketType::from_u8(cursor.read_u8()?)
+                .ok_or(TdsError::Protocol("header: invalid packet type".into()))?,
+            status: PacketStatus::from_u8(cursor.read_u8()?)
+                .ok_or(TdsError::Protocol("header: invalid packet status".into()))?,
+            length: cursor.read_u16::<BigEndian>()?,
+            spid: cursor.read_u16::<BigEndian>()?,
+            id: cursor.read_u8()?,
+            window: cursor.read_u8()?,
+        })
     }
 }
 
@@ -124,8 +145,16 @@ pub enum FeatureLevel {
     /// 2012, 2014, 2016
     SqlServerN = 0x74000004,
 }
-uint_to_enum!(FeatureLevel, SqlServerV7, SqlServer2000, SqlServer2000Sp1, SqlServer2005, SqlServer2008,
-    SqlServer2008R2, SqlServerN);
+uint_to_enum!(
+    FeatureLevel,
+    SqlServerV7,
+    SqlServer2000,
+    SqlServer2000Sp1,
+    SqlServer2005,
+    SqlServer2008,
+    SqlServer2008R2,
+    SqlServerN
+);
 
 /// The configured encryption level specifying if encryption is required
 #[repr(u8)]
@@ -181,26 +210,26 @@ impl SerializeMessage for PreloginMessage {
         // write the offsets
         {
             let mut write_option = |token: u8, length: u16| -> io::Result<()> {
-                try!(cursor.write_u8(token));
-                try!(cursor.write_u16::<BigEndian>(data_offset));
-                try!(cursor.write_u16::<BigEndian>(length));
+                cursor.write_u8(token)?;
+                cursor.write_u16::<BigEndian>(data_offset)?;
+                cursor.write_u16::<BigEndian>(length)?;
                 data_offset += length;
                 Ok(())
             };
 
-            try!(write_option(0x00, 0x04 + 0x02)); // version + subbuild
-            try!(write_option(0x01, 0x01)); // encryption
-            try!(write_option(0x03, 0x04)); // threadid
-            try!(write_option(0x04, 0x01)); // MARS
+            write_option(0x00, 0x04 + 0x02)?; // version + subbuild
+            write_option(0x01, 0x01)?; // encryption
+            write_option(0x03, 0x04)?; // threadid
+            write_option(0x04, 0x01)?; // MARS
         }
-        try!(cursor.write_u8(0xff));
+        cursor.write_u8(0xff)?;
 
         // write the data (body of the options)
-        try!(cursor.write_u32::<BigEndian>(self.version as u32));
-        try!(cursor.write_u16::<BigEndian>(self.sub_build as u16));
-        try!(cursor.write_u8(self.encryption as u8));
-        try!(cursor.write_u32::<BigEndian>(self.thread_id));
-        try!(cursor.write_u8(self.mars as u8));
+        cursor.write_u32::<BigEndian>(self.version as u32)?;
+        cursor.write_u16::<BigEndian>(self.sub_build as u16)?;
+        cursor.write_u8(self.encryption as u8)?;
+        cursor.write_u32::<BigEndian>(self.thread_id)?;
+        cursor.write_u8(self.mars as u8)?;
 
         // build the header
         let header = PacketHeader {
@@ -209,7 +238,7 @@ impl SerializeMessage for PreloginMessage {
             ..PacketHeader::new(cursor.get_ref().len(), ctx.next_id())
         };
         let mut vec = cursor.into_inner();
-        try!(header.serialize(&mut vec));
+        header.serialize(&mut vec)?;
         Ok(vec)
     }
 }
@@ -221,13 +250,13 @@ impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
 
         // read all options
         loop {
-            let token = try!(cursor.read_u8());
+            let token = cursor.read_u8()?;
             // read until terminator
             if token == 0xff {
                 break;
             }
-            let offset = try!(cursor.read_u16::<BigEndian>());
-            let length = try!(cursor.read_u16::<BigEndian>());
+            let offset = cursor.read_u16::<BigEndian>()?;
+            let length = cursor.read_u16::<BigEndian>()?;
             let old_pos = cursor.position();
             cursor.set_position(offset as u64);
             // verify whether the server acts in accordance to what we requested
@@ -236,18 +265,19 @@ impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
             match token {
                 // version
                 0 => {
-                    ret.version = try!(cursor.read_u32::<BigEndian>());
-                    ret.sub_build = try!(cursor.read_u16::<BigEndian>());
-                },
+                    ret.version = cursor.read_u32::<BigEndian>()?;
+                    ret.sub_build = cursor.read_u16::<BigEndian>()?;
+                }
                 // encryption
                 1 => {
-                    let encrypt = try!(cursor.read_u8());
-                    ret.encryption = try!(EncryptionLevel::from_u8(encrypt)
-                        .ok_or(TdsError::Protocol(format!("invalid encryption value: {}", encrypt).into())));
-                },
+                    let encrypt = cursor.read_u8()?;
+                    ret.encryption = EncryptionLevel::from_u8(encrypt).ok_or(TdsError::Protocol(
+                        format!("invalid encryption value: {}", encrypt).into()
+                    ))?;
+                }
                 3 => debug_assert_eq!(length, 0), // threadid
                 4 => debug_assert_eq!(length, 1), // mars
-                _ => panic!("unsupported prelogin token: {}", token)
+                _ => panic!("unsupported prelogin token: {}", token),
             }
             cursor.set_position(old_pos);
         }
@@ -366,20 +396,20 @@ impl<'a> LoginMessage<'a> {
             type_flags: LoginTypeFlags::empty(),
             option_flags_3: LoginOptionFlags3::SUPPORT_UNKNOWN_COLL,
             client_timezone: 0, //TODO
-            client_lcid: 0, // TODO
+            client_lcid: 0,     // TODO
             hostname: "".into(),
             username: "".into(),
             password: "".into(),
             app_name: "".into(),
             server_name: "".into(),
-            db_name:  "".into(),
+            db_name: "".into(),
         }
     }
 }
 
 impl<'a> SerializeMessage for LoginMessage<'a> {
     fn serialize_message<I: Io>(&self, trans: &mut TdsTransport<I>) -> io::Result<Vec<u8>> {
-        let mut cursor = Cursor::new(Vec::with_capacity(1<<9));
+        let mut cursor = Cursor::new(Vec::with_capacity(1 << 9));
 
         cursor.set_position(HEADER_BYTES as u64 + 4);
 
@@ -390,19 +420,34 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             self.option_flags_2 & !LoginOptionFlags2::INTEGRATED_SECURITY
         };
         // write..
-        for val in &[self.tds_version as u32, self.packet_size, self.client_prog_ver, self.client_pid, self.connection_id] {
-            try!(cursor.write_u32::<LittleEndian>(*val));
+        for val in &[
+            self.tds_version as u32,
+            self.packet_size,
+            self.client_prog_ver,
+            self.client_pid,
+            self.connection_id,
+        ] {
+            cursor.write_u32::<LittleEndian>(*val)?;
         }
-        for val in &[self.option_flags_1.bits(), option_flags2.bits(), self.type_flags.bits(), self.option_flags_3.bits()] {
-            try!(cursor.write_u8(*val));
+        for val in &[
+            self.option_flags_1.bits(),
+            option_flags2.bits(),
+            self.type_flags.bits(),
+            self.option_flags_3.bits(),
+        ] {
+            cursor.write_u8(*val)?;
         }
         for val in &[self.client_timezone as u32, self.client_lcid] {
-            try!(cursor.write_u32::<LittleEndian>(*val));
+            cursor.write_u32::<LittleEndian>(*val)?;
         }
 
         // variable length data (OffsetLength)
         let var_data = [
-            &self.hostname, &self.username, &self.password, &self.app_name, &self.server_name,
+            &self.hostname,
+            &self.username,
+            &self.password,
+            &self.app_name,
+            &self.server_name,
             &"".into(), // 5. ibExtension
             &"".into(), // ibCltIntName
             &"".into(), // ibLanguage
@@ -413,28 +458,28 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             &"".into(), // ibChangePassword
         ];
 
-        let mut data_offset = cursor.position() as usize + var_data.len() * 2*2 + 6;
+        let mut data_offset = cursor.position() as usize + var_data.len() * 2 * 2 + 6;
 
         for (i, value) in var_data.into_iter().enumerate() {
             // write the client ID (created from the MAC address)
             if i == 9 {
-                try!(cursor.write_u32::<LittleEndian>(0)); //TODO:
-                try!(cursor.write_u16::<LittleEndian>(42)); //TODO: generate real client id
+                cursor.write_u32::<LittleEndian>(0)?; //TODO:
+                cursor.write_u16::<LittleEndian>(42)?; //TODO: generate real client id
                 continue;
             }
-            try!(cursor.write_u16::<LittleEndian>((data_offset - HEADER_BYTES) as u16));
+            cursor.write_u16::<LittleEndian>((data_offset - HEADER_BYTES) as u16)?;
             if i == 10 {
                 let length = if let Some(ref bytes) = self.integrated_security {
                     let bak = cursor.position();
                     cursor.set_position(data_offset as u64);
-                    try!(cursor.write_all(bytes));
+                    cursor.write_all(bytes)?;
                     data_offset += bytes.len();
                     cursor.set_position(bak);
                     bytes.len()
                 } else {
                     0
                 };
-                try!(cursor.write_u16::<LittleEndian>(length as u16));
+                cursor.write_u16::<LittleEndian>(length as u16)?;
                 continue;
             }
 
@@ -442,7 +487,7 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             let bak = cursor.position();
             cursor.set_position(data_offset as u64);
             for codepoint in value.encode_utf16() {
-                try!(cursor.write_u16::<LittleEndian>(codepoint));
+                cursor.write_u16::<LittleEndian>(codepoint)?;
             }
             let new_position = cursor.position() as usize;
             // prepare the password in MS-fashion
@@ -459,14 +504,14 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
 
             // microsoft being really consistent here... using byte offsets with utf16-length's
             // sounds like premature optimization
-            try!(cursor.write_u16::<LittleEndian>(length as u16 / 2));
+            cursor.write_u16::<LittleEndian>(length as u16 / 2)?;
         }
         // cbSSPILong
-        try!(cursor.write_u32::<LittleEndian>(0));
+        cursor.write_u32::<LittleEndian>(0)?;
 
         cursor.set_position(data_offset as u64);
         // FeatureExt: unsupported for now, simply write a terminator
-        try!(cursor.write_u8(0xFF));
+        cursor.write_u8(0xFF)?;
 
         // build the header
         let header = PacketHeader {
@@ -475,12 +520,12 @@ impl<'a> SerializeMessage for LoginMessage<'a> {
             ..PacketHeader::new(cursor.get_ref().len(), trans.next_id())
         };
         cursor.set_position(HEADER_BYTES as u64);
-        try!(cursor.write_u32::<LittleEndian>(header.length as u32 - HEADER_BYTES as u32));
+        cursor.write_u32::<LittleEndian>(header.length as u32 - HEADER_BYTES as u32)?;
         let mut buf = cursor.into_inner();
-        try!(header.serialize(&mut buf));
+        header.serialize(&mut buf)?;
 
         Ok(buf)
-     }
+    }
 }
 
 pub struct SspiMessage(pub Vec<u8>);
@@ -489,7 +534,7 @@ impl SerializeMessage for SspiMessage {
     fn serialize_message<I: Io>(&self, ctx: &mut TdsTransport<I>) -> io::Result<Vec<u8>> {
         let len = HEADER_BYTES + self.0.len();
         let mut buf: Vec<u8> = vec![0; len];
-        try!((&mut buf[HEADER_BYTES..]).write_all(&self.0));
+        (&mut buf[HEADER_BYTES..]).write_all(&self.0)?;
 
         // build the header
         let header = PacketHeader {
@@ -497,7 +542,7 @@ impl SerializeMessage for SspiMessage {
             status: PacketStatus::EndOfMessage,
             ..PacketHeader::new(len, ctx.next_id())
         };
-        try!(header.serialize(&mut buf));
+        header.serialize(&mut buf)?;
         Ok(buf)
     }
 }
@@ -512,11 +557,11 @@ pub enum AllHeaderTy {
 }
 
 pub fn write_trans_descriptor<W: Write>(mut wr: W, id: u64) -> io::Result<()> {
-    try!(wr.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32));
-    try!(wr.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32 - 4));
-    try!(wr.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16));
+    wr.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32)?;
+    wr.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32 - 4)?;
+    wr.write_u16::<LittleEndian>(AllHeaderTy::TransactionDescriptor as u16)?;
     // transaction descriptor
-    try!(wr.write_u64::<LittleEndian>(id));
+    wr.write_u64::<LittleEndian>(id)?;
     // outstanding requests (TransactionDescrHeader)
     wr.write_u32::<LittleEndian>(1)
 }
@@ -527,11 +572,11 @@ pub fn build_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::R
     let mut cursor = Cursor::new(vec);
     cursor.set_position(8);
 
-    try!(write_trans_descriptor(&mut cursor, trans.transaction));
+    write_trans_descriptor(&mut cursor, trans.transaction)?;
 
     // the SQL query (after ALL_HEADERS)
     for byte in query.encode_utf16() {
-        try!(cursor.write_u16::<LittleEndian>(byte));
+        cursor.write_u16::<LittleEndian>(byte)?;
     }
     // build the packet header
     let header = PacketHeader {
@@ -541,7 +586,7 @@ pub fn build_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::R
     };
     cursor.set_position(0);
     let mut buf = cursor.into_inner();
-    try!(header.serialize(&mut buf));
+    header.serialize(&mut buf)?;
     Ok(buf)
 }
 
@@ -588,7 +633,7 @@ impl<'a, I: Io> Write for PacketWriter<'a, I> {
             let (fitting, next) = pending.split_at(cmp::min(max_bytes, pending.len()));
             self.buf.extend_from_slice(fitting);
             if self.buf.capacity() <= self.buf.len() {
-                try!(self.flush());
+                self.flush()?;
             }
             pending = next;
         }
@@ -601,10 +646,10 @@ impl<'a, I: Io> Write for PacketWriter<'a, I> {
             // update the packet header
             self.header.id = self.transport.next_id();
             self.header.length = buf.len() as u16;
-            try!(self.header.serialize(&mut buf));
-            try!(self.transport.queue_vec(buf));
+            self.header.serialize(&mut buf)?;
+            self.transport.queue_vec(buf)?;
         }
-        let _ = try!(self.transport.poll_complete());
+        let _ = self.transport.poll_complete()?;
         Ok(())
     }
 }
@@ -630,9 +675,10 @@ impl<W: Write> io::Write for PLPChunkWriter<W> {
 
             // we can produce a whole chunk => write to the underlying buf
             if fitting.len() == free_bytes {
-                try!(self.target.write_u32::<LittleEndian>(self.buf.capacity() as u32));
-                try!(self.target.write_all(&self.buf));
-                try!(self.target.write_all(fitting));
+                self.target
+                    .write_u32::<LittleEndian>(self.buf.capacity() as u32)?;
+                self.target.write_all(&self.buf)?;
+                self.target.write_all(fitting)?;
                 self.buf.truncate(0);
             } else {
                 self.buf.extend_from_slice(fitting);
@@ -644,8 +690,8 @@ impl<W: Write> io::Write for PLPChunkWriter<W> {
 
     fn flush(&mut self) -> io::Result<()> {
         if !self.buf.is_empty() {
-            try!(self.target.write_u32::<LittleEndian>(self.buf.len() as u32));
-            try!(self.target.write_all(&self.buf));
+            self.target.write_u32::<LittleEndian>(self.buf.len() as u32)?;
+            self.target.write_all(&self.buf)?;
             self.buf.truncate(0);
         }
         Ok(())
