@@ -619,7 +619,7 @@ impl<I: Io> TdsTransportInner<I> {
         let data: Vec<u16> = vec![0u16; len]
             .into_iter()
             .map(|_| self.read_u16::<LittleEndian>())
-            .collect()?;
+            .collect::<Result<_, _>>()?;
         let bytes = String::from_utf16(&data[..])?.into_bytes();
         Ok(Async::Ready(Str(bytes.into())))
     }
