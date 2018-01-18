@@ -352,8 +352,9 @@ impl<'a> ColumnData<'a> {
                     }
                     VarLenType::Intn => {
                         assert!(collation.is_none());
-                        assert_eq!(trans.inner.read_u8()? as usize, *len);
-                        match *len {
+                        let recv_len = trans.inner.read_u8()? as usize;
+                        match recv_len {
+                            0 => ColumnData::None,
                             1 => ColumnData::I8(trans.inner.read_i8()?),
                             2 => ColumnData::I16(trans.inner.read_i16::<LittleEndian>()?),
                             4 => ColumnData::I32(trans.inner.read_i32::<LittleEndian>()?),
@@ -705,7 +706,10 @@ impl<'a> ColumnData<'a> {
                 assert_eq!(tmp[3], 0);
                 target.write_all(&tmp[0..3])?;
             }
-            _ => unimplemented!(),
+            ColumnData::None => {
+                target.write_all(&[FixedLenType::Null as u8])?;
+            }
+            _ => unimplemented!()
         }
         Ok(())
     }
@@ -784,6 +788,22 @@ impl<'a> ToSql for &'a str {
     }
 }
 
+impl<T: ToSql> ToSql for Option<T> {
+    fn to_sql(&self) -> &'static str {
+        self.as_ref()
+            .map(ToSql::to_sql)
+            .unwrap_or("int")
+    }
+}
+
+impl<T: ToSql> ToColumnData for Option<T> {
+    fn to_column_data(&self) -> ColumnData {
+        self.as_ref()
+            .map(ToColumnData::to_column_data)
+            .unwrap_or(ColumnData::None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tokio_core::reactor::Core;
@@ -830,7 +850,9 @@ mod tests {
         // test a string which is bigger than nvarchar(8000) and is sent as nvarchar(max) instead
         test_str_big: &str => iter::repeat("haha").take(2500).collect::<String>().as_str(),
         // TODO: Guid parsing
-        test_guid: &Guid => &Guid::from_bytes(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])
+        test_guid: &Guid => &Guid::from_bytes(&[0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]),
+        test_null_none: Option<&str> => None as Option<&str>,
+        test_null_some: Option<&str> => Some("hello world")
     );
 
     #[test]
