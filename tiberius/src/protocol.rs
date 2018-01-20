@@ -567,27 +567,23 @@ pub fn write_trans_descriptor<W: Write>(mut wr: W, id: u64) -> io::Result<()> {
 }
 
 /// build an SQL batch packet
-pub fn build_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::Result<Vec<u8>> {
-    let vec = vec![0u8; HEADER_BYTES + ALL_HEADERS_LEN_TX as usize];
-    let mut cursor = Cursor::new(vec);
-    cursor.set_position(8);
+pub fn write_sql_batch<I: Io>(trans: &mut TdsTransport<I>, query: &str) -> io::Result<()> {
+    let header = PacketHeader {
+        ty: PacketType::SQLBatch,
+        status: PacketStatus::NormalMessage,
+        ..PacketHeader::new(0, 0)
+    };
 
-    write_trans_descriptor(&mut cursor, trans.transaction)?;
+    let mut writer = PacketWriter::new(&mut trans.inner, header);
+    write_trans_descriptor(&mut writer, trans.transaction)?;
 
     // the SQL query (after ALL_HEADERS)
     for byte in query.encode_utf16() {
-        cursor.write_u16::<LittleEndian>(byte)?;
+        writer.write_u16::<LittleEndian>(byte)?;
     }
-    // build the packet header
-    let header = PacketHeader {
-        ty: PacketType::SQLBatch,
-        status: PacketStatus::EndOfMessage,
-        ..PacketHeader::new(cursor.get_ref().len(), trans.next_id())
-    };
-    cursor.set_position(0);
-    let mut buf = cursor.into_inner();
-    header.serialize(&mut buf)?;
-    Ok(buf)
+    
+    writer.finalize()?;
+    Ok(())
 }
 
 /// a writer that splits the written data across multiple packets

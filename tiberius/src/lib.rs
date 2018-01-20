@@ -858,14 +858,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         S: Into<Cow<'a, str>>,
     {
         let sql = stmt.into();
-        let inner = &mut self.0;
-
-        let batch_packet = protocol::build_sql_batch(&mut inner.transport, &sql)?;
-        inner.transport.inner.queue_vec(batch_packet)?;
-
-        // attempt to send right now, if it works great, if not ready yet, it will be done later
-        // simply ensures that data is sent as fast as possible
-        let _ = inner.transport.inner.poll_complete()?;
+        protocol::write_sql_batch(&mut self.0.transport, &sql)?;
         Ok(())
     }
 
@@ -1216,6 +1209,11 @@ mod tests {
         let val = format!("x{:04500}x", 0);
         let input = format!("select '{}'", &val);
         let future = c1.query(input.clone(), &[]).for_each_row(|row| {
+            assert_eq!(row.get::<_, &str>(0), val.as_str());
+            Ok(())
+        });
+        let c1 = lp.run(future).unwrap();
+        let future = c1.simple_query(input.clone()).for_each_row(|row| {
             assert_eq!(row.get::<_, &str>(0), val.as_str());
             Ok(())
         });
