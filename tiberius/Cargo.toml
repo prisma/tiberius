@@ -15,7 +15,7 @@ byteorder = "1.0"
 bytes = "0.4.3"
 encoding = "0.2"
 fnv = "1.0"
-lazy_static = "0.2"
+lazy_static = "1.0"
 futures = "0.1.9"
 tokio-core = "0.1.1"
 tokio-io = "0.1"
@@ -33,4 +33,4 @@ tls = ["tokio-tls", "native-tls"]
 schannel = "0.1.7"
 
 [target.'cfg(not(any(target_os = "windows", target_os = "macos")))'.dependencies]
-openssl = "0.9.2"
+openssl = "0.10"
