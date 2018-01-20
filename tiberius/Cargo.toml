@@ -33,4 +33,4 @@ tls = ["tokio-tls", "native-tls"]
 schannel = "0.1.7"
 
 [target.'cfg(not(any(target_os = "windows", target_os = "macos")))'.dependencies]
-openssl = "0.10"
+openssl = "0.9"
