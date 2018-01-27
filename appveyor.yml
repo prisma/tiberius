@@ -3,15 +3,19 @@ environment:
   - TARGET: x86_64-pc-windows-msvc
     MSSQL:  SQL2016
     INSTANCE: MSSQL13.SQL2016
+    TIBERIUS_TEST_INSTANCE: SQL2016
   - TARGET: i686-pc-windows-msvc
     MSSQL:  SQL2014
     INSTANCE: MSSQL12.SQL2014
+    TIBERIUS_TEST_INSTANCE: SQL2014
   - TARGET: i686-pc-windows-gnu
     MSSQL:  SQL2012SP1
     INSTANCE: MSSQL11.SQL2012SP1
+    TIBERIUS_TEST_INSTANCE: SQL2012SP1
   - TARGET: x86_64-pc-windows-gnu
     MSSQL:  SQL2008R2SP2
     INSTANCE: MSSQL10_50.SQL2008R2SP2
+    TIBERIUS_TEST_INSTANCE: SQL2008R2SP2
 
 install:
   - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-nightly-${env:TARGET}.exe"

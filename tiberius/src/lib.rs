@@ -609,7 +609,7 @@ impl ConnectTarget {
                     .and_then(|(socket, _)| socket.recv_dgram(vec![0u8; 4096]))
                     .from_err::<TdsError>()
                     .and_then(|(_, buf, len, mut addr)| {
-                        let response = ::std::str::from_utf8(&buf[..len])?;
+                        let response = ::std::str::from_utf8(&buf[3..len])?;
                         let port: u16 = response.find("tcp;")
                             .and_then(|pos| response[pos..].split(';').nth(1))
                             .ok_or(TdsError::Conversion("could not resolve instance".into()))
@@ -1034,6 +1034,7 @@ mod tests {
         lp.run(future).unwrap()
     }
 
+    #[cfg(windows)]
     #[test]
     fn connect_to_named_instance() {
         let mut lp = Core::new().unwrap();
