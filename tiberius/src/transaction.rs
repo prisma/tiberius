@@ -1,8 +1,8 @@
 use std::borrow::Cow;
-use futures::{Async, Future, Poll, Stream};
+use futures::{Async, Future, Poll};
 use futures_state_stream::{StateStream, StreamEvent};
 use query::{ExecFuture, QueryStream, ResultSetStream};
-use stmt::{ForEachRow, ResultStreamExt, SingleResultSet, Statement, StmtStream};
+use stmt::{ExecResult, QueryResult, Statement, StmtStream};
 use types::ToSql;
 use {BoxableIo, SqlConnection, TdsError};
 
@@ -13,6 +13,33 @@ pub fn new_transaction<I: BoxableIo>(conn: SqlConnection<I>) -> Transaction<I> {
     Transaction(conn)
 }
 
+pub struct TransactionFuture<F> {
+    future: Option<F>,
+}
+
+impl<F: Future> TransactionFuture<F> {
+    pub fn new(future: F) -> TransactionFuture<F> {
+        TransactionFuture {
+            future: Some(future),
+        }
+    }
+}
+
+impl<I, T, F> Future for TransactionFuture<F>
+where
+    I: BoxableIo,
+    F: Future<Item = (T, SqlConnection<I>)>
+{
+    type Item = (T, Transaction<I>);
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let (item, conn) = try_ready!(self.future.as_mut().unwrap().poll());
+
+        Ok(Async::Ready((item, Transaction(conn))))
+    }
+}
+
 /// A stream which is a result from an operation which is executed within a transaction
 /// This simply wraps the state (which internally is a SqlConnection) in the `Transaction` struct
 #[must_use = "streams do nothing unless polled"]
@@ -20,7 +47,7 @@ pub struct TransactionStream<S> {
     stream: Option<S>,
 }
 
-impl<S> TransactionStream<S> {
+impl<S: StateStream> TransactionStream<S> {
     pub fn new(stream: S) -> TransactionStream<S> {
         TransactionStream {
             stream: Some(stream),
@@ -45,60 +72,26 @@ impl<I: BoxableIo, S: StateStream<State = SqlConnection<I>>> StateStream for Tra
     }
 }
 
-impl<I: BoxableIo, R> ResultStreamExt<I> for TransactionStream<R>
-where
-    R: ResultStreamExt<I> + StateStream<State = SqlConnection<I>>,
-{
-    fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
-    where
-        Self: StateStream<Item = QueryStream<I>, Error = <QueryStream<I> as Stream>::Error>,
-        F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>,
-    {
-        ForEachRow::new(self, f)
-    }
-
-    fn single(self) -> SingleResultSet<I, Self>
-    where
-        Self: Sized + StateStream<Item = ExecFuture<I>, Error = <ExecFuture<I> as Future>::Error>,
-    {
-        SingleResultSet::new(self)
-    }
-}
-
 impl<I: BoxableIo + 'static> Transaction<I> {
-    pub fn simple_exec<'a, Q>(
-        self,
-        query: Q,
-    ) -> TransactionStream<ResultSetStream<I, ExecFuture<I>>>
+    pub fn simple_exec<'a, Q>(self, query: Q) -> TransactionFuture<ExecResult<ResultSetStream<I, ExecFuture<I>>>>
     where
         Q: Into<Cow<'a, str>>,
     {
-        TransactionStream::new(self.0.simple_exec(query))
+        TransactionFuture::new(self.0.simple_exec(query))
     }
 
-    pub fn simple_query<'a, Q>(
-        self,
-        query: Q,
-    ) -> TransactionStream<ResultSetStream<I, QueryStream<I>>>
+    pub fn simple_query<'a, Q>(self, query: Q) -> TransactionStream<QueryResult<ResultSetStream<I, QueryStream<I>>>>
     where
         Q: Into<Cow<'a, str>>,
     {
         TransactionStream::new(self.0.simple_query(query))
     }
 
-    pub fn exec<S: Into<Statement>>(
-        self,
-        stmt: S,
-        params: &[&ToSql],
-    ) -> TransactionStream<StmtStream<I, ExecFuture<I>>> {
-        TransactionStream::new(self.0.exec(stmt, params))
+    pub fn exec<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> TransactionFuture<ExecResult<StmtStream<I, ExecFuture<I>>>> {
+        TransactionFuture::new(self.0.exec(stmt, params))
     }
 
-    pub fn query<S: Into<Statement>>(
-        self,
-        stmt: S,
-        params: &[&ToSql],
-    ) -> TransactionStream<StmtStream<I, QueryStream<I>>> {
+    pub fn query<S: Into<Statement>>(self, stmt: S, params: &[&ToSql]) -> TransactionStream<QueryResult<StmtStream<I, QueryStream<I>>>> {
         TransactionStream::new(self.0.query(stmt, params))
     }
 
@@ -135,7 +128,7 @@ impl<I: BoxableIo + 'static> Transaction<I> {
 
     /// executes an internal statement and checks if it succeeded
     fn internal_exec(self, sql: &str) -> Box<Future<Item = Transaction<I>, Error = TdsError>> {
-        Box::new(self.simple_exec(sql).single().and_then(|(result, trans)| {
+        Box::new(self.simple_exec(sql).and_then(|(result, trans)| {
             assert_eq!(result, 0);
             Ok(trans)
         }))

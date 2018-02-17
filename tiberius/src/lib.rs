@@ -5,12 +5,13 @@
 //!
 //! ```rust
 //! extern crate futures;
+//! extern crate futures_state_stream;
 //! extern crate tokio_core;
 //! extern crate tiberius;
 //! use futures::Future;
+//! use futures_state_stream::StateStream;
 //! use tokio_core::reactor::Core;
 //! use tiberius::SqlConnection;
-//! use tiberius::stmt::ResultStreamExt;
 //!
 //! fn main() {
 //!    let mut lp = Core::new().unwrap();
@@ -27,14 +28,14 @@
 //!
 //!    let future = SqlConnection::connect(lp.handle(), conn_str.as_str())
 //!        .and_then(|conn| {
-//!            conn.simple_query("SELECT 1+2").for_each_row(|row| {
+//!            conn.simple_query("SELECT 1+2").for_each(|row| {
 //!                let val: i32 = row.get(0);
 //!                assert_eq!(val, 3i32);
 //!                Ok(())
 //!            })
 //!        })
-//!        .and_then(|conn| conn.simple_exec("create table #Temp(gg int);").single())
-//!        .and_then(|(_, conn)| conn.simple_exec("UPDATE #Temp SET gg=1 WHERE gg=1").single());
+//!        .and_then(|conn| conn.simple_exec("create table #Temp(gg int);"))
+//!        .and_then(|(_, conn)| conn.simple_exec("UPDATE #Temp SET gg=1 WHERE gg=1"));
 //!    lp.run(future).unwrap();
 //! }
 //! ```
@@ -45,12 +46,13 @@
 //!
 //! ```rust
 //! extern crate futures;
+//! extern crate futures_state_stream;
 //! extern crate tokio_core;
 //! extern crate tiberius;
 //! use futures::Future;
+//! use futures_state_stream::StateStream;
 //! use tokio_core::reactor::Core;
 //! use tiberius::SqlConnection;
-//! use tiberius::stmt::ResultStreamExt;
 //!
 //! fn main() {
 //!    let mut lp = Core::new().unwrap();
@@ -63,7 +65,7 @@
 //!
 //!    let future = SqlConnection::connect(lp.handle(), conn_str.as_str()).and_then(|conn| {
 //!        conn.query("SELECT x FROM (VALUES (1),(2),(3),(4)) numbers(x) WHERE x%@P1=@P2",
-//!            &[&2i32, &0i32]).for_each_row(|row| {
+//!            &[&2i32, &0i32]).for_each(|row| {
 //!            let val: i32 = row.get(0);
 //!            assert_eq!(val % 2, 0i32);
 //!            Ok(())
@@ -157,7 +159,7 @@ use types::{ColumnData, ToSql};
 use tokens::{DoneStatus, RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags,
              TdsResponseToken, TokenColMetaData, TokenRpcRequest, WriteToken};
 use query::{ExecFuture, QueryStream, ResultSetStream};
-use stmt::{ResultStreamExt, Statement, StmtStream};
+use stmt::{Statement, StmtStream, ExecResult, QueryResult};
 use transaction::new_transaction;
 use winauth::NextBytes;
 pub use protocol::EncryptionLevel;
@@ -609,10 +611,15 @@ impl ConnectTarget {
                     .and_then(|(socket, _)| socket.recv_dgram(vec![0u8; 4096]))
                     .from_err::<TdsError>()
                     .and_then(|(_, buf, len, mut addr)| {
+                        let err = TdsError::Conversion("could not resolve instance".into());
+                        if len == 0 {
+                            return Err(err);
+                        }
+
                         let response = ::std::str::from_utf8(&buf[3..len])?;
                         let port: u16 = response.find("tcp;")
                             .and_then(|pos| response[pos..].split(';').nth(1))
-                            .ok_or(TdsError::Conversion("could not resolve instance".into()))
+                            .ok_or(err)
                             .and_then(|val| Ok(val.parse()?))?;
                         addr.set_port(port);
                         Ok(addr)
@@ -838,30 +845,32 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     }
 
     /// Execute a simple query and return multiple resultsets which consist of multiple rows.
-    /// Usually only one resultset will be interesting for which you can use
-    /// [`for_each_row`](struct.ResultSetStream.html#method.for_each_row)
     ///
     /// # Warning
-    /// Do not use this with any user specified input.
-    /// Please resort to prepared statements in order to prevent SQL-Injections.
-    pub fn simple_query<'a, Q>(self, query: Q) -> ResultSetStream<I, QueryStream<I>>
+    /// Do not use this with any user specified input.  
+    /// Please resort to prepared statements in order to prevent SQL-Injections.  
+    /// 
+    /// You can access one resultset using [`for_each`](futures::Stream::for_each)  
+    /// If you want to access multiple resultsets, go through [`into_stream`](stmt::QueryResult::into_stream)
+    pub fn simple_query<'a, Q>(self, query: Q) -> QueryResult<ResultSetStream<I, QueryStream<I>>>
     where
         Q: Into<Cow<'a, str>>,
     {
-        self.simple_exec_internal(query)
+        QueryResult::new(self.simple_exec_internal(query))
     }
 
-    /// Execute a simple SQL-statement and return the affected rows
+    /// Execute a simple SQL-statement and return the affected rows  
     ///
     /// # Warning
-    /// Do not use this with any user specified input.
-    /// Please resort to prepared statements in order to prevent SQL-Injections.
-    /// You can access each resultset (in most cases only one) using [`for_each`](struct.ResultSetStream.html#method.for_each)
-    pub fn simple_exec<'a, Q>(self, query: Q) -> ResultSetStream<I, ExecFuture<I>>
+    /// Do not use this with any user specified input.  
+    /// Please resort to prepared statements in order to prevent SQL-Injections.  
+    /// 
+    /// If you want to access multiple resultsets, go through [`into_stream`](stmt::ExecResult::into_stream)
+    pub fn simple_exec<'a, Q>(self, query: Q) -> ExecResult<ResultSetStream<I, ExecFuture<I>>>
     where
         Q: Into<Cow<'a, str>>,
     {
-        self.simple_exec_internal(query)
+        ExecResult::new(self.simple_exec_internal(query))
     }
 
     fn do_prepare_exec<'b>(
@@ -963,32 +972,32 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     }
 
     /// Execute a prepared statement and return each resultset and their associated rows
-    /// Usually only one resultset will be interesting for which you can use
-    /// [`for_each_row`](struct.StmtStream.html#method.for_each_row)
+    /// 
+    /// You can access one resultset using [`for_each`](futures::Stream::for_each)  
+    /// If you want to access multiple resultsets, go through [`into_stream`](stmt::QueryResult::into_stream)
     pub fn query<S: Into<Statement>>(
         self,
         stmt: S,
         params: &[&ToSql],
-    ) -> StmtStream<I, QueryStream<I>> {
-        self.internal_exec(stmt.into(), params)
+    ) -> QueryResult<StmtStream<I, QueryStream<I>>> {
+        QueryResult::new(self.internal_exec(stmt.into(), params))
     }
 
     /// Execute a prepared statement and return the affected rows for each resultset
-    ///
-    /// You can access each resultset (in most cases only one) using [`for_each`](struct.StmtStream.html#method.for_each)
+    /// 
+    /// If you want to access multiple resultsets, go through [`into_stream`](stmt::ExecResult::into_stream)
     pub fn exec<S: Into<Statement>>(
         self,
         stmt: S,
         params: &[&ToSql],
-    ) -> StmtStream<I, ExecFuture<I>> {
-        self.internal_exec(stmt.into(), params)
+    ) -> ExecResult<StmtStream<I, ExecFuture<I>>> {
+        ExecResult::new(self.internal_exec(stmt.into(), params))
     }
 
     /// Start a transaction
     pub fn transaction(self) -> Box<Future<Item = Transaction<I>, Error = TdsError>> {
         Box::new(
             self.simple_exec("set implicit_transactions on")
-                .single()
                 .and_then(|(result, conn)| {
                     assert_eq!(result, 0);
                     Ok(new_transaction(conn))
@@ -1017,7 +1026,7 @@ mod tests {
     use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
     use query::ExecFuture;
-    use stmt::ResultStreamExt;
+    use stmt::ExecResult;
     use super::{BoxableIo, SqlConnection, TdsError, Transaction};
 
     /// allow to modify the
@@ -1042,7 +1051,7 @@ mod tests {
         let conn_str = connection_string().replace(",1433", &format!("\\{}", instance_name));
         let future = SqlConnection::connect(lp.handle(), conn_str.as_str());
         let conn = lp.run(future).unwrap();
-        let query = conn.simple_query("SELECT 133").for_each_row(|row| {
+        let query = conn.simple_query("SELECT 133").for_each(|row| {
             assert_eq!(row.get::<_, i32>(0), 133);
             Ok(())
         });
@@ -1072,7 +1081,7 @@ mod tests {
         let query = c1.simple_query(sql);
         let mut i = 0;
         {
-            let future = query.for_each_row(|x| {
+            let future = query.for_each(|x| {
                 let val: i32 = x.get("II");
                 assert_eq!(val, i);
                 i += 1;
@@ -1090,7 +1099,7 @@ mod tests {
         let sql = "select null, null, null, null, 1, null, null, null, 2, null, null, 3, null, 4";
 
         let query = c1.simple_query(sql);
-        let future = query.for_each_row(|x| {
+        let future = query.for_each(|x| {
             let expected_results: Vec<Option<i32>> = vec![
                 None,
                 None,
@@ -1114,16 +1123,13 @@ mod tests {
         lp.run(future).unwrap();
     }
 
-    fn helper_ddl_exec<
-        I: BoxableIo,
-        R: StateStream<Item = ExecFuture<I>, State = SqlConnection<I>, Error = TdsError>,
-    >(
-        exec: R,
+    fn helper_ddl_exec<I: BoxableIo, R: StateStream<Item = ExecFuture<I>, State = SqlConnection<I>, Error = TdsError>>(
+        exec: ExecResult<R>,
         lp: &mut Core,
     ) {
         let mut i = 0;
         {
-            let future = exec.and_then(|x| x).for_each(|_| {
+            let future = exec.into_stream().and_then(|x| x).for_each(|_| {
                 // This is executed for EACH resultset (e.g. 2 times for 2 sql queries)
                 i += 1;
                 Ok(())
@@ -1138,7 +1144,7 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let c1 = new_connection(&mut lp);
 
-        let future = c1.simple_query("select SPACE(8000)").for_each_row(|row| {
+        let future = c1.simple_query("select SPACE(8000)").for_each(|row| {
             assert_eq!(
                 row.get::<_, &str>(0).as_bytes(),
                 vec![b' '; 8000].as_slice()
@@ -1154,7 +1160,7 @@ mod tests {
         let c1 = new_connection(&mut lp);
 
         let future = c1.simple_query("select SPACE(8000), SPACE(8000)")
-            .for_each_row(|row| {
+            .for_each(|row| {
                 assert_eq!(
                     row.get::<_, &str>(0).as_bytes(),
                     vec![b' '; 8000].as_slice()
@@ -1175,12 +1181,12 @@ mod tests {
 
         let val = format!("x{:04500}x", 0);
         let input = format!("select '{}'", &val);
-        let future = c1.query(input.clone(), &[]).for_each_row(|row| {
+        let future = c1.query(input.clone(), &[]).for_each(|row| {
             assert_eq!(row.get::<_, &str>(0), val.as_str());
             Ok(())
         });
         let c1 = lp.run(future).unwrap();
-        let future = c1.simple_query(input.clone()).for_each_row(|row| {
+        let future = c1.simple_query(input.clone()).for_each(|row| {
             assert_eq!(row.get::<_, &str>(0), val.as_str());
             Ok(())
         });
@@ -1210,7 +1216,7 @@ mod tests {
         // prepare & execute
         for _ in 0..2 {
             let query = conn.query(&query, &[]);
-            let future = query.for_each_row(|x| {
+            let future = query.for_each(|x| {
                 let _: i32 = x.get(0);
                 Ok(())
             });
@@ -1223,11 +1229,11 @@ mod tests {
         let mut lp = Core::new().unwrap();
         let conn = new_connection(&mut lp);
         let job = conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
-            .for_each_row(|_| Ok(()))
-            .and_then(|conn| conn.query("SELECT 0", &[]).for_each_row(|_| Ok(())))
+            .for_each(|_| Ok(()))
+            .and_then(|conn| conn.query("SELECT 0", &[]).for_each(|_| Ok(())))
             .and_then(|conn| {
                 conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
-                    .for_each_row(|_| Ok(()))
+                    .for_each(|_| Ok(()))
             });
         lp.run(job).unwrap();
     }
@@ -1238,7 +1244,7 @@ mod tests {
         let c1 = new_connection(&mut lp);
 
         let future = c1.query("SELECT TOP 0 NULL AS MyValue", &[])
-            .for_each_row(|_| unreachable!());
+            .for_each(|_| unreachable!());
         lp.run(future).unwrap();
     }
 
@@ -1261,7 +1267,7 @@ mod tests {
             conn: SqlConnection<I>,
             value: i32,
         ) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
-            Box::new(conn.simple_query("SELECT test FROM #temp;").for_each_row(
+            Box::new(conn.simple_query("SELECT test FROM #temp;").for_each(
                 move |row| {
                     let val: i32 = row.get(0);
                     assert_eq!(val, value);
@@ -1277,11 +1283,10 @@ mod tests {
             Box::new(
                 transaction
                     .simple_exec("UPDATE #Temp SET test=44;")
-                    .single()
                     .and_then(|(_, trans)| {
                         trans
                             .simple_query("SELECT test FROM #Temp;")
-                            .for_each_row(|row| {
+                            .for_each(|row| {
                                 let val: i32 = row.get(0);
                                 assert_eq!(val, 44i32);
                                 Ok(())
@@ -1295,20 +1300,25 @@ mod tests {
             )
         }
 
-        let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
-            .and_then(|conn| {
-                conn.simple_exec(
-                    "CREATE TABLE #Temp(test int); INSERT INTO #Temp (test) VALUES (42);",
-                ).and_then(|r| r)
-                    .collect()
-            })
-            .and_then(|(_, conn)| conn.transaction())
-            .and_then(|trans| update_test_value(trans, false))
-            .and_then(|conn| check_test_value(conn, 42))
-            .and_then(|conn| conn.transaction())
-            .and_then(|trans| update_test_value(trans, true))
-            .and_then(|conn| check_test_value(conn, 44));
-        lp.run(future).unwrap();
+        let mut amount = 0;
+        {
+            let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
+                .and_then(|conn| {
+                    conn.simple_exec("CREATE TABLE #Temp(test int);INSERT INTO #Temp(test) VALUES (42);")
+                        .into_stream()
+                        .and_then(|future| future)
+                        .for_each(|_| { amount += 1; Ok(()) })
+                })
+                .and_then(|conn| conn.transaction())
+                .and_then(|trans| update_test_value(trans, false))
+                .and_then(|conn| check_test_value(conn, 42))
+                .and_then(|conn| conn.transaction())
+                .and_then(|trans| update_test_value(trans, true))
+                .and_then(|conn| check_test_value(conn, 44));
+            lp.run(future).unwrap();
+        };
+        
+        assert_eq!(amount, 2);
     }
 
     #[test]
@@ -1328,15 +1338,15 @@ mod tests {
                 }
                 // TODO: figure out some syntax sugar here, -> doc tests
                 conn.query(&stmt, &[&1i32, &2i32])
-                    .for_each_row(handle_row)
+                    .for_each(handle_row)
                     .map(|conn| (conn, stmt))
                     .and_then(|(conn, stmt)| {
                         conn.query(&stmt, &[&2i32, &1i32])
-                            .for_each_row(handle_row)
+                            .for_each(handle_row)
                             .map(|conn| (conn, stmt))
                     })
                     .and_then(|(conn, stmt)| {
-                        conn.query(&stmt, &[&4i32, &-1i32]).for_each_row(handle_row)
+                        conn.query(&stmt, &[&4i32, &-1i32]).for_each(handle_row)
                     })
                     .map(|x| x.0)
             });

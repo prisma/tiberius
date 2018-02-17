@@ -17,7 +17,7 @@ macro_rules! test_timedatatype {
                 let mut lp = Core::new().unwrap();
                 let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
                     .and_then(|conn| {
-                        conn.query("SELECT @P1, convert(varchar, @P1, 121)", &[&$val]).for_each_row(|row| {
+                        conn.query("SELECT @P1, convert(varchar, @P1, 121)", &[&$val]).for_each(|row| {
                             assert_eq!(row.get::<_, $ty>(0), $val);
                             assert_eq!(row.get::<_, &str>(1), $str_val);
                             Ok(())
@@ -242,10 +242,10 @@ mod chrono {
     #[cfg(test)]
     mod tests {
         use futures::Future;
+        use futures_state_stream::StateStream;
         use tokio_core::reactor::Core;
         use tests::connection_string;
         use super::chrono::{NaiveDate, NaiveDateTime};
-        use stmt::ResultStreamExt;
         use SqlConnection;
 
         static DATETIME_TEST_STR: &'static str = "2015-09-05 23:56:04.000";
@@ -265,7 +265,7 @@ mod chrono {
                     conn.simple_query(format!(
                         "select cast('{}' as datetime2(7))",
                         DATETIME_TEST_STR
-                    )).for_each_row(|row| {
+                    )).for_each(|row| {
                             assert_eq!(
                                 row.get::<_, NaiveDateTime>(0),
                                 NaiveDateTime::parse_from_str(
@@ -284,9 +284,9 @@ mod chrono {
 #[cfg(test)]
 mod tests {
     use futures::Future;
+    use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
     use super::{Date, DateTime, DateTime2, SmallDateTime, Time};
-    use stmt::ResultStreamExt;
     use SqlConnection;
     use tests::connection_string;
 
@@ -310,12 +310,11 @@ mod tests {
         let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
             .and_then(|conn| {
                 conn.simple_exec("create table #Temp(gg datetime NOT NULL)")
-                    .single()
             })
             .and_then(|(_, conn)| {
                 conn.simple_query(
                     "insert into #Temp(gg) OUTPUT Inserted.gg VALUES('2014-02-24T18:42:23.000')",
-                ).for_each_row(|row| {
+                ).for_each(|row| {
                         assert_eq!(
                             row.get::<_, DateTime>(0),
                             DateTime {

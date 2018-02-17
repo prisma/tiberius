@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use futures::{Async, Future, Poll, Sink, Stream};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
-use stmt::{ForEachRow, ResultStreamExt, SingleResultSet};
 use tokens::{DoneStatus, TdsResponseToken, TokenRow};
 use types::FromColumnData;
 use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
@@ -105,30 +104,32 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
     }
 }
 
-impl<'a, I: BoxableIo, R: StmtResult<I>> ResultStreamExt<I> for ResultSetStream<I, R> {
-    fn for_each_row<F>(self, f: F) -> ForEachRow<I, Self, F>
-    where
-        Self: Sized + StateStream<Item = QueryStream<I>, Error = <QueryStream<I> as Stream>::Error>,
-        F: FnMut(<QueryStream<I> as Stream>::Item) -> Result<(), TdsError>,
-    {
-        ForEachRow::new(self, f)
-    }
+/// A stream of [`Rows`](struct.QueryRow.html) returned for the current resultset
+#[must_use = "streams do nothing unless polled"]
+pub struct QueryStream<I: BoxableIo> {
+    inner: ResultInner<I>
+}
 
-    fn single(self) -> SingleResultSet<I, Self>
-    where
-        Self: Sized + StateStream<Item = ExecFuture<I>, Error = <ExecFuture<I> as Future>::Error>,
-    {
-        SingleResultSet::new(self)
+struct ResultInner<I: BoxableIo> (
+    Option<(SqlConnection<I>, oneshot::Sender<SqlConnection<I>>)>,
+);
+
+impl<I: BoxableIo> ResultInner<I> {
+    fn send_back(&mut self) -> TdsResult<bool> {
+        if let Some((conn, ret_conn)) = self.0.take() {
+            ret_conn.send(conn)
+                .map_err(|_| TdsError::Canceled)
+                .map(|_| true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
-/// A stream of [`Rows`](struct.QueryRow.html) returned for the current resultset
-#[must_use = "streams do nothing unless polled"]
-pub struct QueryStream<I: BoxableIo>(Option<ResultInner<I>>);
-
-struct ResultInner<I: BoxableIo> {
-    conn: SqlConnection<I>,
-    ret_conn: oneshot::Sender<SqlConnection<I>>,
+impl<I: BoxableIo> Drop for ResultInner<I> {
+    fn drop(&mut self) {
+        self.send_back().unwrap();
+    }
 }
 
 impl<'a, I: BoxableIo> Stream for QueryStream<I> {
@@ -136,10 +137,10 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
     type Error = TdsError;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        assert!(self.0.is_some());
+        assert!(self.inner.0.is_some());
 
-        if let Some(ref mut inner) = self.0 {
-            let inner = &mut inner.conn.0;
+        if let Some(ref mut inner) = self.inner.0 {
+            let inner = &mut (inner.0).0;
             try_ready!(inner.transport.inner.poll_complete());
 
             let token = try_ready!(inner.transport.next_token()).expect("query: expected token");
@@ -157,8 +158,7 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
             }
         }
 
-        let ResultInner { conn, ret_conn } = self.0.take().unwrap();
-        assert!(ret_conn.send(conn).is_ok());
+        self.inner.send_back()?;
         Ok(Async::Ready(None))
     }
 }
@@ -166,21 +166,17 @@ impl<'a, I: BoxableIo> Stream for QueryStream<I> {
 impl<'a, I: BoxableIo> StmtResult<I> for QueryStream<I> {
     type Result = QueryStream<I>;
 
-    fn from_connection(
-        conn: SqlConnection<I>,
-        ret_conn: oneshot::Sender<SqlConnection<I>>,
-    ) -> QueryStream<I> {
-        QueryStream(Some(ResultInner {
-            conn: conn,
-            ret_conn: ret_conn,
-        }))
+    fn from_connection(conn: SqlConnection<I>, ret_conn: oneshot::Sender<SqlConnection<I>>) -> QueryStream<I> {
+        QueryStream {
+            inner: ResultInner(Some((conn, ret_conn))),
+        }
     }
 }
 
 /// The result of an execution operation, resolves to the affected rows count for the current resultset
 #[must_use = "futures do nothing unless polled"]
 pub struct ExecFuture<I: BoxableIo> {
-    inner: Option<ResultInner<I>>,
+    inner: ResultInner<I>,
     /// Whether only a Done token (that was previously injected) is the contents of this stream
     single_token: bool,
 }
@@ -191,11 +187,11 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
     type Error = TdsError;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        assert!(self.inner.is_some());
+        assert!(self.inner.0.is_some());
 
         let mut ret: u64 = 0;
-        if let Some(ref mut inner) = self.inner {
-            let inner = &mut inner.conn.0;
+        if let Some(ref mut inner) = self.inner.0 {
+            let inner = &mut (inner.0).0;
             try_ready!(inner.transport.inner.poll_complete());
 
             loop {
@@ -233,8 +229,7 @@ impl<I: BoxableIo> Future for ExecFuture<I> {
             }
         }
 
-        let ResultInner { conn, ret_conn } = self.inner.take().unwrap();
-        assert!(ret_conn.send(conn).is_ok());
+        self.inner.send_back()?;
         Ok(Async::Ready(ret))
     }
 }
@@ -247,10 +242,7 @@ impl<I: BoxableIo> StmtResult<I> for ExecFuture<I> {
         ret_conn: oneshot::Sender<SqlConnection<I>>,
     ) -> ExecFuture<I> {
         ExecFuture {
-            inner: Some(ResultInner {
-                conn: conn,
-                ret_conn: ret_conn,
-            }),
+            inner: ResultInner(Some((conn, ret_conn))),
             single_token: true,
         }
     }

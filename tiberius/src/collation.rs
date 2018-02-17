@@ -332,9 +332,9 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
 
 #[cfg(test)]
 mod tests {
+    use futures_state_stream::StateStream;
     use tokio_core::reactor::Core;
     use tests::new_connection;
-    use stmt::ResultStreamExt;
 
     #[test]
     fn select_nvarchar_collation_test() {
@@ -345,7 +345,7 @@ mod tests {
         );
         let mut i = 0;
         {
-            let future = query.for_each_row(|x| {
+            let future = query.for_each(|x| {
                 let val: &str = x.get(0);
                 assert_eq!(val, "cześć");
                 i += 1;

@@ -808,8 +808,8 @@ impl<T: ToSql> ToColumnData for Option<T> {
 mod tests {
     use tokio_core::reactor::Core;
     use futures::Future;
+    use futures_state_stream::StateStream;
     use super::Guid;
-    use stmt::ResultStreamExt;
     use SqlConnection;
     use tests::connection_string;
     use std::iter;
@@ -826,7 +826,7 @@ mod tests {
                     let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
                         .map(|conn| (conn.prepare("SELECT @P1"), conn))
                         .and_then(|(stmt, conn)| {
-                            conn.query(&stmt, &[&$val]).for_each_row(|row| {
+                            conn.query(&stmt, &[&$val]).for_each(|row| {
                                 assert_eq!(row.get::<_, $ty>(0), $val);
                                 Ok(())
                             })
@@ -861,7 +861,7 @@ mod tests {
         let future =
             SqlConnection::connect(lp.handle(), connection_string().as_ref()).and_then(|conn| {
                 conn.simple_query("select 18446744073709554899982888888888")
-                    .for_each_row(|row| {
+                    .for_each(|row| {
                         assert_eq!(row.get::<_, f64>(0), 18446744073709554000000000000000f64);
                         Ok(())
                     })
@@ -875,7 +875,7 @@ mod tests {
         let future =
             SqlConnection::connect(lp.handle(), connection_string().as_ref()).and_then(|conn| {
                 conn.simple_query("select cast(32.32 as smallmoney), cast(3333333 as money)")
-                    .for_each_row(|row| {
+                    .for_each(|row| {
                         assert_eq!(row.get::<_, f64>(0), 32.32f64);
                         assert_eq!(row.get::<_, f64>(1), 3333333f64);
                         Ok(())
