@@ -586,6 +586,10 @@ impl ConnectTarget {
         match self {
             ConnectTarget::Tcp(ref addr) => {
                 let future = TcpStream::connect(addr, handle)
+                    .and_then(|stream| {
+                        stream.set_nodelay(true)?;
+                        Ok(stream)
+                    })
                     .from_err::<TdsError>()
                     .map(|stream| Box::new(stream) as Box<BoxableIo>);
                 Box::new(future)
