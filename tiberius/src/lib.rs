@@ -237,9 +237,9 @@ enum SqlConnectionLoginState<I: Io, F: Future<Item = I, Error = TdsError> + Send
     _Dummy(PhantomData<I>),
 }
 
-/// A representation of the initialization state of an SQL connection (pending connection
+/// A pending SQL connection
 #[must_use = "futures do nothing unless polled"]
-pub struct SqlConnectionNew<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send + Sized> {
+pub struct Connect<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send + Sized> {
     state: SqlConnectionLoginState<I, F>,
     context: Option<SqlConnectionContext<I>>,
 }
@@ -262,7 +262,7 @@ impl<I: BoxableIo> SqlConnectionContext<I> {
     }
 }
 
-impl<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send> Future for SqlConnectionNew<I, F> {
+impl<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send> Future for Connect<I, F> {
     type Item = SqlConnection<I>;
     type Error = TdsError;
 
@@ -488,7 +488,7 @@ impl<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send> Future for SqlC
                         }
                         SqlConnectionLoginState::_Dummy(_) => unreachable!(),
                         _ => {
-                            panic!("SqlConnectionNew polled multiple times. item already consumed")
+                            panic!("Connect polled multiple times. item already consumed")
                         }
                     }
                 }
@@ -815,12 +815,12 @@ impl SqlConnection<Box<BoxableIo>> {
 
 impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Connect to the SQL server using given params and chosen stream
-    pub fn connect_to<F>(params: ConnectParams, target: F) -> SqlConnectionNew<F::Item, F>
+    pub fn connect_to<F>(params: ConnectParams, target: F) -> Connect<F::Item, F>
         where F: Future<Item = I, Error = TdsError> + Sync + Send
     {
         let state = SqlConnectionLoginState::Connection(Some((target, params)));
 
-        SqlConnectionNew {
+        Connect {
             state,
             context: None,
         }
