@@ -14,8 +14,7 @@ macro_rules! test_timedatatype {
         $(
             #[test]
             fn $name() {
-                let mut lp = Core::new().unwrap();
-                let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
+                let future = SqlConnection::connect(connection_string().as_ref())
                     .and_then(|conn| {
                         conn.query("SELECT @P1, convert(varchar, @P1, 121)", &[&$val]).for_each(|row| {
                             assert_eq!(row.get::<_, $ty>(0), $val);
@@ -23,7 +22,7 @@ macro_rules! test_timedatatype {
                             Ok(())
                         })
                     });
-                lp.run(future).unwrap();
+                current_thread::block_on_all(future).unwrap();
             }
         )*
     }
@@ -243,7 +242,7 @@ mod chrono {
     mod tests {
         use futures::Future;
         use futures_state_stream::StateStream;
-        use tokio_core::reactor::Core;
+        use tokio::executor::current_thread;
         use tests::connection_string;
         use super::chrono::{NaiveDate, NaiveDateTime};
         use SqlConnection;
@@ -259,8 +258,7 @@ mod chrono {
 
         #[test]
         fn test_datetime2_to_naive_datetime() {
-            let mut lp = Core::new().unwrap();
-            let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
+            let future = SqlConnection::connect(connection_string().as_ref())
                 .and_then(|conn| {
                     conn.simple_query(format!(
                         "select cast('{}' as datetime2(7))",
@@ -276,7 +274,7 @@ mod chrono {
                             Ok(())
                         })
                 });
-            lp.run(future).unwrap();
+            current_thread::block_on_all(future).unwrap();
         }
     }
 }
@@ -285,7 +283,7 @@ mod chrono {
 mod tests {
     use futures::Future;
     use futures_state_stream::StateStream;
-    use tokio_core::reactor::Core;
+    use tokio::executor::current_thread;
     use super::{Date, DateTime, DateTime2, SmallDateTime, Time};
     use SqlConnection;
     use tests::connection_string;
@@ -306,8 +304,7 @@ mod tests {
 
     #[test]
     fn test_datetime_fixed() {
-        let mut lp = Core::new().unwrap();
-        let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
+        let future = SqlConnection::connect(connection_string().as_ref())
             .and_then(|conn| {
                 conn.simple_exec("create table #Temp(gg datetime NOT NULL)")
             })
@@ -325,6 +322,6 @@ mod tests {
                         Ok(())
                     })
             });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 }

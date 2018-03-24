@@ -643,7 +643,7 @@ impl<'a, I: Io> Write for PacketWriter<'a, I> {
             self.header.id = self.transport.next_id();
             self.header.length = buf.len() as u16;
             self.header.serialize(&mut buf)?;
-            self.transport.queue_vec(buf)?;
+            self.transport.queue_vec(buf);
         }
         let _ = self.transport.poll_complete()?;
         Ok(())

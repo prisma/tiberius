@@ -333,13 +333,12 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
 #[cfg(test)]
 mod tests {
     use futures_state_stream::StateStream;
-    use tokio_core::reactor::Core;
+    use tokio::executor::current_thread;
     use tests::new_connection;
 
     #[test]
     fn select_nvarchar_collation_test() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
         let query = c1.simple_query(
             "select cast(cast(N'cześć' as nvarchar(5)) collate Polish_CI_AI as varchar(5))",
         );
@@ -351,7 +350,7 @@ mod tests {
                 i += 1;
                 Ok(())
             });
-            lp.run(future).unwrap();
+            current_thread::block_on_all(future).unwrap();
         }
         assert_eq!(i, 1);
     }

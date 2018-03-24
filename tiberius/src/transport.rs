@@ -7,7 +7,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::str;
-use tokio_io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite};
 use bytes::{BufMut, Bytes, BytesMut};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll, Sink, StartSend};
@@ -27,7 +27,7 @@ pub mod tls {
     use std::cmp;
     use std::io::{self, Read, Write};
     use futures::Poll;
-    use tokio_io::{AsyncRead, AsyncWrite};
+    use tokio::io::{AsyncRead, AsyncWrite};
     use protocol::{self, PacketHeader, PacketStatus, PacketType};
     use transport::Io;
     pub use self::native_tls::TlsConnector;
@@ -559,9 +559,8 @@ impl<I: Io> TdsTransportInner<I> {
         self.next_packet_id.next()
     }
 
-    pub fn queue_vec(&mut self, buf: Vec<u8>) -> io::Result<()> {
+    pub fn queue_vec(&mut self, buf: Vec<u8>) {
         self.wr.push_back((0, buf));
-        Ok(())
     }
 
     #[inline]
@@ -637,7 +636,7 @@ impl<I: Io> TdsTransportInner<I> {
             let mut offset = protocol::HEADER_BYTES - self.missing;
 
             while self.missing > 0 {
-                let amount = try_nb!(self.io.read(&mut self.hrd[offset..]));
+                let amount = try_ready!(self.io.poll_read(&mut self.hrd[offset..]));
                 if amount == 0 {
                     return Err(
                         io::Error::new(
@@ -674,12 +673,12 @@ impl<I: Io> TdsTransportInner<I> {
                     }
                 };
                 unsafe {
-                    let count_result = self.io.read(&mut write_buf.bytes_mut()[..self.missing]);
-                    if let Ok(count) = count_result {
+                    let count_result = self.io.poll_read(&mut write_buf.bytes_mut()[..self.missing]);
+                    if let Ok(Async::Ready(count)) = count_result {
                         write_buf.advance_mut(count);
                     }
                     mem::replace(self.rd.get_mut(), write_buf.freeze());
-                    self.missing -= match try_nb!(count_result) {
+                    self.missing -= match try_ready!(count_result) {
                         0 => {
                             return Err(
                                 io::Error::new(
@@ -715,7 +714,7 @@ impl<I: Io> Sink for TdsTransportInner<I> {
         while !self.wr.is_empty() {
             let mut front_consumed = false;
             if let Some(ref mut front) = self.wr.front_mut() {
-                let bytes = try_nb!(self.io.write(&front.1[front.0..]));
+                let bytes = try_ready!(self.io.poll_write(&front.1[front.0..]));
                 front.0 += bytes;
                 if front.0 >= front.1.len() {
                     front_consumed = true;
@@ -726,7 +725,7 @@ impl<I: Io> Sink for TdsTransportInner<I> {
             }
         }
 
-        try_nb!(self.io.flush());
+        try_ready!(self.io.poll_flush());
         if !self.wr.is_empty() {
             return Ok(Async::NotReady);
         }

@@ -806,7 +806,7 @@ impl<T: ToSql> ToColumnData for Option<T> {
 
 #[cfg(test)]
 mod tests {
-    use tokio_core::reactor::Core;
+    use tokio::executor::current_thread;
     use futures::Future;
     use futures_state_stream::StateStream;
     use super::Guid;
@@ -822,8 +822,7 @@ mod tests {
             $(
                 #[test]
                 fn $name() {
-                    let mut lp = Core::new().unwrap();
-                    let future = SqlConnection::connect(lp.handle(), connection_string().as_ref())
+                    let future = SqlConnection::connect(connection_string().as_ref())
                         .map(|conn| (conn.prepare("SELECT @P1"), conn))
                         .and_then(|(stmt, conn)| {
                             conn.query(&stmt, &[&$val]).for_each(|row| {
@@ -831,7 +830,7 @@ mod tests {
                                 Ok(())
                             })
                         });
-                    lp.run(future).unwrap();
+                    current_thread::block_on_all(future).unwrap();
                 }
             )*
         }
@@ -857,23 +856,21 @@ mod tests {
 
     #[test]
     fn test_decimal_numeric() {
-        let mut lp = Core::new().unwrap();
         let future =
-            SqlConnection::connect(lp.handle(), connection_string().as_ref()).and_then(|conn| {
+            SqlConnection::connect(connection_string().as_ref()).and_then(|conn| {
                 conn.simple_query("select 18446744073709554899982888888888")
                     .for_each(|row| {
                         assert_eq!(row.get::<_, f64>(0), 18446744073709554000000000000000f64);
                         Ok(())
                     })
             });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 
     #[test]
     fn test_money() {
-        let mut lp = Core::new().unwrap();
         let future =
-            SqlConnection::connect(lp.handle(), connection_string().as_ref()).and_then(|conn| {
+            SqlConnection::connect(connection_string().as_ref()).and_then(|conn| {
                 conn.simple_query("select cast(32.32 as smallmoney), cast(3333333 as money)")
                     .for_each(|row| {
                         assert_eq!(row.get::<_, f64>(0), 32.32f64);
@@ -881,6 +878,6 @@ mod tests {
                         Ok(())
                     })
             });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 }

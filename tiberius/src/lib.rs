@@ -6,19 +6,19 @@
 //! ```rust
 //! extern crate futures;
 //! extern crate futures_state_stream;
-//! extern crate tokio_core;
+//! extern crate tokio;
 //! extern crate tiberius;
 //! use futures::Future;
 //! use futures_state_stream::StateStream;
-//! use tokio_core::reactor::Core;
+//! use tokio::executor::current_thread;
 //! use tiberius::SqlConnection;
 //!
 //! fn main() {
-//!    let mut lp = Core::new().unwrap();
+//! 
 //!    // 1: for windows we demonstrate the hardcoded variant
 //!    // which is equivalent to:
 //!    //     let conn_str = "server=tcp:localhost,1433;integratedSecurity=true;";
-//!    //     let future = SqlConnection::connect(lp.handle(), conn_str).and_then(|conn| {
+//!    //     let future = SqlConnection::connect(conn_str).and_then(|conn| {
 //!    // and for linux we use the connection string from an environment variable
 //!    let conn_str = if cfg!(windows) {
 //!        "server=tcp:localhost,1433;integratedSecurity=true;".to_owned()
@@ -26,7 +26,7 @@
 //!        ::std::env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap()
 //!    };
 //!
-//!    let future = SqlConnection::connect(lp.handle(), conn_str.as_str())
+//!    let future = SqlConnection::connect(conn_str.as_str())
 //!        .and_then(|conn| {
 //!            conn.simple_query("SELECT 1+2").for_each(|row| {
 //!                let val: i32 = row.get(0);
@@ -36,7 +36,8 @@
 //!        })
 //!        .and_then(|conn| conn.simple_exec("create table #Temp(gg int);"))
 //!        .and_then(|(_, conn)| conn.simple_exec("UPDATE #Temp SET gg=1 WHERE gg=1"));
-//!    lp.run(future).unwrap();
+//! 
+//!    current_thread::block_on_all(future).unwrap();
 //! }
 //! ```
 //!
@@ -47,15 +48,15 @@
 //! ```rust
 //! extern crate futures;
 //! extern crate futures_state_stream;
-//! extern crate tokio_core;
+//! extern crate tokio;
 //! extern crate tiberius;
 //! use futures::Future;
 //! use futures_state_stream::StateStream;
-//! use tokio_core::reactor::Core;
+//! use tokio::executor::current_thread;
 //! use tiberius::SqlConnection;
 //!
 //! fn main() {
-//!    let mut lp = Core::new().unwrap();
+//! 
 //!    // 1: Same as in the example above
 //!    let conn_str = if cfg!(windows) {
 //!        "server=tcp:localhost,1433;integratedSecurity=true;".to_owned()
@@ -63,7 +64,7 @@
 //!        ::std::env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap()
 //!    };
 //!
-//!    let future = SqlConnection::connect(lp.handle(), conn_str.as_str()).and_then(|conn| {
+//!    let future = SqlConnection::connect(conn_str.as_str()).and_then(|conn| {
 //!        conn.query("SELECT x FROM (VALUES (1),(2),(3),(4)) numbers(x) WHERE x%@P1=@P2",
 //!            &[&2i32, &0i32]).for_each(|row| {
 //!            let val: i32 = row.get(0);
@@ -71,7 +72,7 @@
 //!            Ok(())
 //!        })
 //!    });
-//!    lp.run(future).unwrap();
+//!    current_thread::block_on_all(future).unwrap();
 //! }
 //! ```
 //! If you intend to execute the same statement multiple times for the same connection, you should use `.prepare`.
@@ -88,9 +89,7 @@ extern crate futures;
 extern crate futures_state_stream;
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate tokio_core;
-extern crate tokio_io;
+extern crate tokio;
 extern crate winauth;
 
 use std::borrow::Cow;
@@ -103,8 +102,7 @@ use std::io;
 use fnv::FnvHashMap;
 use futures::{Async, Future, IntoFuture, Poll, Sink};
 use futures::sync::oneshot;
-use tokio_core::net::{TcpStream, UdpSocket};
-use tokio_core::reactor::Handle;
+use tokio::net::{TcpStream, UdpSocket};
 
 /// Trait to convert a u8 to a `enum` representation
 trait FromUint
@@ -247,14 +245,15 @@ pub struct Connect<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send + 
 struct SqlConnectionContext<I: BoxableIo> {
     params: ConnectParams,
     transport: TdsTransport<TransportStream<I>>,
-    wauth_client: Option<Box<NextBytes>>,
+    wauth_client: Option<Box<NextBytes + Send>>,
 }
 
 impl<I: BoxableIo> SqlConnectionContext<I> {
     /// Queues a simple message which serializes to ONE packet
-    fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> io::Result<()> {
+    fn queue_simple_message<M: SerializeMessage>(&mut self, m: M) -> Poll<(), io::Error> {
         let vec = m.serialize_message(&mut self.transport)?;
-        self.transport.inner.queue_vec(vec)
+        self.transport.inner.queue_vec(vec);
+        Ok(Async::Ready(()))
     }
 
     fn channel_bindings(&self) -> io::Result<Option<Vec<u8>>> {
@@ -296,7 +295,7 @@ impl<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send> Future for Conn
                                     "TLS support is not enabled in this build, but required for this configuration!"
                                 );
                             }
-                            try_nb!(ctx.queue_simple_message(msg));
+                            try_ready!(ctx.queue_simple_message(msg));
                             SqlConnectionLoginState::PreLoginRecv
                         }
                         SqlConnectionLoginState::PreLoginRecv => {
@@ -428,7 +427,7 @@ impl<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send> Future for Conn
                                 }
                             }
 
-                            try_nb!(ctx.queue_simple_message(login_message));
+                            try_ready!(ctx.queue_simple_message(login_message));
                             SqlConnectionLoginState::LoginRecv
                         }
                         SqlConnectionLoginState::LoginRecv => {
@@ -580,12 +579,12 @@ enum ConnectTarget {
 }
 
 impl ConnectTarget {
-    fn connect(self, handle: &Handle) 
+    fn connect(self) 
         -> Box<Future<Item = Box<BoxableIo>, Error = TdsError> + Sync + Send>
     {
         match self {
             ConnectTarget::Tcp(ref addr) => {
-                let future = TcpStream::connect(addr, handle)
+                let future = TcpStream::connect(addr)
                     .and_then(|stream| {
                         stream.set_nodelay(true)?;
                         Ok(stream)
@@ -605,13 +604,10 @@ impl ConnectTarget {
                 };
                 let msg = [&[4u8], instance_name.as_bytes()].concat();
 
-                // TODO: figure out what to do if we move to a different threads
-                let remote = handle.remote().clone();
-
                 // TODO: implement a timeout for non-existing instances
-                let future = UdpSocket::bind(&local_bind, &handle)
+                let future = UdpSocket::bind(&local_bind)
                     .into_future()
-                    .and_then(move |socket| socket.send_dgram(msg, addr))
+                    .and_then(move |socket| socket.send_dgram(msg, &addr))
                     .and_then(|(socket, _)| socket.recv_dgram(vec![0u8; 4096]))
                     .from_err::<TdsError>()
                     .and_then(|(_, buf, len, mut addr)| {
@@ -628,7 +624,7 @@ impl ConnectTarget {
                         addr.set_port(port);
                         Ok(addr)
                     })
-                    .and_then(move |addr| ConnectTarget::Tcp(addr).connect(&remote.handle().unwrap()));
+                    .and_then(move |addr| ConnectTarget::Tcp(addr).connect());
                 Box::new(future)
             }
         }
@@ -800,13 +796,13 @@ fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, Conne
 
 impl SqlConnection<Box<BoxableIo>> {
     /// Naive connection function for the SQL client
-    pub fn connect(handle: Handle, connection_str: &str) 
-        -> Box<Future<Item = SqlConnection<Box<BoxableIo>>, Error=TdsError>>
+    pub fn connect(connection_str: &str) 
+        -> Box<Future<Item = SqlConnection<Box<BoxableIo>>, Error=TdsError> + Send>
     {
         let future = parse_connection_str(connection_str)
             .into_future()
             .and_then(move |(connect_params, target)| {
-                let stream = target.connect(&handle);
+                let stream = target.connect();
                 SqlConnection::connect_to(connect_params, stream)
             });
         Box::new(future)
@@ -1023,12 +1019,20 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     }
 }
 
+fn _ensure_sync() {
+    fn _ensure<T: Send>() {}
+    _ensure::<TdsError>();
+    _ensure::<SqlConnection<Box<BoxableIo>>>();
+    _ensure::<stmt::QueryResult<query::ResultSetStream<Box<BoxableIo>, QueryStream<Box<BoxableIo>>>>>();
+}
+
 #[cfg(test)]
 mod tests {
     use std::env;
-    use futures::Future;
+    use futures::{future, Future};
     use futures_state_stream::StateStream;
-    use tokio_core::reactor::Core;
+    use tokio;
+    use tokio::executor::current_thread;
     use query::ExecFuture;
     use stmt::ExecResult;
     use super::{BoxableIo, SqlConnection, TdsError, Transaction};
@@ -1042,24 +1046,23 @@ mod tests {
         )
     }
 
-    pub fn new_connection(lp: &mut Core) -> SqlConnection<Box<BoxableIo>> {
-        let future = SqlConnection::connect(lp.handle(), connection_string().as_str());
-        lp.run(future).unwrap()
+    pub fn new_connection() -> SqlConnection<Box<BoxableIo>> {
+        let future = SqlConnection::connect(connection_string().as_str());
+        current_thread::block_on_all(future).unwrap()
     }
 
     #[cfg(windows)]
     #[test]
     fn connect_to_named_instance() {
-        let mut lp = Core::new().unwrap();
         let instance_name = env::var("TIBERIUS_TEST_INSTANCE").unwrap_or("MSSQLSERVER".to_owned());
         let conn_str = connection_string().replace(",1433", &format!("\\{}", instance_name));
-        let future = SqlConnection::connect(lp.handle(), conn_str.as_str());
-        let conn = lp.run(future).unwrap();
+        let future = SqlConnection::connect(conn_str.as_str());
+        let conn = current_thread::block_on_all(future).unwrap();
         let query = conn.simple_query("SELECT 133").for_each(|row| {
             assert_eq!(row.get::<_, i32>(0), 133);
             Ok(())
         });
-        lp.run(query).unwrap();
+        current_thread::block_on_all(query).unwrap();
     }
 
     #[test]
@@ -1073,9 +1076,25 @@ mod tests {
     }
 
     #[test]
+    fn test_threadpool_executor() {
+        let future = SqlConnection::connect(connection_string().as_str())
+            .and_then(move |conn| conn
+                .simple_query("select 18")
+                .fold(false, |acc, row| {
+                    if row.get::<_, i32>(0) == 17 { 
+                        future::ok::<_, TdsError>(true)
+                    } else { 
+                        future::ok(acc)
+                    }
+                }, |success, _| future::ok::<_, TdsError>(success)))
+            .map(|success| assert!(success))
+            .map_err(|err| panic!("err: {:?}", err));
+        tokio::run(future);
+    }
+
+    #[test]
     fn simple_select() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
 
         let limit = 5i32;
         let post_sql = format!("where II<{}", limit);
@@ -1091,15 +1110,14 @@ mod tests {
                 i += 1;
                 Ok(())
             });
-            lp.run(future).unwrap();
+            current_thread::block_on_all(future).unwrap();
         }
         assert_eq!(i, limit);
     }
 
     #[test]
     fn nbcrow() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
         let sql = "select null, null, null, null, 1, null, null, null, 2, null, null, 3, null, 4";
 
         let query = c1.simple_query(sql);
@@ -1124,12 +1142,11 @@ mod tests {
             assert_eq!(results, expected_results);
             Ok(())
         });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 
     fn helper_ddl_exec<I: BoxableIo, R: StateStream<Item = ExecFuture<I>, State = SqlConnection<I>, Error = TdsError>>(
         exec: ExecResult<R>,
-        lp: &mut Core,
     ) {
         let mut i = 0;
         {
@@ -1138,15 +1155,14 @@ mod tests {
                 i += 1;
                 Ok(())
             });
-            lp.run(future).unwrap();
+            current_thread::block_on_all(future).unwrap();
         }
         assert_eq!(i, 1);
     }
 
     #[test]
     fn row_recv_across_packets() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
 
         let future = c1.simple_query("select SPACE(8000)").for_each(|row| {
             assert_eq!(
@@ -1155,13 +1171,12 @@ mod tests {
             );
             Ok(())
         });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 
     #[test]
     fn rows_recv_across_packets() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
 
         let future = c1.simple_query("select SPACE(8000), SPACE(8000)")
             .for_each(|row| {
@@ -1175,13 +1190,12 @@ mod tests {
                 );
                 Ok(())
             });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 
     #[test]
     fn tokenstream_send_across_packets() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
 
         let val = format!("x{:04500}x", 0);
         let input = format!("select '{}'", &val);
@@ -1189,26 +1203,24 @@ mod tests {
             assert_eq!(row.get::<_, &str>(0), val.as_str());
             Ok(())
         });
-        let c1 = lp.run(future).unwrap();
+        let c1 = current_thread::block_on_all(future).unwrap();
         let future = c1.simple_query(input.clone()).for_each(|row| {
             assert_eq!(row.get::<_, &str>(0), val.as_str());
             Ok(())
         });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 
     #[test]
     fn prepared_ddl_exec() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
         let stmt = c1.prepare("DECLARE @Mojo int");
-        helper_ddl_exec(c1.exec(&stmt, &[]), &mut lp);
+        helper_ddl_exec(c1.exec(&stmt, &[]));
     }
 
     #[test]
     fn prepared_select_reexecute() {
-        let mut lp = Core::new().unwrap();
-        let mut conn = new_connection(&mut lp);
+        let mut conn = new_connection();
 
         // prepare once
         let sql = (1..10)
@@ -1224,14 +1236,13 @@ mod tests {
                 let _: i32 = x.get(0);
                 Ok(())
             });
-            conn = lp.run(future).unwrap();
+            conn = current_thread::block_on_all(future).unwrap();
         }
     }
 
     #[test]
     fn prepared_select_reexecute_intermediate_query() {
-        let mut lp = Core::new().unwrap();
-        let conn = new_connection(&mut lp);
+        let conn = new_connection();
         let job = conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
             .for_each(|_| Ok(()))
             .and_then(|conn| conn.query("SELECT 0", &[]).for_each(|_| Ok(())))
@@ -1239,24 +1250,22 @@ mod tests {
                 conn.query("SELECT [uid] FROM (select cast(1 as bigint) as uid) b", &[])
                     .for_each(|_| Ok(()))
             });
-        lp.run(job).unwrap();
+        current_thread::block_on_all(job).unwrap();
     }
 
     #[test]
     fn prepared_select_empty_resultset() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
+        let c1 = new_connection();
 
         let future = c1.query("SELECT TOP 0 NULL AS MyValue", &[])
             .for_each(|_| unreachable!());
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 
     #[test]
     fn ddl_exec() {
-        let mut lp = Core::new().unwrap();
-        let c1 = new_connection(&mut lp);
-        helper_ddl_exec(c1.simple_exec("DECLARE @Mojo int"), &mut lp);
+        let c1 = new_connection();
+        helper_ddl_exec(c1.simple_exec("DECLARE @Mojo int"));
     }
 
     /// This test tests that the old value is returned after a rollback and the new value after a commit
@@ -1264,7 +1273,6 @@ mod tests {
     /// (1 check within the transaction and 1 after the rollback/commit, 4 checks in sum)
     #[test]
     fn transaction() {
-        let mut lp = Core::new().unwrap();
         let connection_string = connection_string();
 
         fn check_test_value<I: BoxableIo + 'static>(
@@ -1306,7 +1314,7 @@ mod tests {
 
         let mut amount = 0;
         {
-            let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
+            let future = SqlConnection::connect(connection_string.as_str())
                 .and_then(|conn| {
                     conn.simple_exec("CREATE TABLE #Temp(test int);INSERT INTO #Temp(test) VALUES (42);")
                         .into_stream()
@@ -1319,7 +1327,7 @@ mod tests {
                 .and_then(|conn| conn.transaction())
                 .and_then(|trans| update_test_value(trans, true))
                 .and_then(|conn| check_test_value(conn, 44));
-            lp.run(future).unwrap();
+            current_thread::block_on_all(future).unwrap();
         };
         
         assert_eq!(amount, 2);
@@ -1327,10 +1335,9 @@ mod tests {
 
     #[test]
     fn todo_doctest() {
-        let mut lp = Core::new().unwrap();
         let connection_string = connection_string();
 
-        let future = SqlConnection::connect(lp.handle(), connection_string.as_str())
+        let future = SqlConnection::connect(connection_string.as_str())
             .and_then(|conn| {
                 ::futures::finished((conn.prepare("SELECT @P1 + @P2"), conn))
             })
@@ -1354,6 +1361,6 @@ mod tests {
                     })
                     .map(|x| x.0)
             });
-        lp.run(future).unwrap();
+        current_thread::block_on_all(future).unwrap();
     }
 }
