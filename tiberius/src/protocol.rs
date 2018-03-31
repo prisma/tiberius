@@ -21,60 +21,42 @@ pub trait UnserializeMessage<T> {
     fn unserialize_message<I: Io>(&self, trans: &mut TdsTransport<I>) -> TdsResult<T>;
 }
 
-/// the type of the packet [2.2.3.1.1]
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum PacketType {
-    SQLBatch = 1,
-    /// unused
-    PreTDSv7Login = 2,
-    RPC = 3,
-    TabularResult = 4,
-    AttentionSignal = 6,
-    BulkLoad = 7,
-    /// Federated Authentication Token
-    Fat = 8,
-    TransactionManagerReq = 14,
-    TDSv7Login = 16,
-    SSPI = 17,
-    PreLogin = 18,
+uint_enum! {
+    /// the type of the packet [2.2.3.1.1]#[repr(u32)]
+    #[derive(PartialEq)]
+    #[repr(u8)]
+    pub enum PacketType {
+        SQLBatch = 1,
+        /// unused
+        PreTDSv7Login = 2,
+        RPC = 3,
+        TabularResult = 4,
+        AttentionSignal = 6,
+        BulkLoad = 7,
+        /// Federated Authentication Token
+        Fat = 8,
+        TransactionManagerReq = 14,
+        TDSv7Login = 16,
+        SSPI = 17,
+        PreLogin = 18,
+    }
 }
-uint_to_enum!(
-    PacketType,
-    SQLBatch,
-    PreTDSv7Login,
-    RPC,
-    TabularResult,
-    AttentionSignal,
-    BulkLoad,
-    Fat,
-    TransactionManagerReq,
-    TDSv7Login,
-    SSPI,
-    PreLogin
-);
 
-/// the message state [2.2.3.1.2]
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum PacketStatus {
-    NormalMessage = 0,
-    EndOfMessage = 1,
-    /// [client to server ONLY] (EndOfMessage also required)
-    IgnoreEvent = 3,
-    /// [client to server ONLY] [>= TDSv7.1]
-    ResetConnection = 0x08,
-    /// [client to server ONLY] [>= TDSv7.3]
-    ResetConnectionSkipTran = 0x10,
+uint_enum! {
+    /// the message state [2.2.3.1.2]
+    #[derive(PartialEq)]
+    #[repr(u8)]
+    pub enum PacketStatus {
+        NormalMessage = 0,
+        EndOfMessage = 1,
+        /// [client to server ONLY] (EndOfMessage also required)
+        IgnoreEvent = 3,
+        /// [client to server ONLY] [>= TDSv7.1]
+        ResetConnection = 0x08,
+        /// [client to server ONLY] [>= TDSv7.3]
+        ResetConnectionSkipTran = 0x10,
+    }
 }
-uint_to_enum!(
-    PacketStatus,
-    NormalMessage,
-    EndOfMessage,
-    IgnoreEvent,
-    ResetConnection,
-    ResetConnectionSkipTran
-);
 
 /// packet header consisting of 8 bytes [2.2.3.1]
 #[derive(Debug)]
@@ -133,43 +115,36 @@ impl PacketHeader {
     }
 }
 
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum FeatureLevel {
-    SqlServerV7 = 0x70000000,
-    SqlServer2000 = 0x71000000,
-    SqlServer2000Sp1 = 0x71000001,
-    SqlServer2005 = 0x72090002,
-    SqlServer2008 = 0x730A0003,
-    SqlServer2008R2 = 0x730B0003,
-    /// 2012, 2014, 2016
-    SqlServerN = 0x74000004,
-}
-uint_to_enum!(
-    FeatureLevel,
-    SqlServerV7,
-    SqlServer2000,
-    SqlServer2000Sp1,
-    SqlServer2005,
-    SqlServer2008,
-    SqlServer2008R2,
-    SqlServerN
-);
 
-/// The configured encryption level specifying if encryption is required
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum EncryptionLevel {
-    /// Only use encryption for the login procedure
-    Off = 0,
-    /// Encrypt everything if possible
-    On = 1,
-    /// Do not encrypt anything
-    NotSupported = 2,
-    /// Encrypt everything and fail if not possible
-    Required = 3,
+uint_enum! {
+    #[repr(u32)]
+    pub enum FeatureLevel {
+        SqlServerV7 = 0x70000000,
+        SqlServer2000 = 0x71000000,
+        SqlServer2000Sp1 = 0x71000001,
+        SqlServer2005 = 0x72090002,
+        SqlServer2008 = 0x730A0003,
+        SqlServer2008R2 = 0x730B0003,
+        /// 2012, 2014, 2016
+        SqlServerN = 0x74000004,
+    }
 }
-uint_to_enum!(EncryptionLevel, Off, On, NotSupported, Required);
+
+uint_enum! {
+    /// The configured encryption level specifying if encryption is required
+    #[derive(PartialEq)]
+    #[repr(u8)]
+    pub enum EncryptionLevel {
+        /// Only use encryption for the login procedure
+        Off = 0,
+        /// Encrypt everything if possible
+        On = 1,
+        /// Do not encrypt anything
+        NotSupported = 2,
+        /// Encrypt everything and fail if not possible
+        Required = 3,
+    }
+}
 
 /// The prelogin packet used to initialize a connection
 #[derive(Debug)]

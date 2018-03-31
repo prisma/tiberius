@@ -6,7 +6,7 @@ use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll};
 use transport::{Io, PrimitiveWrites, ReadState, Str, TdsTransport};
 use types::{ColumnData, TypeInfo};
-use protocol::{self, PacketHeader, PacketStatus, PacketType, PacketWriter};
+use protocol::{self, FeatureLevel, PacketHeader, PacketStatus, PacketType, PacketWriter};
 use {FromUint, TdsError, TdsResult};
 
 /// read a token from an underlying transport
@@ -18,40 +18,24 @@ pub trait WriteToken<I: Io> {
     fn write_token(&self, &mut TdsTransport<I>) -> TdsResult<()>;
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum Tokens {
-    ReturnStatus = 0x79,
-    ColMetaData = 0x81,
-    Error = 0xAA,
-    Info = 0xAB,
-    Order = 0xA9,
-    ReturnValue = 0xAC,
-    LoginAck = 0xAD,
-    Row = 0xD1,
-    NbcRow = 0xD2,
-    SSPI = 0xED,
-    EnvChange = 0xE3,
-    Done = 0xFD,
-    DoneProc = 0xFE,
-    DoneInProc = 0xFF,
+uint_enum! {
+    pub enum Tokens {
+        ReturnStatus = 0x79,
+        ColMetaData = 0x81,
+        Error = 0xAA,
+        Info = 0xAB,
+        Order = 0xA9,
+        ReturnValue = 0xAC,
+        LoginAck = 0xAD,
+        Row = 0xD1,
+        NbcRow = 0xD2,
+        SSPI = 0xED,
+        EnvChange = 0xE3,
+        Done = 0xFD,
+        DoneProc = 0xFE,
+        DoneInProc = 0xFF,
+    }
 }
-uint_to_enum!(
-    Tokens,
-    ReturnStatus,
-    ColMetaData,
-    Error,
-    Info,
-    Order,
-    ReturnValue,
-    LoginAck,
-    Row,
-    NbcRow,
-    SSPI,
-    EnvChange,
-    Done,
-    DoneProc,
-    DoneInProc
-);
 
 #[derive(Debug)]
 pub enum TdsResponseToken {
@@ -114,52 +98,32 @@ pub enum TokenEnvChange {
     CommitTransaction(u64),
 }
 
-#[repr(u8)]
-enum EnvChangeTy {
-    Database = 1,
-    Language = 2,
-    CharacterSet = 3,
-    PacketSize = 4,
-    UnicodeDataSortingLID = 5,
-    UnicodeDataSortingCFL = 6,
-    SqlCollation = 7,
-    /// below here: >= TDSv7.2
-    BeginTransaction = 8,
-    CommitTransaction = 9,
-    RollbackTransaction = 10,
-    EnlistDTCTransaction = 11,
-    DefectTransaction = 12,
-    RTLS = 13,
-    PromoteTransaction = 15,
-    TransactionManagerAddress = 16,
-    TransactionEnded = 17,
-    ResetConnection = 18,
-    UserName = 19,
-    /// below here: TDS v7.4
-    Routing = 20,
+uint_enum! {
+    #[repr(u8)]
+    enum EnvChangeTy {
+        Database = 1,
+        Language = 2,
+        CharacterSet = 3,
+        PacketSize = 4,
+        UnicodeDataSortingLID = 5,
+        UnicodeDataSortingCFL = 6,
+        SqlCollation = 7,
+        /// below here: >= TDSv7.2
+        BeginTransaction = 8,
+        CommitTransaction = 9,
+        RollbackTransaction = 10,
+        EnlistDTCTransaction = 11,
+        DefectTransaction = 12,
+        RTLS = 13,
+        PromoteTransaction = 15,
+        TransactionManagerAddress = 16,
+        TransactionEnded = 17,
+        ResetConnection = 18,
+        UserName = 19,
+        /// below here: TDS v7.4
+        Routing = 20,
+    }
 }
-uint_to_enum!(
-    EnvChangeTy,
-    Database,
-    Language,
-    CharacterSet,
-    PacketSize,
-    UnicodeDataSortingLID,
-    UnicodeDataSortingCFL,
-    SqlCollation,
-    BeginTransaction,
-    CommitTransaction,
-    RollbackTransaction,
-    EnlistDTCTransaction,
-    DefectTransaction,
-    RTLS,
-    PromoteTransaction,
-    TransactionManagerAddress,
-    TransactionEnded,
-    ResetConnection,
-    UserName,
-    Routing
-);
 
 impl<I: Io> ParseToken<I> for TokenEnvChange {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
@@ -250,29 +214,6 @@ impl<I: Io> ParseToken<I> for TokenOrder {
         Ok(Async::Ready(TdsResponseToken::Order(TokenOrder(cols))))
     }
 }
-
-#[repr(u32)]
-#[derive(Debug, Copy, Clone)]
-pub enum FeatureLevel {
-    SqlServerV7 = 0x70000000,
-    SqlServer2000 = 0x71000000,
-    SqlServer2000Sp1 = 0x71000001,
-    SqlServer2005 = 0x72090002,
-    SqlServer2008 = 0x730A0003,
-    SqlServer2008R2 = 0x730B0003,
-    /// 2012, 2014, 2016
-    SqlServerN = 0x74000004,
-}
-uint_to_enum!(
-    FeatureLevel,
-    SqlServerV7,
-    SqlServer2000,
-    SqlServer2000Sp1,
-    SqlServer2005,
-    SqlServer2008,
-    SqlServer2008R2,
-    SqlServerN
-);
 
 #[derive(Debug)]
 pub struct TokenLoginAck {

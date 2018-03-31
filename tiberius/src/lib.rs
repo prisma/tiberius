@@ -113,18 +113,23 @@ where
     fn from_u32(n: u32) -> Option<Self>;
 }
 
-macro_rules! uint_to_enum {
-    ($ty:ident, $($variant:ident),*) => {
+macro_rules! uint_enum {
+    ($( #[$gattr:meta] )* pub enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
+        uint_enum!($( #[$gattr ])* (pub) enum $ty { $( $( #[$attr] )* $variant = $val, )* });
+    };
+    ($( #[$gattr:meta] )* enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
+        uint_enum!($( #[$gattr ])* () enum $ty { $( $( #[$attr] )* $variant = $val, )* });
+    };
+
+    ($( #[$gattr:meta] )* ( $($vis:tt)* ) enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
+        #[derive(Debug, Copy, Clone)]
+        $( #[$gattr] )*
+        $( $vis )* enum $ty {
+            $( $( #[$attr ])* $variant = $val, )*
+        }
+
         impl FromUint for $ty {
             fn from_u8(n: u8) -> Option<$ty> {
-                // this should get stripped on compilation and is only used
-                // to ensure all enum variants are passed to this macro
-                fn _static_verification(t: $ty) -> bool {
-                    match t {
-                        $( $ty::$variant => true, )*
-                    }
-                }
-
                 match n {
                     $( x if x == $ty::$variant as u8 => Some($ty::$variant), )*
                     _ => None
