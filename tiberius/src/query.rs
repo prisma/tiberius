@@ -128,7 +128,9 @@ impl<I: BoxableIo> ResultInner<I> {
 
 impl<I: BoxableIo> Drop for ResultInner<I> {
     fn drop(&mut self) {
-        self.send_back().unwrap();
+        if !::std::thread::panicking() {
+            self.send_back().unwrap();
+        }
     }
 }
 

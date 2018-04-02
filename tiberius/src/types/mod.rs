@@ -81,6 +81,7 @@ uint_enum! {
 
 uint_enum! {
     /// 2.2.5.4.2
+    #[derive(PartialEq)]
     #[repr(u8)]
     pub enum VarLenType {
         Guid = 0x24,
@@ -242,14 +243,14 @@ impl TypeInfo {
                 VarLenType::Datetimen |
                 VarLenType::Timen |
                 VarLenType::Datetime2 => trans.inner.read_u8()? as usize,
-                VarLenType::NVarchar | VarLenType::BigVarChar => {
+                VarLenType::NChar | VarLenType::NVarchar | VarLenType::BigVarChar => {
                     trans.inner.read_u16::<LittleEndian>()? as usize
                 }
                 VarLenType::Daten => 3,
                 _ => unimplemented!(),
             };
             let collation = match ty {
-                VarLenType::NVarchar | VarLenType::BigVarChar => Some(Collation {
+                VarLenType::NChar | VarLenType::NVarchar | VarLenType::BigVarChar => Some(Collation {
                     info: trans.inner.read_u32::<LittleEndian>()?,
                     sort_id: trans.inner.read_u8()?,
                 }),
@@ -342,12 +343,12 @@ impl<'a> ColumnData<'a> {
                         try_ready!(trans.inner.read_bytes_to(&mut data));
                         ColumnData::Guid(Cow::Owned(Guid(data)))
                     }
-                    VarLenType::NVarchar => {
+                    VarLenType::NChar | VarLenType::NVarchar => {
                         trans.state_tracked = true;
                         // reduce some boilerplate by using RefCell/Rc
                         let read_state_mut = &mut trans.read_state;
                         // check if PLP or normal size
-                        if *len < 0xffff {
+                        if *len < 0xffff || *ty == VarLenType::NChar {
                             match *read_state_mut {
                                 Some(ReadState::Type(ReadTyState::NVarchar(_))) => (),
                                 _ => {
@@ -837,6 +838,23 @@ mod tests {
                         assert_eq!(row.get::<_, f64>(1), 3333333f64);
                         Ok(())
                     })
+            });
+        current_thread::block_on_all(future).unwrap();
+    }
+
+    #[test]
+    fn test_nchar() {
+        let future = SqlConnection::connect(connection_string().as_ref())
+            .and_then(|conn| {
+                conn.simple_query("select cast(NULL as nchar(8))").for_each(|row| {
+                    assert_eq!(row.get::<_, Option<&str>>(0), None);
+                    Ok(())
+                }).and_then(|conn|
+                    conn.simple_query("select cast('test' as nchar(8))").for_each(|row| {
+                        assert_eq!(row.get::<_, Option<&str>>(0), Some("test    "));
+                        Ok(())
+                    })
+                )
             });
         current_thread::block_on_all(future).unwrap();
     }
