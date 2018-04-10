@@ -4,7 +4,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll};
-use transport::{Io, PrimitiveWrites, ReadState, Str, TdsTransport};
+use transport::{Io, NoLength, PrimitiveWrites, ReadState, Str, TdsTransport};
 use types::{ColumnData, TypeInfo};
 use protocol::{self, FeatureLevel, PacketHeader, PacketStatus, PacketType, PacketWriter};
 use {FromUint, TdsError, TdsResult};
@@ -631,8 +631,9 @@ impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
         writer.write_u16::<LittleEndian>(self.flags.bits())?;
 
         for (_, param) in self.params.iter().enumerate() {
+            writer.write_u8(param.name.len() as u8)?;
             // name
-            writer.write_varchar::<u8>(&param.name)?;
+            writer.write_varchar::<NoLength>(&param.name)?;
 
             // status flag
             writer.write_u8(param.flags.bits)?;

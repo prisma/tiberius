@@ -615,8 +615,7 @@ impl<'a> ColumnData<'a> {
                 target.write_u8(VarLenType::NVarchar as u8)?;
                 target.write_u16::<LittleEndian>(8000)?; // NVARCHAR(4000)
                 target.write_all(&[0; 5])?; // raw collation
-                target.write_u16::<LittleEndian>(2 * str_.len() as u16)?;
-                target.write_varchar::<NoLength>(str_)?;
+                target.write_varchar::<u16>(str_)?;
             }
             ColumnData::String(ref str_) => {
                 // length: 0xffff and raw collation
@@ -807,6 +806,7 @@ mod tests {
         test_f32: f32 => 42.42f32,
         test_f64: f64 => 26.26f64,
         test_str: &str => "hello world",
+        test_russian_str: &str => "Ааабб",
         // test a string which is bigger than nvarchar(8000) and is sent as nvarchar(max) instead
         test_str_big: &str => iter::repeat("haha").take(2500).collect::<String>().as_str(),
         // TODO: Guid parsing

@@ -740,8 +740,9 @@ pub trait PrimitiveWrites: Write {
 }
 impl<W: Write> PrimitiveWrites for W {
     fn write_varchar<S: WriteSize<Self>>(&mut self, str_: &str) -> io::Result<()> {
-        S::write_size(self, str_.len())?;
-        for chr in str_.encode_utf16() {
+        let chrs: Vec<u16> = str_.encode_utf16().collect();
+        S::write_size(self, 2 * chrs.len())?;
+        for chr in chrs {
             self.write_u16::<LittleEndian>(chr)?;
         }
         Ok(())
