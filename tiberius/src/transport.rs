@@ -253,10 +253,7 @@ pub mod tls {
 pub use self::tls::*;
 
 #[cfg(not(feature = "tls"))]
-pub type TlsStream<S: Io> = S;
-
-#[cfg(not(feature = "tls"))]
-pub type TransportStream<S: Io> = S;
+pub type TransportStream<S> = S;
 
 #[derive(Debug)]
 pub struct NVarcharPLPTyState {

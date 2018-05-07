@@ -102,6 +102,7 @@ use std::io;
 use fnv::FnvHashMap;
 use futures::{Async, Future, IntoFuture, Poll, Sink};
 use futures::sync::oneshot;
+// TODO: depend on tokio subcrates?
 use tokio::net::{TcpStream, UdpSocket};
 
 /// Trait to convert a u8 to a `enum` representation
@@ -262,7 +263,10 @@ impl<I: BoxableIo> SqlConnectionContext<I> {
     }
 
     fn channel_bindings(&self) -> io::Result<Option<Vec<u8>>> {
-        self.transport.inner.io.channel_bindings()
+        #[cfg(feature = "tls")]
+        return self.transport.inner.io.channel_bindings();
+        #[cfg(not(feature = "tls"))]
+        Ok(None)
     }
 }
 
