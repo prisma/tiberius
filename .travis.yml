@@ -18,3 +18,4 @@ before_script:
 script:
   - docker ps -a
   - cargo test --all
+  - cargo test --package tiberius --no-default-features

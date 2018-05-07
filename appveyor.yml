@@ -29,3 +29,4 @@ build: false
 
 test_script:
   - cargo test --target %TARGET% --all
+  - IF "%MSSQL%" == "SQL2016" cd tiberius && cargo test --no-default-features
