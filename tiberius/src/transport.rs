@@ -14,7 +14,7 @@ use futures::{Async, Poll, Sink, StartSend};
 use protocol::{self, PacketHeader, PacketStatus};
 use tokens::{TdsResponseToken, TokenColMetaData, TokenEnvChange, Tokens};
 use types::ColumnData;
-use {FromUint, TdsError};
+use {FromUint, Error};
 
 pub trait Io: AsyncRead + AsyncWrite {}
 impl<I: AsyncRead + AsyncWrite> Io for I {}
@@ -32,12 +32,12 @@ pub mod tls {
     use transport::Io;
     pub use self::native_tls::TlsConnector;
     pub use self::tokio_tls::{ConnectAsync, TlsConnectorExt, TlsStream};
-    use TdsError;
+    use Error;
 
-    impl From<native_tls::Error> for TdsError {
-        fn from(e: native_tls::Error) -> TdsError {
+    impl From<native_tls::Error> for Error {
+        fn from(e: native_tls::Error) -> Error {
             let err = format!("{:?}", e);
-            TdsError::Protocol(err.into())
+            Error::Protocol(err.into())
         }
     }
 
@@ -413,7 +413,7 @@ impl<I: Io> TdsTransport<I> {
     }
 
     /// returns a parsed token
-    fn read_token(&mut self) -> Poll<TdsResponseToken, TdsError> {
+    fn read_token(&mut self) -> Poll<TdsResponseToken, Error> {
         let (token, size_hint) = {
             // read a token
             if self.read_state.is_none() {
@@ -463,7 +463,7 @@ impl<I: Io> TdsTransport<I> {
         ret
     }
 
-    pub fn next_token(&mut self) -> Poll<Option<TdsResponseToken>, TdsError> {
+    pub fn next_token(&mut self) -> Poll<Option<TdsResponseToken>, Error> {
         // return a reinjected token instantly
         if let Some(next_token) = self.reinject_token.take() {
             return Ok(Async::Ready(Some(next_token)));
@@ -473,7 +473,7 @@ impl<I: Io> TdsTransport<I> {
             self.inner.commit_rd_buffer();
 
             let ret = match self.read_token() {
-                Err(TdsError::Io(ref err)) if err.kind() == ::std::io::ErrorKind::UnexpectedEof => {
+                Err(Error::Io(ref err)) if err.kind() == ::std::io::ErrorKind::UnexpectedEof => {
                     Async::NotReady
                 }
                 x => x?,
@@ -514,7 +514,7 @@ impl<I: Io> TdsTransport<I> {
                         }
                         TdsResponseToken::Info(_) | TdsResponseToken::Order(_) => continue,
                         TdsResponseToken::Error(err) => {
-                            return Err(TdsError::Server(err));
+                            return Err(Error::Server(err));
                         }
                         _ => (),
                     }
@@ -605,7 +605,7 @@ impl<I: Io> TdsTransportInner<I> {
     pub fn read_varchar<S: ReadSize<Cursor<Bytes>>>(
         &mut self,
         size_in_bytes: bool,
-    ) -> Poll<Str, TdsError> {
+    ) -> Poll<Str, Error> {
         let mut len = S::read_size(&mut self.rd)?;
         if size_in_bytes {
             assert_eq!(len % 2, 0);
@@ -627,7 +627,7 @@ impl<I: Io> TdsTransportInner<I> {
     }
 
     /// buffers another packet from the underlying IO (or continues the last I/O operation)
-    pub fn next_packet(&mut self) -> Poll<PacketHeader, TdsError> {
+    pub fn next_packet(&mut self) -> Poll<PacketHeader, Error> {
         // read the header first
         if self.header.is_none() {
             let mut offset = protocol::HEADER_BYTES - self.missing;

@@ -4,7 +4,7 @@ use futures_state_stream::{StateStream, StreamEvent};
 use query::{ExecFuture, QueryStream, ResultSetStream};
 use stmt::{ExecResult, QueryResult, Statement, StmtStream};
 use types::ToSql;
-use {BoxableIo, SqlConnection, TdsError};
+use {BoxableIo, SqlConnection, Error};
 
 /// A transaction
 pub struct Transaction<I: BoxableIo>(SqlConnection<I>);
@@ -103,7 +103,7 @@ impl<I: BoxableIo + 'static> Transaction<I> {
     }
 
     /// Commits a transaction
-    pub fn commit(self) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
+    pub fn commit(self) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
         Box::new(
             self.internal_exec("COMMIT TRAN")
                 .and_then(|trans| trans.finish()),
@@ -111,7 +111,7 @@ impl<I: BoxableIo + 'static> Transaction<I> {
     }
 
     /// Rollback a transaction
-    pub fn rollback(self) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
+    pub fn rollback(self) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
         Box::new(
             self.internal_exec("ROLLBACK TRAN")
                 .and_then(|trans| trans.finish()),
@@ -119,7 +119,7 @@ impl<I: BoxableIo + 'static> Transaction<I> {
     }
 
     /// convert back to a normal connection (enable auto commit)
-    fn finish(self) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
+    fn finish(self) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
         Box::new(
             self.internal_exec("set implicit_transactions off")
                 .and_then(|trans| Ok(trans.0)),
@@ -127,7 +127,7 @@ impl<I: BoxableIo + 'static> Transaction<I> {
     }
 
     /// executes an internal statement and checks if it succeeded
-    fn internal_exec(self, sql: &str) -> Box<Future<Item = Transaction<I>, Error = TdsError>> {
+    fn internal_exec(self, sql: &str) -> Box<Future<Item = Transaction<I>, Error = Error>> {
         Box::new(self.simple_exec(sql).and_then(|(result, trans)| {
             assert_eq!(result, 0);
             Ok(trans)

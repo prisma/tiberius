@@ -2,7 +2,7 @@
 use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use super::{ColumnData, FromColumnData, ToColumnData, ToSql};
-use {TdsError, TdsResult};
+use {Error, Result};
 
 /// prepares a statement which selects a passed value
 /// this tests serialization of a parameter and deserialization
@@ -96,20 +96,20 @@ impl PartialEq for Time {
 
 impl Time {
     #[inline]
-    pub fn len(&self) -> TdsResult<u8> {
+    pub fn len(&self) -> Result<u8> {
         Ok(match self.scale {
             0...2 => 3,
             3...4 => 4,
             5...7 => 5,
             _ => {
-                return Err(TdsError::Protocol(
+                return Err(Error::Protocol(
                     format!("timen: invalid scale {}", self.scale).into(),
                 ))
             }
         })
     }
 
-    pub fn encode_to<W: Write>(&self, mut wr: W) -> TdsResult<()> {
+    pub fn encode_to<W: Write>(&self, mut wr: W) -> Result<()> {
         match self.len()? {
             3 => {
                 assert_eq!(self.increments >> 24, 0);
@@ -130,13 +130,13 @@ impl Time {
         Ok(())
     }
 
-    pub fn decode<R: Read>(mut rd: R, n: usize, len: u8) -> TdsResult<Time> {
+    pub fn decode<R: Read>(mut rd: R, n: usize, len: u8) -> Result<Time> {
         let val = match (n, len) {
             (0...2, 3) => rd.read_u16::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 16,
             (3...4, 4) => rd.read_u32::<LittleEndian>()? as u64,
             (5...7, 5) => rd.read_u32::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 32,
             _ => {
-                return Err(TdsError::Protocol(
+                return Err(Error::Protocol(
                     format!("timen: invalid length {}", n).into(),
                 ))
             }
@@ -182,7 +182,7 @@ mod chrono {
     use self::chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
     use types::{ColumnData, FromColumnData, ToColumnData, ToSql};
     use super::{Date, DateTime};
-    use {TdsError, TdsResult};
+    use {Error, Result};
 
     #[inline]
     fn from_days(days: i64, start_year: i32) -> NaiveDate {

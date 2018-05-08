@@ -7,15 +7,15 @@ use futures::{Async, Poll};
 use transport::{Io, NoLength, PrimitiveWrites, ReadState, Str, TdsTransport};
 use types::{ColumnData, TypeInfo};
 use protocol::{self, FeatureLevel, PacketHeader, PacketStatus, PacketType, PacketWriter};
-use {FromUint, TdsError, TdsResult};
+use {FromUint, Error, Result};
 
 /// read a token from an underlying transport
 pub trait ParseToken<I: Io> {
-    fn parse_token(&mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError>;
+    fn parse_token(&mut TdsTransport<I>) -> Poll<TdsResponseToken, Error>;
 }
 
 pub trait WriteToken<I: Io> {
-    fn write_token(&self, &mut TdsTransport<I>) -> TdsResult<()>;
+    fn write_token(&self, &mut TdsTransport<I>) -> Result<()>;
 }
 
 uint_enum! {
@@ -60,7 +60,7 @@ impl<I: Io> TdsTransport<I> {
         &mut self,
         token: Tokens,
         min_len: usize,
-    ) -> Poll<TdsResponseToken, TdsError> {
+    ) -> Poll<TdsResponseToken, Error> {
         match token {
             Tokens::SSPI => {
                 if let Some(bytes) = self.inner.read_bytes(min_len) {
@@ -126,7 +126,7 @@ uint_enum! {
 }
 
 impl<I: Io> ParseToken<I> for TokenEnvChange {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let ty = trans.inner.read_u8()?;
         let token = match EnvChangeTy::from_u8(ty) {
             Some(EnvChangeTy::Database) => {
@@ -186,7 +186,7 @@ pub struct TokenInfo {
 }
 
 impl<I: Io> ParseToken<I> for TokenInfo {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let token = TokenInfo {
             number: trans.inner.read_u32::<LittleEndian>()?,
             state: trans.inner.read_u8()?,
@@ -205,7 +205,7 @@ impl<I: Io> ParseToken<I> for TokenInfo {
 pub struct TokenOrder(Vec<u16>);
 
 impl<I: Io> ParseToken<I> for TokenOrder {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let len = trans.inner.read_u16::<LittleEndian>()? / 2;
         let mut cols = Vec::with_capacity(len as usize);
         for _ in 0..len {
@@ -229,11 +229,11 @@ pub struct TokenLoginAck {
 }
 
 impl<I: Io> ParseToken<I> for TokenLoginAck {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let token = TokenLoginAck {
             interface: trans.inner.read_u8()?,
             tds_version: FeatureLevel::from_u32(trans.inner.read_u32::<BigEndian>()?)
-                .ok_or(TdsError::Protocol("loginack: invalid tds version".into()))?,
+                .ok_or(Error::Protocol("loginack: invalid tds version".into()))?,
             prog_name: try_ready!(trans.inner.read_varchar::<u8>(false)),
             version: trans.inner.read_u32::<LittleEndian>()?,
         };
@@ -261,10 +261,10 @@ pub struct TokenDone {
 }
 
 impl<I: Io> ParseToken<I> for TokenDone {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let token = TokenDone {
             status: DoneStatus::from_bits(trans.inner.read_u16::<LittleEndian>()?)
-                .ok_or(TdsError::Protocol("done(variant): invalid status".into()))?,
+                .ok_or(Error::Protocol("done(variant): invalid status".into()))?,
             cur_cmd: trans.inner.read_u16::<LittleEndian>()?,
             done_rows: trans.inner.read_u64::<LittleEndian>()?,
         };
@@ -308,7 +308,7 @@ pub struct MetaDataColumn {
 }
 
 impl BaseMetaDataColumn {
-    fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<BaseMetaDataColumn, TdsError> {
+    fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<BaseMetaDataColumn, Error> {
         let _user_ty = trans.inner.read_u32::<LittleEndian>()?;
 
         let raw_flags = trans.inner.read_u16::<LittleEndian>()?;
@@ -337,7 +337,7 @@ impl BaseMetaDataColumn {
 }
 
 impl MetaDataColumn {
-    fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<MetaDataColumn, TdsError> {
+    fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<MetaDataColumn, Error> {
         let meta = MetaDataColumn {
             base: try_ready!(BaseMetaDataColumn::parse(trans)),
             col_name: try_ready!(trans.inner.read_varchar::<u8>(false)),
@@ -347,7 +347,7 @@ impl MetaDataColumn {
 }
 
 impl<I: Io> ParseToken<I> for TokenColMetaData {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let column_count = trans.inner.read_u16::<LittleEndian>()?;
 
         let mut columns = vec![];
@@ -379,11 +379,11 @@ pub struct TokenRow {
 
 impl<I: Io> ParseToken<I> for TokenRow {
     #[inline]
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let col_meta = if let Some(ref col_meta) = trans.inner.last_meta {
             col_meta.clone()
         } else {
-            return Err(TdsError::Protocol("missing colmeta data".into()));
+            return Err(Error::Protocol("missing colmeta data".into()));
         };
 
         // extract the state for the first Type/ColumnData parse call
@@ -446,12 +446,12 @@ impl<I: Io> ParseToken<I> for TokenRow {
 pub struct TokenNbcRow;
 
 impl<I: Io> ParseToken<I> for TokenNbcRow {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         if trans.inner.row_bitmap.is_none() {
             let col_meta = if let Some(ref col_meta) = trans.inner.last_meta {
                 col_meta.clone()
             } else {
-                return Err(TdsError::Protocol("missing colmeta data".into()));
+                return Err(Error::Protocol("missing colmeta data".into()));
             };
 
             // calculate size of the null-bitmap and read it
@@ -472,7 +472,7 @@ impl<I: Io> ParseToken<I> for TokenNbcRow {
 pub struct TokenDoneInProc;
 
 impl<I: Io> ParseToken<I> for TokenDoneInProc {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let token = match try_ready!(TokenDone::parse_token(trans)) {
             TdsResponseToken::Done(x) => x,
             _ => unreachable!(),
@@ -485,7 +485,7 @@ impl<I: Io> ParseToken<I> for TokenDoneInProc {
 pub struct TokenDoneProc;
 
 impl<I: Io> ParseToken<I> for TokenDoneProc {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let token = match try_ready!(TokenDone::parse_token(trans)) {
             TdsResponseToken::Done(x) => x,
             _ => unreachable!(),
@@ -510,7 +510,7 @@ pub struct TokenError {
 }
 
 impl<I: Io> ParseToken<I> for TokenError {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let token = TokenError {
             code: trans.inner.read_u32::<LittleEndian>()?,
             state: trans.inner.read_u8()?,
@@ -535,13 +535,13 @@ pub struct TokenReturnValue {
 }
 
 impl<I: Io> ParseToken<I> for TokenReturnValue {
-    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, TdsError> {
+    fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let param_ordinal = trans.inner.read_u16::<LittleEndian>()?;
         let param_name = try_ready!(trans.inner.read_varchar::<u8>(false));
         let udf = match trans.inner.read_u8()? {
             0x01 => false,
             0x02 => true,
-            _ => return Err(TdsError::Protocol("ReturnValue: invalid status".into())),
+            _ => return Err(Error::Protocol("ReturnValue: invalid status".into())),
         };
         let meta = try_ready!(BaseMetaDataColumn::parse(trans));
         let token = TokenReturnValue {
@@ -607,7 +607,7 @@ pub struct TokenRpcRequest<'a> {
 }
 
 impl<'a, I: Io> WriteToken<I> for TokenRpcRequest<'a> {
-    fn write_token(&self, trans: &mut TdsTransport<I>) -> TdsResult<()> {
+    fn write_token(&self, trans: &mut TdsTransport<I>) -> Result<()> {
         // build the general header for the packet
         let header = PacketHeader {
             ty: PacketType::RPC,

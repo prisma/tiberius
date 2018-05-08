@@ -5,12 +5,12 @@ use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
 use tokens::{DoneStatus, TdsResponseToken, TokenRow};
 use types::FromColumnData;
-use {BoxableIo, SqlConnection, StmtResult, TdsError, TdsResult};
+use {BoxableIo, SqlConnection, StmtResult, Error, Result};
 
 /// A query result consists of multiple query streams (amount of executed queries = amount of results)
 #[must_use = "streams do nothing unless polled"]
 pub struct ResultSetStream<I: BoxableIo, R: StmtResult<I>> {
-    err: Option<TdsError>,
+    err: Option<Error>,
     conn: Option<SqlConnection<I>>,
     receiver: Option<oneshot::Receiver<SqlConnection<I>>>,
     /// whether we already returned a result for the current resultset
@@ -31,7 +31,7 @@ impl<I: BoxableIo, R: StmtResult<I>> ResultSetStream<I, R> {
         }
     }
 
-    pub fn error(mut self, err: TdsError) -> Self {
+    pub fn error(mut self, err: Error) -> Self {
         self.err = Some(err);
         self
     }
@@ -40,7 +40,7 @@ impl<I: BoxableIo, R: StmtResult<I>> ResultSetStream<I, R> {
 impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
     type Item = R::Result;
     type State = SqlConnection<I>;
-    type Error = TdsError;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<StreamEvent<Self::Item, Self::State>, Self::Error> {
         if let Some(err) = self.err.take() {
@@ -54,7 +54,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for ResultSetStream<I, R> {
                     .as_mut()
                     .unwrap()
                     .poll()
-                    .map_err(|_| TdsError::Canceled)
+                    .map_err(|_| Error::Canceled)
             ));
             self.receiver = None;
         }
@@ -115,10 +115,10 @@ struct ResultInner<I: BoxableIo> (
 );
 
 impl<I: BoxableIo> ResultInner<I> {
-    fn send_back(&mut self) -> TdsResult<bool> {
+    fn send_back(&mut self) -> Result<bool> {
         if let Some((conn, ret_conn)) = self.0.take() {
             ret_conn.send(conn)
-                .map_err(|_| TdsError::Canceled)
+                .map_err(|_| Error::Canceled)
                 .map(|_| true)
         } else {
             Ok(false)
@@ -136,7 +136,7 @@ impl<I: BoxableIo> Drop for ResultInner<I> {
 
 impl<'a, I: BoxableIo> Stream for QueryStream<I> {
     type Item = QueryRow;
-    type Error = TdsError;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         assert!(self.inner.0.is_some());
@@ -186,7 +186,7 @@ pub struct ExecFuture<I: BoxableIo> {
 impl<I: BoxableIo> Future for ExecFuture<I> {
     /// Amount of affected rows
     type Item = u64;
-    type Error = TdsError;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         assert!(self.inner.0.is_some());
@@ -289,7 +289,7 @@ impl QueryRow {
     pub fn try_get<'a, I: QueryIdx, R: FromColumnData<'a>>(
         &'a self,
         idx: I,
-    ) -> TdsResult<Option<R>> {
+    ) -> Result<Option<R>> {
         let idx = match idx.to_idx(self) {
             Some(x) => x,
             None => return Ok(None),

@@ -8,7 +8,7 @@ use futures_state_stream::{StateStream, StreamEvent};
 use query::{ExecFuture, QueryStream};
 use tokens::{DoneStatus, TdsResponseToken, TokenColMetaData};
 use types::{ColumnData, ToSql};
-use {BoxableIo, SqlConnection, StmtResult, TdsError};
+use {BoxableIo, SqlConnection, StmtResult, Error};
 
 /// A prepared statement which is prepared on the first execution
 /// (which is a technical requirement since you need to know the types)
@@ -58,7 +58,7 @@ where
 /// into a set of results (e.g. multiple elements of the type `QueryStream`)
 #[must_use = "streams do nothing unless polled"]
 pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
-    err: Option<TdsError>,
+    err: Option<Error>,
     done: bool,
     conn: Option<SqlConnection<I>>,
     param_sig: Option<Vec<&'static str>>,
@@ -74,7 +74,7 @@ pub struct StmtStream<I: BoxableIo, R: StmtResult<I>> {
 }
 
 impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
-    pub fn new(
+    pub(crate) fn new(
         conn: SqlConnection<I>,
         stmt: Statement,
         meta: Option<Arc<TokenColMetaData>>,
@@ -94,7 +94,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
         }
     }
 
-    pub fn error(mut self, err: TdsError) -> Self {
+    pub fn error(mut self, err: Error) -> Self {
         self.err = Some(err);
         self
     }
@@ -103,7 +103,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
 impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
     type Item = R::Result;
     type State = SqlConnection<I>;
-    type Error = TdsError;
+    type Error = Error;
 
     fn poll(&mut self) -> Poll<StreamEvent<Self::Item, Self::State>, Self::Error> {
         // return a stored error, if that's the case
@@ -118,7 +118,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StateStream for StmtStream<I, R> {
                     .as_mut()
                     .unwrap()
                     .poll()
-                    .map_err(|_| TdsError::Canceled)
+                    .map_err(|_| Error::Canceled)
             ));
             self.receiver = None;
         }

@@ -6,7 +6,7 @@ use std::mem;
 use futures::Sink;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use transport::{Io, TdsTransport, TdsTransportInner};
-use {FromUint, TdsError, TdsResult, DRIVER_VERSION};
+use {FromUint, Error, Result, DRIVER_VERSION};
 
 /// The amount of bytes a packet header consists of
 pub const HEADER_BYTES: usize = 8;
@@ -18,7 +18,7 @@ pub trait SerializeMessage {
 }
 
 pub trait UnserializeMessage<T> {
-    fn unserialize_message<I: Io>(&self, trans: &mut TdsTransport<I>) -> TdsResult<T>;
+    fn unserialize_message<I: Io>(&self, trans: &mut TdsTransport<I>) -> Result<T>;
 }
 
 uint_enum! {
@@ -100,13 +100,13 @@ impl PacketHeader {
         writer.write_u8(self.window)
     }
 
-    pub fn unserialize(buf: &[u8]) -> TdsResult<PacketHeader> {
+    pub fn unserialize(buf: &[u8]) -> Result<PacketHeader> {
         let mut cursor = Cursor::new(buf);
         Ok(PacketHeader {
             ty: PacketType::from_u8(cursor.read_u8()?)
-                .ok_or(TdsError::Protocol("header: invalid packet type".into()))?,
+                .ok_or(Error::Protocol("header: invalid packet type".into()))?,
             status: PacketStatus::from_u8(cursor.read_u8()?)
-                .ok_or(TdsError::Protocol("header: invalid packet status".into()))?,
+                .ok_or(Error::Protocol("header: invalid packet status".into()))?,
             length: cursor.read_u16::<BigEndian>()?,
             spid: cursor.read_u16::<BigEndian>()?,
             id: cursor.read_u8()?,
@@ -219,7 +219,7 @@ impl SerializeMessage for PreloginMessage {
 }
 
 impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
-    fn unserialize_message<I: Io>(&self, _: &mut TdsTransport<I>) -> TdsResult<PreloginMessage> {
+    fn unserialize_message<I: Io>(&self, _: &mut TdsTransport<I>) -> Result<PreloginMessage> {
         let mut cursor = Cursor::new(self);
         let mut ret = PreloginMessage::new();
 
@@ -246,7 +246,7 @@ impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
                 // encryption
                 1 => {
                     let encrypt = cursor.read_u8()?;
-                    ret.encryption = EncryptionLevel::from_u8(encrypt).ok_or(TdsError::Protocol(
+                    ret.encryption = EncryptionLevel::from_u8(encrypt).ok_or(Error::Protocol(
                         format!("invalid encryption value: {}", encrypt).into()
                     ))?;
                 }

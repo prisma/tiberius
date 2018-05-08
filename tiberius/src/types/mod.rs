@@ -10,16 +10,16 @@ use protocol::PLPChunkWriter;
 use transport::{Io, NVarcharPLPTyState, NoLength, PrimitiveWrites, ReadState, ReadTyState, Str,
                 TdsTransport};
 use collation;
-use {FromUint, TdsError, TdsResult};
+use {FromUint, Error, Result};
 
 macro_rules! from_column_data {
     ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
         $(
             impl<'a> FromColumnData<'a> for $ty {
-                fn from_column_data(data: &'a ColumnData) -> TdsResult<Self> {
+                fn from_column_data(data: &'a ColumnData) -> Result<Self> {
                     match *data {
                         $( $pat => Ok($val), )*
-                        _ => Err(TdsError::Conversion(format!("cannot interpret {:?} as an {} value", *data, stringify!($ty)).into()))
+                        _ => Err(Error::Conversion(format!("cannot interpret {:?} as an {} value", *data, stringify!($ty)).into()))
                     }
                 }
             }
@@ -226,7 +226,7 @@ impl fmt::Display for Guid {
 }
 
 impl TypeInfo {
-    pub fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<TypeInfo, TdsError> {
+    pub fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<TypeInfo, Error> {
         let ty = trans.inner.read_u8()?;
         if let Some(ty) = FixedLenType::from_u8(ty) {
             return Ok(Async::Ready(TypeInfo::FixedLen(ty)));
@@ -267,13 +267,13 @@ impl TypeInfo {
             };
             return Ok(Async::Ready(vty));
         }
-        Err(TdsError::Protocol(
+        Err(Error::Protocol(
             format!("invalid or unsupported column type: {:?}", ty).into(),
         ))
     }
 }
 
-fn parse_datetimen<'a, I: Io>(trans: &mut TdsTransport<I>, len: u8) -> TdsResult<ColumnData<'a>> {
+fn parse_datetimen<'a, I: Io>(trans: &mut TdsTransport<I>, len: u8) -> Result<ColumnData<'a>> {
     let datetime = match len {
         0 => ColumnData::None,
         4 => ColumnData::SmallDateTime(time::SmallDateTime {
@@ -285,7 +285,7 @@ fn parse_datetimen<'a, I: Io>(trans: &mut TdsTransport<I>, len: u8) -> TdsResult
             seconds_fragments: trans.inner.read_u32::<LittleEndian>()?,
         }),
         _ => {
-            return Err(TdsError::Protocol(
+            return Err(Error::Protocol(
                 format!("datetimen: length of {} is invalid", len).into(),
             ))
         }
@@ -297,7 +297,7 @@ impl<'a> ColumnData<'a> {
     pub fn parse<I: Io>(
         trans: &mut TdsTransport<I>,
         meta: &BaseMetaDataColumn,
-    ) -> Poll<ColumnData<'a>, TdsError> {
+    ) -> Poll<ColumnData<'a>, Error> {
         Ok(Async::Ready(match meta.ty {
             TypeInfo::FixedLen(ref fixed_ty) => match *fixed_ty {
                 FixedLenType::Int4 => ColumnData::I32(trans.inner.read_i32::<LittleEndian>()?),
@@ -331,7 +331,7 @@ impl<'a> ColumnData<'a> {
                             4 => ColumnData::F32(trans.inner.read_f32::<LittleEndian>()?),
                             8 => ColumnData::F64(trans.inner.read_f64::<LittleEndian>()?),
                             _ => {
-                                return Err(TdsError::Protocol(
+                                return Err(Error::Protocol(
                                     format!("floatn: length of {} is invalid", len).into(),
                                 ))
                             }
@@ -384,7 +384,7 @@ impl<'a> ColumnData<'a> {
                                         0xfffffffffffffffe => 1 << 7,
                                         len if len % 2 == 0 => len / 2,
                                         _ => {
-                                            return Err(TdsError::Protocol(
+                                            return Err(Error::Protocol(
                                                 "nvarchar: invalid plp length".into(),
                                             ))
                                         }
@@ -456,10 +456,10 @@ impl<'a> ColumnData<'a> {
                             .as_ref()
                             .unwrap()
                             .encoding()
-                            .ok_or(TdsError::Encoding("encoding: unspported encoding".into()))?;
+                            .ok_or(Error::Encoding("encoding: unspported encoding".into()))?;
                         let str_: String = encoder
                             .decode(bytes.as_ref(), DecoderTrap::Strict)
-                            .map_err(TdsError::Encoding)?;
+                            .map_err(Error::Encoding)?;
                         ColumnData::String(str_.into())
                     }
                     VarLenType::Money => {
@@ -475,7 +475,7 @@ impl<'a> ColumnData<'a> {
                                 ((high << 32) as f64 + low) / 1e4
                             }),
                             _ => {
-                                return Err(TdsError::Protocol(
+                                return Err(Error::Protocol(
                                     format!("money: length of {} is invalid", len).into(),
                                 ))
                             }
@@ -495,7 +495,7 @@ impl<'a> ColumnData<'a> {
                                 ColumnData::Date(time::Date::new(LittleEndian::read_u32(&bytes)))
                             }
                             _ => {
-                                return Err(TdsError::Protocol(
+                                return Err(Error::Protocol(
                                     format!("daten: length of {} is invalid", len).into(),
                                 ))
                             }
@@ -548,7 +548,7 @@ impl<'a> ColumnData<'a> {
                         let sign = match trans.inner.read_u8()? {
                             0 => -1f64,
                             1 => 1f64,
-                            _ => return Err(TdsError::Protocol("decimal: invalid sign".into())),
+                            _ => return Err(Error::Protocol("decimal: invalid sign".into())),
                         };
                         let value = sign * match len {
                             5 => trans.inner.read_u32::<LittleEndian>()? as f64,
@@ -565,7 +565,7 @@ impl<'a> ColumnData<'a> {
                                 read_d128(&bytes)
                             }
                             x => {
-                                return Err(TdsError::Protocol(
+                                return Err(Error::Protocol(
                                     format!("decimal/numeric: invalid length of {} received", x)
                                         .into(),
                                 ))
@@ -579,7 +579,7 @@ impl<'a> ColumnData<'a> {
         }))
     }
 
-    pub fn serialize<W: Write>(&self, mut target: W) -> TdsResult<()> {
+    pub fn serialize<W: Write>(&self, mut target: W) -> Result<()> {
         match *self {
             ColumnData::Bit(ref val) => target
                 .write(&[VarLenType::Bitn as u8, 1, 1, *val as u8])
@@ -676,7 +676,7 @@ impl<'a> ColumnData<'a> {
 }
 
 pub trait FromColumnData<'a>: Sized {
-    fn from_column_data(data: &'a ColumnData) -> TdsResult<Self>;
+    fn from_column_data(data: &'a ColumnData) -> Result<Self>;
 }
 
 pub trait ToColumnData {
@@ -691,7 +691,7 @@ pub trait ToSql: ToColumnData {
 
 // allow getting nullable columns
 impl<'a, S: FromColumnData<'a> + 'a> FromColumnData<'a> for Option<S> {
-    fn from_column_data(data: &'a ColumnData) -> TdsResult<Self> {
+    fn from_column_data(data: &'a ColumnData) -> Result<Self> {
         if let ColumnData::None = *data {
             return Ok(None);
         }

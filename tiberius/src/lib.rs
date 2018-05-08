@@ -97,6 +97,7 @@ use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::marker::PhantomData;
 use std::mem;
+use std::result;
 use std::sync::Arc;
 use std::io;
 use fnv::FnvHashMap;
@@ -186,7 +187,7 @@ fn get_driver_version() -> u64 {
 
 /// A unified error enum that contains several errors that might occurr during the lifecycle of this driver
 #[derive(Debug)]
-pub enum TdsError {
+pub enum Error {
     /// An error occurred during the attempt of performing I/O
     Io(io::Error),
     /// An error occurred on the protocol level
@@ -200,34 +201,34 @@ pub enum TdsError {
     Canceled,
 }
 
-impl From<io::Error> for TdsError {
-    fn from(err: io::Error) -> TdsError {
-        TdsError::Io(err)
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
+        Error::Io(err)
     }
 }
 
-impl From<std::num::ParseIntError> for TdsError {
-    fn from(err: std::num::ParseIntError) -> TdsError {
-        TdsError::ParseInt(err)
+impl From<std::num::ParseIntError> for Error {
+    fn from(err: std::num::ParseIntError) -> Error {
+        Error::ParseInt(err)
     }
 }
 
-impl From<std::str::Utf8Error> for TdsError {
-    fn from(err: std::str::Utf8Error) -> TdsError {
-        TdsError::Utf8(err)
+impl From<std::str::Utf8Error> for Error {
+    fn from(err: std::str::Utf8Error) -> Error {
+        Error::Utf8(err)
     }
 }
 
-impl From<std::string::FromUtf16Error> for TdsError {
-    fn from(err: std::string::FromUtf16Error) -> TdsError {
-        TdsError::Utf16(err)
+impl From<std::string::FromUtf16Error> for Error {
+    fn from(err: std::string::FromUtf16Error) -> Error {
+        Error::Utf16(err)
     }
 }
 
-pub type TdsResult<T> = Result<T, TdsError>;
+pub type Result<T> = result::Result<T, Error>;
 
 /// A connection in a state before any login has happened
-enum SqlConnectionLoginState<I: Io, F: Future<Item = I, Error = TdsError> + Send + Sized> {
+enum SqlConnectionLoginState<I: Io, F: Future<Item = I, Error = Error> + Send + Sized> {
     Connection(Option<(F, ConnectParams)>),
 
     PreLoginSend,
@@ -243,7 +244,7 @@ enum SqlConnectionLoginState<I: Io, F: Future<Item = I, Error = TdsError> + Send
 
 /// A pending SQL connection
 #[must_use = "futures do nothing unless polled"]
-pub struct Connect<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send + Sized> {
+struct Connect<I: BoxableIo, F: Future<Item = I, Error = Error> + Send + Sized> {
     state: SqlConnectionLoginState<I, F>,
     context: Option<SqlConnectionContext<I>>,
 }
@@ -270,11 +271,11 @@ impl<I: BoxableIo> SqlConnectionContext<I> {
     }
 }
 
-impl<I: BoxableIo, F: Future<Item = I, Error = TdsError> + Send> Future for Connect<I, F> {
+impl<I: BoxableIo, F: Future<Item = I, Error = Error> + Send> Future for Connect<I, F> {
     type Item = SqlConnection<I>;
-    type Error = TdsError;
+    type Error = Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, TdsError> {
+    fn poll(&mut self) -> Poll<Self::Item, Error> {
         loop {
             self.state = match self.state {
                 SqlConnectionLoginState::Connection(ref mut pairs @ Some(_)) => {
@@ -589,7 +590,7 @@ enum ConnectTarget {
 
 impl ConnectTarget {
     fn connect(self) 
-        -> Box<Future<Item = Box<BoxableIo>, Error = TdsError> + Sync + Send>
+        -> Box<Future<Item = Box<BoxableIo>, Error = Error> + Sync + Send>
     {
         match self {
             ConnectTarget::Tcp(ref addr) => {
@@ -598,7 +599,7 @@ impl ConnectTarget {
                         stream.set_nodelay(true)?;
                         Ok(stream)
                     })
-                    .from_err::<TdsError>()
+                    .from_err::<Error>()
                     .map(|stream| Box::new(stream) as Box<BoxableIo>);
                 Box::new(future)
             }
@@ -618,9 +619,9 @@ impl ConnectTarget {
                     .into_future()
                     .and_then(move |socket| socket.send_dgram(msg, &addr))
                     .and_then(|(socket, _)| socket.recv_dgram(vec![0u8; 4096]))
-                    .from_err::<TdsError>()
+                    .from_err::<Error>()
                     .and_then(|(_, buf, len, mut addr)| {
-                        let err = TdsError::Conversion("could not resolve instance".into());
+                        let err = Error::Conversion("could not resolve instance".into());
                         if len == 0 {
                             return Err(err);
                         }
@@ -642,7 +643,7 @@ impl ConnectTarget {
 
 /// Parse connection strings
 /// https://msdn.microsoft.com/de-de/library/system.data.sqlclient.sqlconnection.connectionstring(v=vs.110).aspx
-fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, ConnectTarget)>
+fn parse_connection_str(connection_str: &str) -> Result<(ConnectParams, ConnectTarget)>
 { 
     let mut connect_params = ConnectParams::new();
     let mut target: Option<ConnectTarget> = None;
@@ -657,7 +658,7 @@ fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, Conne
             if let Some(i) = t.next() {
                 input = i;
             } else {
-                return Err(TdsError::Conversion(
+                return Err(Error::Conversion(
                     "connection string expected key. expected `=` never found".into(),
                 ));
             }
@@ -692,7 +693,7 @@ fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, Conne
                 } else if input.is_empty() {
                     break;
                 } else {
-                    return Err(TdsError::Conversion(
+                    return Err(Error::Conversion(
                         "connection string: text after escape sequence".into(),
                     ));
                 }
@@ -707,11 +708,11 @@ fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, Conne
             Cow::Borrowed(value.trim())
         };
 
-        fn parse_bool<T: AsRef<str>>(v: T) -> Result<bool, TdsError> {
+        fn parse_bool<T: AsRef<str>>(v: T) -> Result<bool> {
             match v.as_ref().trim().to_lowercase().as_str() {
                 "true" | "yes" => Ok(true),
                 "false" | "no" => Ok(false),
-                _ => Err(TdsError::Conversion(
+                _ => Err(Error::Conversion(
                     "connection string: not a valid boolean".into(),
                 )),
             }
@@ -724,14 +725,14 @@ fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, Conne
                 if parts.len() == 1 {
                     // Connect using a host and an instance name, we first need to resolve to a port
                     parts = parts[0].split('\\').collect();
-                    let addr = (parts[0], 1434).to_socket_addrs()?.nth(0).ok_or(TdsError::Conversion(
+                    let addr = (parts[0], 1434).to_socket_addrs()?.nth(0).ok_or(Error::Conversion(
                         "connection string: could not resolve server address".into(),
                     ))?;
                     target = Some(ConnectTarget::TcpViaSQLBrowser(addr, parts[1].to_owned()));
                 } else if parts.len() == 2 {
                     // Connect using a TCP target
                     let (host, port) = (parts[0], parts[1].parse::<u16>()?);
-                    let addr = (host, port).to_socket_addrs()?.nth(0).ok_or(TdsError::Conversion(
+                    let addr = (host, port).to_socket_addrs()?.nth(0).ok_or(Error::Conversion(
                         "connection string: could not resolve server address".into(),
                     ))?;
                     target = Some(ConnectTarget::Tcp(addr));
@@ -790,13 +791,13 @@ fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, Conne
                 };
             }
             _ => {
-                return Err(TdsError::Conversion(
+                return Err(Error::Conversion(
                     format!("connection string: unknown config option: {:?}", key).into(),
                 ))
             }
         }
     }
-    let target = target.ok_or(TdsError::Conversion(
+    let target = target.ok_or(Error::Conversion(
         "connection string pointing into the void. no connection endpoint specified.".into(),
     ))?;
 
@@ -806,7 +807,7 @@ fn parse_connection_str(connection_str: &str) -> TdsResult<(ConnectParams, Conne
 impl SqlConnection<Box<BoxableIo>> {
     /// Naive connection function for the SQL client
     pub fn connect(connection_str: &str) 
-        -> Box<Future<Item = SqlConnection<Box<BoxableIo>>, Error=TdsError> + Send>
+        -> Box<Future<Item = SqlConnection<Box<BoxableIo>>, Error=Error> + Send>
     {
         let future = parse_connection_str(connection_str)
             .into_future()
@@ -820,8 +821,8 @@ impl SqlConnection<Box<BoxableIo>> {
 
 impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     /// Connect to the SQL server using given params and chosen stream
-    pub fn connect_to<F>(params: ConnectParams, target: F) -> Connect<F::Item, F>
-        where F: Future<Item = I, Error = TdsError> + Sync + Send
+    pub fn connect_to<F>(params: ConnectParams, target: F) -> impl Future<Item=SqlConnection<I>, Error=Error>
+        where F: Future<Item = I, Error = Error> + Sync + Send
     {
         let state = SqlConnectionLoginState::Connection(Some((target, params)));
 
@@ -831,7 +832,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
-    fn queue_sql_batch<'a, S>(&mut self, stmt: S) -> TdsResult<()>
+    fn queue_sql_batch<'a, S>(&mut self, stmt: S) -> Result<()>
     where
         S: Into<Cow<'a, str>>,
     {
@@ -1004,7 +1005,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     }
 
     /// Start a transaction
-    pub fn transaction(self) -> Box<Future<Item = Transaction<I>, Error = TdsError>> {
+    pub fn transaction(self) -> Box<Future<Item = Transaction<I>, Error = Error>> {
         Box::new(
             self.simple_exec("set implicit_transactions on")
                 .and_then(|(result, conn)| {
@@ -1030,7 +1031,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 
 fn _ensure_sync() {
     fn _ensure<T: Send>() {}
-    _ensure::<TdsError>();
+    _ensure::<Error>();
     _ensure::<SqlConnection<Box<BoxableIo>>>();
     _ensure::<stmt::QueryResult<query::ResultSetStream<Box<BoxableIo>, QueryStream<Box<BoxableIo>>>>>();
 }
@@ -1044,7 +1045,7 @@ mod tests {
     use tokio::executor::current_thread;
     use query::ExecFuture;
     use stmt::ExecResult;
-    use super::{BoxableIo, SqlConnection, TdsError, Transaction};
+    use super::{BoxableIo, SqlConnection, Error, Result, Transaction};
 
     /// allow to modify the
     pub fn connection_string() -> String {
@@ -1091,11 +1092,11 @@ mod tests {
                 .simple_query("select 18")
                 .fold(false, |acc, row| {
                     if row.get::<_, i32>(0) == 17 { 
-                        future::ok::<_, TdsError>(true)
+                        future::ok::<_, Error>(true)
                     } else { 
                         future::ok(acc)
                     }
-                }, |success, _| future::ok::<_, TdsError>(success)))
+                }, |success, _| future::ok::<_, Error>(success)))
             .map(|success| assert!(success))
             .map_err(|err| panic!("err: {:?}", err));
         tokio::run(future);
@@ -1154,7 +1155,7 @@ mod tests {
         current_thread::block_on_all(future).unwrap();
     }
 
-    fn helper_ddl_exec<I: BoxableIo, R: StateStream<Item = ExecFuture<I>, State = SqlConnection<I>, Error = TdsError>>(
+    fn helper_ddl_exec<I: BoxableIo, R: StateStream<Item = ExecFuture<I>, State = SqlConnection<I>, Error = Error>>(
         exec: ExecResult<R>,
     ) {
         let mut i = 0;
@@ -1287,7 +1288,7 @@ mod tests {
         fn check_test_value<I: BoxableIo + 'static>(
             conn: SqlConnection<I>,
             value: i32,
-        ) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
+        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
             Box::new(conn.simple_query("SELECT test FROM #temp;").for_each(
                 move |row| {
                     let val: i32 = row.get(0);
@@ -1300,7 +1301,7 @@ mod tests {
         fn update_test_value<I: BoxableIo + 'static>(
             transaction: Transaction<I>,
             commit: bool,
-        ) -> Box<Future<Item = SqlConnection<I>, Error = TdsError>> {
+        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
             Box::new(
                 transaction
                     .simple_exec("UPDATE #Temp SET test=44;")
@@ -1351,7 +1352,7 @@ mod tests {
                 ::futures::finished((conn.prepare("SELECT @P1 + @P2"), conn))
             })
             .and_then(|(stmt, conn)| {
-                fn handle_row(row: ::query::QueryRow) -> ::TdsResult<()> {
+                fn handle_row(row: ::query::QueryRow) -> Result<()> {
                     let val: i32 = row.get(0);
                     assert_eq!(val, 3i32);
                     Ok(())
