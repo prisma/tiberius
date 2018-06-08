@@ -7,8 +7,8 @@ use encoding::{DecoderTrap, Encoding};
 use futures::{Async, Poll};
 use tokens::BaseMetaDataColumn;
 use protocol::PLPChunkWriter;
-use transport::{Io, NVarcharPLPTyState, NoLength, PrimitiveWrites, ReadState, ReadTyState, Str,
-                TdsTransport};
+use transport::{Io, NoLength, PrimitiveWrites, Str, TdsTransport};
+use plp::ReadTyMode;
 use collation;
 use {FromUint, Error, Result};
 
@@ -348,109 +348,28 @@ impl<'a> ColumnData<'a> {
                     }
                     VarLenType::NChar | VarLenType::NVarchar => {
                         trans.state_tracked = true;
-                        // reduce some boilerplate by using RefCell/Rc
-                        let read_state_mut = &mut trans.read_state;
-                        // check if PLP or normal size
-                        if *len < 0xffff || *ty == VarLenType::NChar {
-                            match *read_state_mut {
-                                Some(ReadState::Type(ReadTyState::NVarchar(_))) => (),
-                                _ => {
-                                    let len = trans.inner.read_u16::<LittleEndian>()? as usize;
-                                    *read_state_mut = Some(ReadState::Type(
-                                        ReadTyState::NVarchar(Vec::with_capacity(len / 2)),
-                                    ));
-                                }
-                            };
-                            let target = match *read_state_mut {
-                                Some(ReadState::Type(ReadTyState::NVarchar(ref mut buf))) => buf,
-                                _ => unreachable!(),
-                            };
-                            while target.capacity() > target.len() {
-                                target.push(trans.inner.read_u16::<LittleEndian>()?);
+
+                        let mode = if *ty == VarLenType::NChar {
+                            ReadTyMode::FixedSize(*len)
+                        } else {
+                            ReadTyMode::auto(*len)
+                        };
+
+                        let data = try_ready!(trans.inner.read_plp_type(&mut trans.read_state, mode));
+
+                        let ret = if let Some(buf) = data {
+                            if buf.len() % 2 != 0 {
+                                return Err(Error::Protocol("nvarchar: invalid plp length".into()))
                             }
-                            let str_ = String::from_utf16(&target[..])?;
-                            // make sure we do not skip before what we've already read for sure
-                            trans.state_tracked = false;
+                            let buf: Vec<_> = buf.chunks(2).map(LittleEndian::read_u16).collect();
+                            let str_ = String::from_utf16(&buf)?;
                             ColumnData::String(str_.into())
                         } else {
-                            match *read_state_mut {
-                                // we already have a state
-                                Some(ReadState::Type(ReadTyState::NVarcharPLP(_))) => (),
-                                // initial call
-                                _ => {
-                                    let size = trans.inner.read_u64::<LittleEndian>()?;
-                                    if size == 0xffffffffffffffff {
-                                        return Ok(Async::Ready(ColumnData::None));
-                                    }
-                                    let capacity = match size {
-                                        // unsized PLPs, allocate some space
-                                        0xfffffffffffffffe => 1 << 7,
-                                        len if len % 2 == 0 => len / 2,
-                                        _ => {
-                                            return Err(Error::Protocol(
-                                                "nvarchar: invalid plp length".into(),
-                                            ))
-                                        }
-                                    };
-                                    *read_state_mut = Some(ReadState::Type(
-                                        ReadTyState::NVarcharPLP(NVarcharPLPTyState {
-                                            bytes: Vec::with_capacity(capacity as usize),
-                                            chunk_left: None,
-                                            leftover: None,
-                                        }),
-                                    ));
-                                }
-                            };
-                            // get a mutable pointer to our state that is mutable even though it's stored in transport
-                            let plp_state = match *read_state_mut {
-                                Some(
-                                    ReadState::Type(ReadTyState::NVarcharPLP(ref mut plp_state)),
-                                ) => plp_state,
-                                _ => unreachable!(),
-                            };
+                            ColumnData::None
+                        };
 
-                            loop {
-                                if plp_state.chunk_left.is_none() {
-                                    let chunk_size =
-                                        trans.inner.read_u32::<LittleEndian>()? as usize;
-                                    if chunk_size == 0 {
-                                        break;
-                                    }
-                                    plp_state.bytes.reserve(chunk_size / 2);
-                                    plp_state.chunk_left = Some(chunk_size);
-                                }
-                                // byte from last chunk
-                                if let NVarcharPLPTyState {
-                                    ref mut bytes,
-                                    chunk_left: Some(ref mut chunk_left),
-                                    ref mut leftover,
-                                    ..
-                                } = *plp_state
-                                {
-                                    if let Some(ref leftover) = *leftover {
-                                        let buf = [*leftover, trans.inner.read_u8()?];
-                                        bytes.push(LittleEndian::read_u16(&buf));
-                                        *chunk_left -= 1;
-                                    }
-                                    *leftover = None;
-
-                                    for _ in 0..*chunk_left / 2 {
-                                        bytes.push(trans.inner.read_u16::<LittleEndian>()?);
-                                        *chunk_left -= 2;
-                                    }
-
-                                    // queue the last byte for the next chunk
-                                    if *chunk_left % 2 == 1 {
-                                        *leftover = Some(trans.inner.read_u8()?);
-                                    }
-                                }
-                                plp_state.chunk_left = None;
-                            }
-                            let str_ = String::from_utf16(&plp_state.bytes[..])?;
-                            // make sure we do not skip before what we've already read for sure
-                            trans.state_tracked = false;
-                            ColumnData::String(str_.into())
-                        }
+                        trans.state_tracked = false;
+                        ret
                     }
                     VarLenType::BigVarChar => {
                         assert!(*len != 0xffff); // TODO: PLP

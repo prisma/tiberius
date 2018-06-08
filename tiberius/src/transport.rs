@@ -12,6 +12,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll, Sink, StartSend};
 use protocol::{self, PacketHeader, PacketStatus};
+use plp::{ReadTyMode, ReadTyState};
 use tokens::{TdsResponseToken, TokenColMetaData, TokenEnvChange, Tokens};
 use types::ColumnData;
 use {FromUint, Error};
@@ -254,19 +255,6 @@ pub use self::tls::*;
 
 #[cfg(not(feature = "tls"))]
 pub type TransportStream<S> = S;
-
-#[derive(Debug)]
-pub struct NVarcharPLPTyState {
-    pub bytes: Vec<u16>,
-    pub chunk_left: Option<usize>,
-    pub leftover: Option<u8>,
-}
-
-#[derive(Debug)]
-pub enum ReadTyState {
-    NVarcharPLP(NVarcharPLPTyState),
-    NVarchar(Vec<u16>),
-}
 
 #[derive(Debug)]
 pub enum ReadState {
@@ -599,6 +587,22 @@ impl<I: Io> TdsTransportInner<I> {
             None => Async::NotReady,
         };
         Ok(ret)
+    }
+
+    /// read byte string with or without PLP
+    pub fn read_plp_type(&mut self, state: &mut Option<ReadState>, mode: ReadTyMode) -> Poll<Option<Vec<u8>>, Error> {
+        match *state {
+            Some(ReadState::Type(_)) => (),
+            _ => *state = Some(ReadState::Type(ReadTyState::new(mode))),
+        }
+
+        let ret = match *state {
+            Some(ReadState::Type(ref mut read_state)) => try_ready!(read_state.read(&mut **self)),
+            _ => unreachable!(),
+        };
+
+        *state = None;
+        Ok(Async::Ready(ret))
     }
 
     /// read bytes with an length prefix (which either is in bytes or in bytes/2 [u16 characters]) and interpret them as UCS-2 encoded string
