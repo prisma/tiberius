@@ -372,17 +372,27 @@ impl<'a> ColumnData<'a> {
                         ret
                     }
                     VarLenType::BigVarChar => {
-                        assert!(*len != 0xffff); // TODO: PLP
-                        let bytes = try_ready!(trans.inner.read_varbyte::<u16>());
-                        let encoder = collation
-                            .as_ref()
-                            .unwrap()
-                            .encoding()
-                            .ok_or(Error::Encoding("encoding: unspported encoding".into()))?;
-                        let str_: String = encoder
-                            .decode(bytes.as_ref(), DecoderTrap::Strict)
-                            .map_err(Error::Encoding)?;
-                        ColumnData::String(str_.into())
+                        trans.state_tracked = true;
+
+                        let mode = ReadTyMode::auto(*len);
+                        let data = try_ready!(trans.inner.read_plp_type(&mut trans.read_state, mode));
+
+                        let ret = if let Some(bytes) = data {
+                            let encoder = collation
+                                .as_ref()
+                                .unwrap()
+                                .encoding()
+                                .ok_or(Error::Encoding("encoding: unspported encoding".into()))?;
+                            let str_: String = encoder
+                                .decode(bytes.as_ref(), DecoderTrap::Strict)
+                                .map_err(Error::Encoding)?;
+                            ColumnData::String(str_.into())
+                        } else {
+                            ColumnData::None
+                        };
+
+                        trans.state_tracked = false;
+                        ret
                     }
                     VarLenType::Money => {
                         let len = trans.inner.read_u8()?;
