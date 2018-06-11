@@ -54,10 +54,11 @@ impl ReadTyState {
                 ReadTyMode::Plp => input.read_u64::<LittleEndian>()?,
             };
 
-            self.data = match size {
-                0xffffffffffffffff => None, // NULL value
-                0xfffffffffffffffe => Some(Vec::new()), // unknown size
-                len => Some(Vec::with_capacity(len as usize)), // given size
+            self.data = match (size, self.mode) {
+                (0xffff, ReadTyMode::FixedSize(_)) => None, // NULL value
+                (0xffffffffffffffff, ReadTyMode::Plp) => None, // NULL value
+                (0xfffffffffffffffe, ReadTyMode::Plp) => Some(Vec::new()), // unknown size
+                (len, _) => Some(Vec::with_capacity(len as usize)), // given size
             };
 
             // If this is not PLP, treat everything as a single chunk.
