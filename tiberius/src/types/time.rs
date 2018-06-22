@@ -219,7 +219,7 @@ mod chrono {
             ),
             ColumnData::DateTime2(ref dt) => NaiveDateTime::new(
                 from_days(dt.0.days() as i64, 1),
-                NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(dt.1.increments as i64 / 10i64.pow(dt.1.scale as u32) * 1e9 as i64)
+                NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(dt.1.increments as i64 * 10i64.pow(9 - dt.1.scale as u32))
             );
         NaiveDate:      ColumnData::Date(ref date) => from_days(date.days() as i64, 1)
     );
@@ -247,12 +247,12 @@ mod chrono {
         use super::chrono::{NaiveDate, NaiveDateTime};
         use SqlConnection;
 
-        static DATETIME_TEST_STR: &'static str = "2015-09-05 23:56:04.000";
+        static DATETIME_TEST_STR: &'static str = "2015-09-05 23:56:04.010";
 
         test_timedatatype!(
             test_chrono_date: NaiveDate = NaiveDate::from_ymd(1223, 11, 4) => "1223-11-04",
             test_chrono_datetime: NaiveDateTime
-                =  NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S.%f").unwrap()
+                =  NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S%.3f").unwrap()
                 => DATETIME_TEST_STR
         );
 
@@ -268,7 +268,7 @@ mod chrono {
                                 row.get::<_, NaiveDateTime>(0),
                                 NaiveDateTime::parse_from_str(
                                     DATETIME_TEST_STR,
-                                    "%Y-%m-%d %H:%M:%S.%f"
+                                    "%Y-%m-%d %H:%M:%S%.3f"
                                 ).unwrap()
                             );
                             Ok(())
