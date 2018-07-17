@@ -181,7 +181,7 @@ mod chrono {
 
     use self::chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
     use types::{ColumnData, FromColumnData, ToColumnData, ToSql};
-    use super::{Date, DateTime};
+    use super::{Date, DateTime2, Time};
     use {Error, Result};
 
     #[inline]
@@ -200,6 +200,7 @@ mod chrono {
             .num_days()
     }
 
+    /// relevant for encoding to datetime1
     #[inline]
     fn to_sec_fragments(time: &NaiveTime) -> i64 {
         time.signed_duration_since(NaiveTime::from_hms(0, 0, 0))
@@ -224,18 +225,24 @@ mod chrono {
         NaiveDate:      ColumnData::Date(ref date) => from_days(date.days() as i64, 1)
     );
     to_column_data!(self_,
-        NaiveDateTime =>
-            // TODO: also use datetime2 here for TDS>=7.3
-            ColumnData::DateTime(DateTime {
-                days: to_days(&self_.date(), 1900) as i32,
-                seconds_fragments: to_sec_fragments(&self_.time()) as u32,
-            }),
+        NaiveDateTime => {
+            use types::time::chrono::chrono::Timelike;
+
+            let date = self_.date();
+            let time = self_.time();
+            let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
+            // TODO: also use datetime here for TDS<7.3
+            ColumnData::DateTime2(DateTime2(Date::new(to_days(&date, 1) as u32), Time { 
+                increments: nanos / 100,
+                scale: 7,
+            }))
+        },
         NaiveDate => ColumnData::Date(Date::new(to_days(self_, 1) as u32))
     );
     to_sql!(
         NaiveDate => "date",
-        // TODO: use datetime2 instead ( TDS 7.3>= )
-        NaiveDateTime => "datetime"
+        // TODO: use datetime instead ( TDS < 7.3 )
+        NaiveDateTime => "datetime2"
     );
 
     #[cfg(test)]
@@ -247,12 +254,12 @@ mod chrono {
         use super::chrono::{NaiveDate, NaiveDateTime};
         use SqlConnection;
 
-        static DATETIME_TEST_STR: &'static str = "2015-09-05 23:56:04.010";
+        static DATETIME_TEST_STR: &'static str = "2015-09-05 23:56:04.0100020";
 
         test_timedatatype!(
             test_chrono_date: NaiveDate = NaiveDate::from_ymd(1223, 11, 4) => "1223-11-04",
             test_chrono_datetime: NaiveDateTime
-                =  NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S%.3f").unwrap()
+                =  NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S%.f").unwrap()
                 => DATETIME_TEST_STR
         );
 
