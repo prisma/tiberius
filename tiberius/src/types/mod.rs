@@ -341,10 +341,20 @@ impl<'a> ColumnData<'a> {
                         }
                     }
                     VarLenType::Guid => {
-                        assert_eq!(trans.inner.read_u8()? as usize, *len);
-                        let mut data = [0u8; 16];
-                        try_ready!(trans.inner.read_bytes_to(&mut data));
-                        ColumnData::Guid(Cow::Owned(Guid(data)))
+                        let len = trans.inner.read_u8()?;
+                        match len {
+                            0 => ColumnData::None,
+                            16 => {
+                                let mut data = [0u8; 16];
+                                try_ready!(trans.inner.read_bytes_to(&mut data));
+                                ColumnData::Guid(Cow::Owned(Guid(data)))
+                            },
+                            _ => {
+                                return Err(Error::Protocol(
+                                    format!("guid: length of {} is invalid", len).into(),
+                                ))
+                            }
+                        }
                     }
                     VarLenType::NChar | VarLenType::NVarchar => {
                         trans.state_tracked = true;
