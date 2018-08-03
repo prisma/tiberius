@@ -195,6 +195,11 @@ mod chrono {
     }
 
     #[inline]
+    fn from_sec(sec_fragments: u16) -> NaiveTime {
+        NaiveTime::from_num_seconds_from_midnight(sec_fragments as u32, 0)
+    }
+
+    #[inline]
     fn to_days(date: &NaiveDate, start_year: i32) -> i64 {
         date.signed_duration_since(NaiveDate::from_ymd(start_year, 1, 1))
             .num_days()
@@ -212,7 +217,7 @@ mod chrono {
         NaiveDateTime:
             ColumnData::SmallDateTime(ref dt) => NaiveDateTime::new(
                 from_days(dt.days as i64, 1900),
-                from_sec_fragments(dt.seconds_fragments as i64),
+                from_sec(dt.seconds_fragments),
             ),
             ColumnData::DateTime(ref dt) => NaiveDateTime::new(
                 from_days(dt.days as i64, 1900),
