@@ -857,4 +857,16 @@ mod tests {
         );
         current_thread::block_on_all(future).unwrap();
     }
+
+    #[test]
+    fn test_binary() {
+        let future = SqlConnection::connect(connection_string().as_ref()).and_then(|conn| 
+            conn.simple_query(r#"select cast(5 as binary(8000/*max for binary type*/))"#).for_each(|row| {
+                assert_eq!(row.get::<_, Option<&[u8]>>(0).map(|x| x.len()), Some(8000));
+                assert_eq!(row.get::<_, Option<&[u8]>>(0).map(|x| x[7999]), Some(5u8));
+                Ok(())
+            })
+        );
+        current_thread::block_on_all(future).unwrap();
+    }
 }
