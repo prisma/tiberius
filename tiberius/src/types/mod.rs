@@ -182,6 +182,7 @@ pub enum ColumnData<'a> {
     String(Cow<'a, str>),
     /// a buffer string which is a reference to a buffer of a received packet
     BString(Str),
+    Binary(Cow<'a, [u8]>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -243,7 +244,7 @@ impl TypeInfo {
                 VarLenType::Datetimen |
                 VarLenType::Timen |
                 VarLenType::Datetime2 => trans.inner.read_u8()? as usize,
-                VarLenType::NChar | VarLenType::NVarchar | VarLenType::BigVarChar => {
+                VarLenType::NChar | VarLenType::NVarchar | VarLenType::BigVarChar | VarLenType::BigBinary => {
                     trans.inner.read_u16::<LittleEndian>()? as usize
                 }
                 VarLenType::Daten => 3,
@@ -456,6 +457,21 @@ impl<'a> ColumnData<'a> {
                         let date = time::Date::new(LittleEndian::read_u32(&bytes));
                         ColumnData::DateTime2(time::DateTime2(date, time))
                     }
+                    VarLenType::BigBinary => {
+                        trans.state_tracked = true;
+
+                        let mode = ReadTyMode::auto(*len);
+                        let data = try_ready!(trans.inner.read_plp_type(&mut trans.read_state, mode));
+
+                        let ret = if let Some(buf) = data {
+                            ColumnData::Binary(buf.into())
+                        } else {
+                            ColumnData::None
+                        };
+
+                        trans.state_tracked = false;
+                        ret
+                    }
                     _ => unimplemented!(),
                 }
             }
@@ -612,6 +628,11 @@ impl<'a> ColumnData<'a> {
             ColumnData::None => {
                 target.write_all(&[FixedLenType::Null as u8])?;
             }
+            ColumnData::Binary(ref buf) => {
+                target.write_u8(VarLenType::BigBinary as u8)?;
+                target.write_u16::<LittleEndian>(buf.len() as u16)?; 
+                target.write_all(buf)?;
+            }
             _ => unimplemented!()
         }
         Ok(())
@@ -653,7 +674,8 @@ from_column_data!(
     f64:        ColumnData::F64(val) => val;
     &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
                 ColumnData::String(ref buf) => buf;
-    &'a Guid:   ColumnData::Guid(ref guid) => guid
+    &'a Guid:   ColumnData::Guid(ref guid) => guid;
+    &'a [u8]:   ColumnData::Binary(ref buf) => buf
 );
 
 to_column_data!(self_,
@@ -666,7 +688,8 @@ to_column_data!(self_,
     f64 =>      ColumnData::F64(*self_),
     &'a str =>  ColumnData::String((*self_).into()),
     Guid     => ColumnData::Guid(Cow::Borrowed(self_)),
-    &'a Guid => ColumnData::Guid(Cow::Borrowed(self_))
+    &'a Guid => ColumnData::Guid(Cow::Borrowed(self_)),
+    &'a [u8] => ColumnData::Binary((*self_).into())
 );
 
 to_sql!(
