@@ -31,8 +31,7 @@ pub mod tls {
     use tokio::io::{AsyncRead, AsyncWrite};
     use protocol::{self, PacketHeader, PacketStatus, PacketType};
     use transport::Io;
-    pub use self::native_tls::TlsConnector;
-    pub use self::tokio_tls::{ConnectAsync, TlsConnectorExt, TlsStream};
+    pub use self::tokio_tls::{Connect, TlsStream};
     use Error;
 
     impl From<native_tls::Error> for Error {
@@ -214,39 +213,19 @@ pub mod tls {
     impl<S: Io> AsyncRead for TransportStream<S> {}
 
     /// #WARNING: If no hostname is provided, certificate validation is DISABLED
-    pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> ConnectAsync<I> {
+    pub fn connect_async<I: Io>(stream: I, host: Option<&str>) -> Connect<I> {
         let disable_verification = host.is_none();
-        let mut builder = TlsConnector::builder().unwrap();
+        let mut builder = native_tls::TlsConnector::builder();
 
         if disable_verification {
-            #[allow(unused_assignments)]
-            let mut panic = true;
-            #[cfg(windows)]
-            {
-                panic = false;
-                use transport::tls::native_tls::backend::schannel::TlsConnectorBuilderExt;
-                builder.verify_callback(|_| Ok(()));
-            }
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            {
-                panic = false;
-                extern crate openssl;
-                use transport::tls::native_tls::backend::openssl::TlsConnectorBuilderExt;
-                builder
-                    .builder_mut()
-                    .builder_mut()
-                    .set_verify(openssl::ssl::SSL_VERIFY_NONE);
-            }
-            if panic {
-                panic!("disabling cert verification is not supported for this target");
-            }
+            builder.danger_accept_invalid_certs(true)
+                   .danger_accept_invalid_hostnames(true)
+                   .use_sni(false);
         }
 
         let cx = builder.build().unwrap();
-        match host {
-            Some(host) => cx.connect_async(host, stream),
-            None => cx.danger_connect_async_without_providing_domain_for_certificate_verification_and_server_name_indication(stream),
-        }
+        let connector = tokio_tls::TlsConnector::from(cx);
+        connector.connect(host.unwrap_or(""), stream)
     }
 }
 

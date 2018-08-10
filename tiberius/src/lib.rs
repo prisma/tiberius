@@ -235,7 +235,7 @@ enum SqlConnectionLoginState<I: Io, F: Future<Item = I, Error = Error> + Send + 
     PreLoginSend,
     PreLoginRecv,
     #[cfg(feature = "tls")]
-    TLSPending(Option<transport::tls::ConnectAsync<transport::tls::TlsTdsWrapper<I>>>),
+    TLSPending(Option<transport::tls::Connect<transport::tls::TlsTdsWrapper<I>>>),
     LoginSend,
     LoginRecv,
     TokenStreamRecv,
