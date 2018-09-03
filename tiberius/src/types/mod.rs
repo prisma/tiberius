@@ -313,8 +313,16 @@ impl<'a> ColumnData<'a> {
             TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
                 match *ty {
                     VarLenType::Bitn => {
-                        assert_eq!(trans.inner.read_u8()? as usize, *len);
-                        ColumnData::Bit(trans.inner.read_u8()? > 0)
+                        let recv_len = trans.inner.read_u8()? as usize;
+                        match recv_len {
+                            0 => ColumnData::None,
+                            1 => ColumnData::Bit(trans.inner.read_u8()? > 0),
+                            v => {
+                                return Err(Error::Protocol(
+                                    format!("bitn: length of {} is invalid", v).into(),
+                                ))
+                            }
+                        }
                     }
                     VarLenType::Intn => {
                         assert!(collation.is_none());
