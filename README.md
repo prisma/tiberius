@@ -58,7 +58,22 @@ type please create an issue, which will make this table grow.
 |DATETIME|tiberius::ty::DateTime
 |DATETIME2|tiberius::ty::DateTime2
 |DATETIME,DATETIME2|chrono::NaiveDateTime|chrono|
-
 Support for versions below 7.4 (to 7.2 so that everything >= SQL Server 2008 works) is desired.
+
+### Supported Connection String Parameters
+
+Not every parameter is supported yet. Below is a list of all parameters supported.
+
+|Parameters|Description|
+|--------|--------|
+|server|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name.|
+|integratedsecurity|Toggle between Windows authentication and SQL authentication.|
+|uid, username, user|The SQL Server login account.|
+|password, pwd|The password for the SQL Server account logging on.|
+|database|The name of the database.|
+|trustservercertificate|Specifies whether the driver trusts the server certificate when connecting using TLS.|
+|encrypt|Specifies whether the driver uses TLS to encrypt communication.|
+
+
 ## Old State (v0.1)
 The old state can be found [in the "old" branch (click me)](https://github.com/steffengy/tiberius/tree/old)
