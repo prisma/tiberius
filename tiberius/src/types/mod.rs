@@ -638,7 +638,7 @@ impl<'a> ColumnData<'a> {
             }
             ColumnData::Binary(ref buf) => {
                 target.write_u8(VarLenType::BigBinary as u8)?;
-                target.write_u16::<LittleEndian>(buf.len() as u16)?; 
+                target.write_u16::<LittleEndian>(buf.len() as u16)?;
                 target.write_all(buf)?;
             }
             _ => unimplemented!()
@@ -687,17 +687,18 @@ from_column_data!(
 );
 
 to_column_data!(self_,
-    bool =>     ColumnData::Bit(*self_),
-    i8  =>      ColumnData::I8(*self_),
-    i16 =>      ColumnData::I16(*self_),
-    i32 =>      ColumnData::I32(*self_),
-    i64 =>      ColumnData::I64(*self_),
-    f32 =>      ColumnData::F32(*self_),
-    f64 =>      ColumnData::F64(*self_),
-    &'a str =>  ColumnData::String((*self_).into()),
-    Guid     => ColumnData::Guid(Cow::Borrowed(self_)),
-    &'a Guid => ColumnData::Guid(Cow::Borrowed(self_)),
-    &'a [u8] => ColumnData::Binary((*self_).into())
+    bool =>         ColumnData::Bit(*self_),
+    i8  =>          ColumnData::I8(*self_),
+    i16 =>          ColumnData::I16(*self_),
+    i32 =>          ColumnData::I32(*self_),
+    i64 =>          ColumnData::I64(*self_),
+    f32 =>          ColumnData::F32(*self_),
+    f64 =>          ColumnData::F64(*self_),
+    &'a str =>      ColumnData::String((*self_).into()),
+    Cow<'a, str> => ColumnData::String(Cow::Borrowed(self_)),
+    Guid     =>     ColumnData::Guid(Cow::Borrowed(self_)),
+    &'a Guid =>     ColumnData::Guid(Cow::Borrowed(self_)),
+    &'a [u8] =>     ColumnData::Binary((*self_).into())
 );
 
 to_sql!(
@@ -719,6 +720,12 @@ impl<'a> ToSql for &'a str {
             4001...MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
             _ => "NTEXT",
         }
+    }
+}
+
+impl<'a> ToSql for Cow<'a, str> {
+    fn to_sql(&self) -> &'static str {
+        self.as_ref().to_sql()
     }
 }
 
@@ -747,6 +754,7 @@ mod tests {
     use SqlConnection;
     use tests::connection_string;
     use std::iter;
+    use std::borrow::Cow;
 
     /// prepares a statement which selects a passed value
     /// this tests serialization of a parameter and deserialization
@@ -780,6 +788,7 @@ mod tests {
         test_f32: f32 => 42.42f32,
         test_f64: f64 => 26.26f64,
         test_str: &str => "hello world",
+        test_string: &str => Cow::Owned("hello world".to_owned()),
         test_russian_str: &str => "Ааабб",
         // test a string which is bigger than nvarchar(8000) and is sent as nvarchar(max) instead
         test_str_big: &str => iter::repeat("haha").take(2500).collect::<String>().as_str(),
