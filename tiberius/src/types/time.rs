@@ -269,6 +269,31 @@ mod chrono {
         );
 
         #[test]
+        fn test_bug_65() {
+            let connection_string = connection_string();
+
+            let mut amount = 0;
+            {
+                let future = SqlConnection::connect(connection_string.as_str()).and_then(|conn| {
+                    let some_date: Option<chrono::NaiveDate> = None;
+                    conn.exec(
+                        "CREATE TABLE #Temp(test [date] NULL);INSERT INTO #Temp(test) VALUES (@P1);",
+                        &[&some_date],
+                    )
+                    .into_stream()
+                    .and_then(|future| future)
+                    .for_each(|_| {
+                        amount += 1;
+                        Ok(())
+                    })
+                });
+
+                current_thread::block_on_all(future).unwrap();
+            }
+            assert_eq!(amount, 1);
+        }
+
+        #[test]
         fn test_datetime2_to_naive_datetime() {
             let future = SqlConnection::connect(connection_string().as_ref())
                 .and_then(|conn| {
@@ -313,31 +338,6 @@ mod tests {
         test_time: Time = Time { increments: 123, scale: 5} => "00:00:00.0012300",
         test_datetime2: DateTime2 = DateTime2(Date::new(123), Time { increments: 123, scale: 5}) => "0001-05-04 00:00:00.0012300"
     );
-
-    #[test]
-    fn test_bug_65() {
-        let connection_string = connection_string();
-
-        let mut amount = 0;
-        {
-            let future = SqlConnection::connect(connection_string.as_str()).and_then(|conn| {
-                let some_date: Option<chrono::NaiveDate> = None;
-                conn.exec(
-                    "CREATE TABLE #Temp(test [date] NULL);INSERT INTO #Temp(test) VALUES (@P1);",
-                    &[&some_date],
-                )
-                .into_stream()
-                .and_then(|future| future)
-                .for_each(|_| {
-                    amount += 1;
-                    Ok(())
-                })
-            });
-
-            current_thread::block_on_all(future).unwrap();
-        }
-        assert_eq!(amount, 1);
-    }
 
     #[test]
     fn test_datetime_fixed() {
