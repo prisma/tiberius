@@ -1345,6 +1345,39 @@ mod tests {
     }
 
     #[test]
+    fn test_bug_canceled() {
+        let connection_string = connection_string();
+
+        fn check_test_value<I: BoxableIo + 'static>(
+            conn: SqlConnection<I>,
+        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
+            Box::new(
+                conn.simple_query("SELECT test FROM #temp;")
+                    .for_each(move |row| {
+                        let val: Option<f64> = row.get(0);
+                        assert!(val.is_none());
+                        Ok(())
+                    }),
+            )
+        }
+
+        let mut amount = 0;
+        {
+            let future = SqlConnection::connect(connection_string.as_str())
+            .and_then(|conn| {
+                conn.simple_exec("CREATE TABLE #Temp(test [decimal](19, 4) NULL);INSERT INTO #Temp(test) VALUES (NULL);")
+                    .into_stream()
+                    .and_then(|future| future)
+                    .for_each(|_| { amount += 1; Ok(()) })
+            })
+            .and_then(|conn| check_test_value(conn));
+
+            current_thread::block_on_all(future).unwrap();
+        }
+        assert_eq!(amount, 2);
+    }
+
+    #[test]
     fn todo_doctest() {
         let connection_string = connection_string();
 
