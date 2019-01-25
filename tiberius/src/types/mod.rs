@@ -512,33 +512,37 @@ impl<'a> ColumnData<'a> {
                         }
 
                         let len = trans.inner.read_u8()?;
-                        let sign = match trans.inner.read_u8()? {
-                            0 => -1f64,
-                            1 => 1f64,
-                            _ => return Err(Error::Protocol("decimal: invalid sign".into())),
-                        };
-                        let value = sign * match len {
-                            5 => trans.inner.read_u32::<LittleEndian>()? as f64,
-                            9 => trans.inner.read_u64::<LittleEndian>()? as f64,
-                            // the following two cases are even more approximate
-                            13 => {
-                                let mut bytes = [0u8; 12]; //u96
-                                trans.inner.read_bytes_to(&mut bytes)?;
-                                read_d128(&bytes)
-                            }
-                            17 => {
-                                let mut bytes = [0u8; 16]; //u128
-                                trans.inner.read_bytes_to(&mut bytes)?;
-                                read_d128(&bytes)
-                            }
-                            x => {
-                                return Err(Error::Protocol(
-                                    format!("decimal/numeric: invalid length of {} received", x)
-                                        .into(),
-                                ))
-                            }
-                        };
-                        ColumnData::F64(value / 10f64.powi(*scale as i32))
+                        if len == 0 {
+                            ColumnData::None
+                        } else {
+                            let sign = match trans.inner.read_u8()? {
+                                0 => -1f64,
+                                1 => 1f64,
+                                _ => return Err(Error::Protocol("decimal: invalid sign".into())),
+                            };
+                            let value = sign * match len {
+                                5 => trans.inner.read_u32::<LittleEndian>()? as f64,
+                                9 => trans.inner.read_u64::<LittleEndian>()? as f64,
+                                // the following two cases are even more approximate
+                                13 => {
+                                    let mut bytes = [0u8; 12]; //u96
+                                    trans.inner.read_bytes_to(&mut bytes)?;
+                                    read_d128(&bytes)
+                                }
+                                17 => {
+                                    let mut bytes = [0u8; 16]; //u128
+                                    trans.inner.read_bytes_to(&mut bytes)?;
+                                    read_d128(&bytes)
+                                }
+                                x => {
+                                    return Err(Error::Protocol(
+                                        format!("decimal/numeric: invalid length of {} received", x)
+                                            .into(),
+                                    ))
+                                }
+                            };
+                            ColumnData::F64(value / 10f64.powi(*scale as i32))
+                        }
                     }
                     _ => unimplemented!(),
                 }
