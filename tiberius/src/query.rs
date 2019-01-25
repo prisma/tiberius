@@ -131,7 +131,7 @@ impl<I: BoxableIo> Drop for ResultInner<I> {
         if !::std::thread::panicking() {
             // If an error has occurred, we might already have dropped the receiver
             // so try to send it back and if it doesn't work, nothing we really can do
-            self.send_back();
+            let _ = self.send_back();
         }
     }
 }

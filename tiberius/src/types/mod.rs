@@ -47,6 +47,10 @@ macro_rules! to_sql {
                 fn to_sql(&self) -> &'static str {
                     $sql
                 }
+
+                fn to_sql_null() -> &'static str {
+                    $sql
+                }
             }
         )*
     }
@@ -663,6 +667,7 @@ pub trait ToColumnData {
 /// e.g. for usage within a ROW token
 pub trait ToSql: ToColumnData {
     fn to_sql(&self) -> &'static str;
+    fn to_sql_null() -> &'static str where Self: Sized  { "int" }
 }
 
 // allow getting nullable columns
@@ -736,8 +741,8 @@ impl<'a> ToSql for Cow<'a, str> {
 impl<T: ToSql> ToSql for Option<T> {
     fn to_sql(&self) -> &'static str {
         self.as_ref()
-            .map(ToSql::to_sql)
-            .unwrap_or("int")
+            .map(T::to_sql)
+            .unwrap_or(T::to_sql_null())
     }
 }
 
