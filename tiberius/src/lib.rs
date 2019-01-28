@@ -1378,6 +1378,59 @@ mod tests {
     }
 
     #[test]
+    fn test_bug_90() {
+        let connection_string = connection_string();
+
+        let some_string = "é".repeat(3000);
+
+        fn check_test_value<I: BoxableIo + 'static>(
+            conn: SqlConnection<I>,
+            value: String,
+        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
+            Box::new(
+                conn.simple_query("SELECT test FROM #temp;")
+                    .for_each(move |row| {
+                        let val: &str = row.get(0);
+                        assert_eq!(val, value);
+                        Ok(())
+                    }),
+            )
+        }
+
+        let mut amount1 = 0;
+        let mut amount2 = 0;
+        {
+            let future = SqlConnection::connect(connection_string.as_str())
+                .and_then(|conn| {
+                    conn.simple_exec("CREATE TABLE #Temp(test [nvarchar](max) NOT NULL);")
+                        .into_stream()
+                        .and_then(|future| future)
+                        .for_each(|_| {
+                            amount1 += 1;
+                            Ok(())
+                        })
+                })
+                .and_then(|conn| {
+                    conn.exec(
+                        "INSERT INTO #Temp(test) VALUES (@P1);",
+                        &[&some_string.as_str()],
+                    )
+                    .into_stream()
+                    .and_then(|future| future)
+                    .for_each(|_| {
+                        amount2 += 1;
+                        Ok(())
+                    })
+                })
+                .and_then(|conn| check_test_value(conn, some_string.clone()));
+
+            current_thread::block_on_all(future).unwrap();
+        }
+        assert_eq!(amount1, 1);
+        assert_eq!(amount2, 1);
+    }
+
+    #[test]
     fn todo_doctest() {
         let connection_string = connection_string();
 
