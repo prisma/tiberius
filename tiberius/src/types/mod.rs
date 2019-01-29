@@ -6,7 +6,7 @@ use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use encoding::{DecoderTrap, Encoding};
 use futures::{Async, Poll};
 use tokens::BaseMetaDataColumn;
-use protocol::PLPChunkWriter;
+use plp::PLPChunkWriter;
 use transport::{Io, NoLength, PrimitiveWrites, Str, TdsTransport};
 use plp::ReadTyMode;
 use collation;

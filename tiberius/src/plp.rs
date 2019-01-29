@@ -1,6 +1,9 @@
 //! Partially Length-Prefixed types handling
 
-use byteorder::{LittleEndian, ReadBytesExt};
+use std::cmp;
+use std::io::{self, Cursor, Write};
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll};
 
 use Error;
@@ -92,5 +95,50 @@ impl ReadTyState {
 
         // If we're here, we're done reading.
         Ok(Async::Ready(self.data.take()))
+    }
+}
+
+
+pub struct PLPChunkWriter<W: Write> {
+    pub target: W,
+    pub buf: Vec<u8>,
+}
+
+impl<W: Write> io::Write for PLPChunkWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // fast path for small writes
+        if self.buf.capacity() - self.buf.len() > buf.len() {
+            self.buf.extend_from_slice(buf);
+            return Ok(buf.len());
+        }
+
+        let mut pending = buf;
+        while !pending.is_empty() {
+            let free_bytes = self.buf.capacity() - self.buf.len();
+            let boundary = cmp::min(pending.len(), free_bytes);
+            let (fitting, next) = pending.split_at(boundary);
+
+            // we can produce a whole chunk => write to the underlying buf
+            if fitting.len() == free_bytes {
+                self.target
+                    .write_u32::<LittleEndian>(self.buf.capacity() as u32)?;
+                self.target.write_all(&self.buf)?;
+                self.target.write_all(fitting)?;
+                self.buf.truncate(0);
+            } else {
+                self.buf.extend_from_slice(fitting);
+            }
+            pending = next;
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if !self.buf.is_empty() {
+            self.target.write_u32::<LittleEndian>(self.buf.len() as u32)?;
+            self.target.write_all(&self.buf)?;
+            self.buf.truncate(0);
+        }
+        Ok(())
     }
 }
