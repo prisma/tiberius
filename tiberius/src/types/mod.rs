@@ -595,7 +595,9 @@ impl<'a> ColumnData<'a> {
             ColumnData::String(ref str_) => {
                 // length: 0xffff and raw collation
                 target.write_all(&[VarLenType::NVarchar as u8, 0xff, 0xff, 0, 0, 0, 0, 0])?;
-                target.write_u64::<LittleEndian>(2 * str_.len() as u64)?;
+                // we cannot cheaply predetermine the length of the UCS2 string beforehand 
+                // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
+                target.write_u64::<LittleEndian>(0xfffffffffffffffe)?;
 
                 // write PLP chunks
                 {
