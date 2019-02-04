@@ -56,11 +56,15 @@ macro_rules! to_sql {
     }
 }
 
+mod numeric;
 mod time;
+
+use self::numeric::Numeric;
 
 /// Exported Datatypes (Dates, GUID, ...)
 pub mod prelude {
     pub use super::Guid;
+    pub use super::numeric::Numeric;
     pub use super::time::{Date, DateTime, DateTime2, SmallDateTime, Time};
     pub use super::ToSql;
 }
@@ -187,6 +191,7 @@ pub enum ColumnData<'a> {
     /// a buffer string which is a reference to a buffer of a received packet
     BString(Str),
     Binary(Cow<'a, [u8]>),
+    Numeric(Numeric),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -495,15 +500,15 @@ impl<'a> ColumnData<'a> {
                     // while decimal on the side of MSSQL is an exact representation
                     // TODO: better representation
                     VarLenType::Decimaln | VarLenType::Numericn => {
-                        fn read_d128(buf: &[u8]) -> f64 {
-                            let low_part = LittleEndian::read_u64(&buf[0..]) as f64;
+                        fn read_d128(buf: &[u8]) -> u128 {
+                            let low_part = LittleEndian::read_u64(&buf[0..]) as u128;
                             if !buf[8..].iter().any(|x| *x != 0) {
                                 return low_part;
                             }
 
                             let high_part = match buf.len() {
-                                12 => LittleEndian::read_u32(&buf[8..]) as f64,
-                                16 => LittleEndian::read_u64(&buf[8..]) as f64,
+                                12 => LittleEndian::read_u32(&buf[8..]) as u128,
+                                16 => LittleEndian::read_u64(&buf[8..]) as u128,
                                 _ => unreachable!(),
                             };
 
@@ -511,7 +516,7 @@ impl<'a> ColumnData<'a> {
                             #[cfg(target_endian = "big")]
                             let (low_part, high_part) = (high_part, low_part);
 
-                            let high_part = high_part * (u64::max_value() as f64 + 1.0);
+                            let high_part = high_part * (u64::max_value() as u128 + 1);
                             low_part + high_part
                         }
 
@@ -520,23 +525,22 @@ impl<'a> ColumnData<'a> {
                             ColumnData::None
                         } else {
                             let sign = match trans.inner.read_u8()? {
-                                0 => -1f64,
-                                1 => 1f64,
+                                0 => -1i128,
+                                1 => 1i128,
                                 _ => return Err(Error::Protocol("decimal: invalid sign".into())),
                             };
-                            let value = sign * match len {
-                                5 => trans.inner.read_u32::<LittleEndian>()? as f64,
-                                9 => trans.inner.read_u64::<LittleEndian>()? as f64,
-                                // the following two cases are even more approximate
+                            let value = match len {
+                                5 => trans.inner.read_u32::<LittleEndian>()? as i128 * sign,
+                                9 => trans.inner.read_u64::<LittleEndian>()? as i128 * sign,
                                 13 => {
                                     let mut bytes = [0u8; 12]; //u96
                                     trans.inner.read_bytes_to(&mut bytes)?;
-                                    read_d128(&bytes)
+                                    read_d128(&bytes) as i128 * sign
                                 }
                                 17 => {
                                     let mut bytes = [0u8; 16]; //u128
                                     trans.inner.read_bytes_to(&mut bytes)?;
-                                    read_d128(&bytes)
+                                    read_d128(&bytes) as i128 * sign
                                 }
                                 x => {
                                     return Err(Error::Protocol(
@@ -545,7 +549,8 @@ impl<'a> ColumnData<'a> {
                                     ))
                                 }
                             };
-                            ColumnData::F64(value / 10f64.powi(*scale as i32))
+
+                            ColumnData::Numeric(Numeric::new_with_scale(value, *scale))
                         }
                     }
                     _ => unimplemented!(),
@@ -690,11 +695,13 @@ from_column_data!(
     i32:        ColumnData::I32(val) => val;
     i64:        ColumnData::I64(val) => val;
     f32:        ColumnData::F32(val) => val;
-    f64:        ColumnData::F64(val) => val;
+    f64:        ColumnData::F64(val) => val,
+                ColumnData::Numeric(val) => val.into();
     &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
                 ColumnData::String(ref buf) => buf;
     &'a Guid:   ColumnData::Guid(ref guid) => guid;
-    &'a [u8]:   ColumnData::Binary(ref buf) => buf
+    &'a [u8]:   ColumnData::Binary(ref buf) => buf;
+    Numeric:    ColumnData::Numeric(val) => val
 );
 
 to_column_data!(self_,
@@ -761,7 +768,7 @@ mod tests {
     use tokio::executor::current_thread;
     use futures::Future;
     use futures_state_stream::StateStream;
-    use super::Guid;
+    use super::{Guid, Numeric};
     use SqlConnection;
     use tests::connection_string;
     use std::iter;
@@ -814,6 +821,17 @@ mod tests {
         let future = SqlConnection::connect(connection_string().as_ref()).and_then(|conn| {
             conn.simple_query("select cast(0 as bit)").for_each(|row| {
                 assert_eq!(row.get::<_, bool>(0), false);
+                Ok(())
+            })
+        });
+        current_thread::block_on_all(future).unwrap();
+    }
+
+    #[test]
+    fn test_numeric_accurate() {
+        let future = SqlConnection::connect(connection_string().as_ref()).and_then(|conn| {
+            conn.simple_query("select cast(577.05 as decimal(20, 12))").for_each(|row| {
+                assert_eq!(format!("{}", row.get::<_, Numeric>(0)), "577.050000000000");
                 Ok(())
             })
         });
