@@ -690,8 +690,8 @@ fn parse_connection_str(connection_str: &str) -> Result<(ConnectParams, ConnectT
                     // characters, the quotation mark character used to enclose the value must
                     // be doubled every time it occurs within the value.
                     value.push(quote_char);
-                } else if input.trim_left().starts_with(";") {
-                    input = input.trim_left().trim_left_matches(";");
+                } else if input.trim_start().starts_with(";") {
+                    input = input.trim_start().trim_start_matches(";");
                     break;
                 } else if input.is_empty() {
                     break;

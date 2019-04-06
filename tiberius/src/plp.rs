@@ -1,7 +1,7 @@
 //! Partially Length-Prefixed types handling
 
 use std::cmp;
-use std::io::{self, Cursor, Write};
+use std::io::{self, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll};
