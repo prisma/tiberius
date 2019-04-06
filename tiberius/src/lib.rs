@@ -186,6 +186,8 @@ fn get_driver_version() -> u64 {
         })
 }
 
+pub use tokens::TokenError;
+
 /// A unified error enum that contains several errors that might occurr during the lifecycle of this driver
 #[derive(Debug)]
 pub enum Error {
@@ -198,7 +200,7 @@ pub enum Error {
     Utf8(std::str::Utf8Error),
     Utf16(std::string::FromUtf16Error),
     ParseInt(std::num::ParseIntError),
-    Server(tokens::TokenError),
+    Server(TokenError),
     Canceled,
 }
 

@@ -315,6 +315,8 @@ impl<'a> ColumnData<'a> {
                 FixedLenType::Int2 => ColumnData::I16(trans.inner.read_i16::<LittleEndian>()?),
                 FixedLenType::Int4 => ColumnData::I32(trans.inner.read_i32::<LittleEndian>()?),
                 FixedLenType::Int8 => ColumnData::I64(trans.inner.read_i64::<LittleEndian>()?),
+                FixedLenType::Float4 => ColumnData::F32(trans.inner.read_f32::<LittleEndian>()?),
+                FixedLenType::Float8 => ColumnData::F64(trans.inner.read_f64::<LittleEndian>()?),
                 FixedLenType::Datetime => parse_datetimen(trans, 8)?,
                 FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
                 _ => panic!("unsupported fixed type decoding: {:?}", fixed_ty),
@@ -793,6 +795,36 @@ mod tests {
                     current_thread::block_on_all(future).unwrap();
                 }
             )*
+            mod non_null {
+                use super::*;
+                use super::super::ToSql;
+
+            $(
+                #[test]
+                fn $name() {
+                    fn sql_type<X: ToSql>(val: X) -> &'static str { X::to_sql(&val) }
+                    let query = format!("create table #Temp(val {} NOT NULL);", sql_type($val));
+        
+                    let future = SqlConnection::connect(connection_string().as_ref())
+                        .and_then(|conn| conn.simple_exec(query))
+                        .and_then(|(_, conn)| conn.exec("INSERT INTO #Temp(val) VALUES (@P1);", &[&$val]))
+                        .and_then(|(_, conn)| {
+                            conn.simple_query("select val FROM #Temp").for_each(|row| {
+                                assert_eq!(row.get::<_, $ty>(0), $val);
+                                Ok(())
+                            })
+                        });
+                    
+                    // skip tests with null values
+                    let ret = current_thread::block_on_all(future);
+                    if let Err(::Error::Server(ref err @ ::TokenError{ code: 515, .. })) = ret {
+                        println!("Skipped because of null value\n {:?}", err);
+                        return
+                    }
+                    ret.unwrap();
+                }
+            )*
+            }
         }
     }
 

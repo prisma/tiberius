@@ -498,7 +498,7 @@ impl<I: Io> ParseToken<I> for TokenDoneProc {
 #[derive(Debug)]
 pub struct TokenError {
     /// ErrorCode
-    code: u32,
+    pub code: u32,
     /// ErrorState (describing code)
     state: u8,
     /// The class (severity) of the error
