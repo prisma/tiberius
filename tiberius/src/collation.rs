@@ -17,7 +17,7 @@ use encoding::{self, Encoding};
 /// 3. replace: Encoding.UNICODE with encoding::all::UTF16_LE
 //
 /// the unimplemented!() one's are not supported by rust-encoding
-pub fn lcid_to_encoding(locale: u16) -> Option<&'static Encoding> {
+pub fn lcid_to_encoding(locale: u16) -> Option<&'static dyn Encoding> {
     match locale {
         0x0401 => Some(encoding::all::WINDOWS_1256),
         0x0402 => Some(encoding::all::WINDOWS_1251),
@@ -238,7 +238,7 @@ pub fn lcid_to_encoding(locale: u16) -> Option<&'static Encoding> {
 /// generate the code below from source code:
 /// 1. (regex)replace .*\((.*?),.*?,(.*?)\) with $1 => $2
 /// 2. see above/as above
-pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
+pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static dyn Encoding> {
     match sort_id {
         // 30 | 31 | 32 | 33 | 34 | 35 => Some(encoding::all::WINDOWS_437),
         // 40 | 41 | 42 | 43 | 44 | 45 | 49 => Some(encoding::all::WINDOWS_850),
@@ -334,7 +334,7 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static Encoding> {
 mod tests {
     use futures_state_stream::StateStream;
     use tokio::executor::current_thread;
-    use tests::new_connection;
+    use crate::tests::new_connection;
 
     #[test]
     fn select_nvarchar_collation_test() {

@@ -93,7 +93,6 @@ extern crate tokio;
 extern crate winauth;
 
 use std::borrow::Cow;
-use std::convert::From;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::marker::PhantomData;
 use std::mem;
@@ -105,15 +104,6 @@ use futures::{Async, Future, IntoFuture, Poll, Sink};
 use futures::sync::oneshot;
 // TODO: depend on tokio subcrates?
 use tokio::net::{TcpStream, UdpSocket};
-
-/// Trait to convert a u8 to a `enum` representation
-trait FromUint
-where
-    Self: Sized,
-{
-    fn from_u8(n: u8) -> Option<Self>;
-    fn from_u32(n: u32) -> Option<Self>;
-}
 
 macro_rules! uint_enum {
     ($( #[$gattr:meta] )* pub enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
@@ -130,18 +120,24 @@ macro_rules! uint_enum {
             $( $( #[$attr ])* $variant = $val, )*
         }
 
-        impl FromUint for $ty {
-            fn from_u8(n: u8) -> Option<$ty> {
+        impl ::std::convert::TryFrom<u8> for $ty {
+            type Error = ();
+
+            fn try_from(n: u8) -> ::std::result::Result<$ty, ()> {
                 match n {
-                    $( x if x == $ty::$variant as u8 => Some($ty::$variant), )*
-                    _ => None
+                    $( x if x == $ty::$variant as u8 => Ok($ty::$variant), )*
+                    _ => Err(())
                 }
             }
+        }
 
-            fn from_u32(n: u32) -> Option<$ty> {
+        impl ::std::convert::TryFrom<u32> for $ty {
+            type Error = ();
+
+            fn try_from(n: u32) -> ::std::result::Result<$ty, ()> {
                 match n {
-                    $( x if x == $ty::$variant as u32 => Some($ty::$variant), )*
-                    _ => None
+                    $( x if x == $ty::$variant as u32 => Ok($ty::$variant), )*
+                    _ => Err(())
                 }
             }
         }
@@ -158,19 +154,19 @@ pub mod query;
 pub mod stmt;
 mod transaction;
 
-use transport::{Io, TdsTransport, TransportStream};
-use protocol::{LoginMessage, PacketType, PreloginMessage, SerializeMessage, SspiMessage,
+use crate::transport::{Io, TdsTransport, TransportStream};
+use crate::protocol::{LoginMessage, PacketType, PreloginMessage, SerializeMessage, SspiMessage,
                UnserializeMessage};
-use types::{ColumnData, ToSql};
-use tokens::{DoneStatus, RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags,
+use crate::types::{ColumnData, ToSql};
+use crate::tokens::{DoneStatus, RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags,
              TdsResponseToken, TokenColMetaData, TokenRpcRequest, WriteToken};
-use query::{ExecFuture, QueryStream, ResultSetStream};
-use stmt::{Statement, StmtStream, ExecResult, QueryResult};
-use transaction::new_transaction;
+use crate::query::{ExecFuture, QueryStream, ResultSetStream};
+use crate::stmt::{Statement, StmtStream, ExecResult, QueryResult};
+use crate::transaction::new_transaction;
 use winauth::NextBytes;
-pub use protocol::EncryptionLevel;
-pub use transaction::Transaction;
-pub use types::prelude as ty;
+pub use crate::protocol::EncryptionLevel;
+pub use crate::transaction::Transaction;
+pub use crate::types::prelude as ty;
 
 lazy_static! {
     #[doc(hidden)]
@@ -186,7 +182,7 @@ fn get_driver_version() -> u64 {
         })
 }
 
-pub use tokens::TokenError;
+pub use crate::tokens::TokenError;
 
 /// A unified error enum that contains several errors that might occurr during the lifecycle of this driver
 #[derive(Debug)]
@@ -255,7 +251,7 @@ struct Connect<I: BoxableIo, F: Future<Item = I, Error = Error> + Send + Sized> 
 struct SqlConnectionContext<I: BoxableIo> {
     params: ConnectParams,
     transport: TdsTransport<TransportStream<I>>,
-    wauth_client: Option<Box<NextBytes + Send>>,
+    wauth_client: Option<Box<dyn NextBytes + Send>>,
 }
 
 impl<I: BoxableIo> SqlConnectionContext<I> {
@@ -522,7 +518,7 @@ impl<I: BoxableIo, F: Future<Item = I, Error = Error> + Send> Future for Connect
 pub trait StmtResult<I: BoxableIo> {
     type Result: Sized;
 
-    fn from_connection(SqlConnection<I>, oneshot::Sender<SqlConnection<I>>) -> Self::Result;
+    fn from_connection(conn: SqlConnection<I>, sender: oneshot::Sender<SqlConnection<I>>) -> Self::Result;
 }
 
 /// A representation of an authenticated and ready for use SQL connection
@@ -593,7 +589,7 @@ enum ConnectTarget {
 
 impl ConnectTarget {
     fn connect(self) 
-        -> Box<Future<Item = Box<BoxableIo>, Error = Error> + Sync + Send>
+        -> Box<dyn Future<Item = Box<dyn BoxableIo>, Error = Error> + Sync + Send>
     {
         match self {
             ConnectTarget::Tcp(ref addr) => {
@@ -603,7 +599,7 @@ impl ConnectTarget {
                         Ok(stream)
                     })
                     .from_err::<Error>()
-                    .map(|stream| Box::new(stream) as Box<BoxableIo>);
+                    .map(|stream| Box::new(stream) as Box<dyn BoxableIo>);
                 Box::new(future)
             }
             // First resolve the instance to a port via the
@@ -807,10 +803,10 @@ fn parse_connection_str(connection_str: &str) -> Result<(ConnectParams, ConnectT
     Ok((connect_params, target))
 }
 
-impl SqlConnection<Box<BoxableIo>> {
+impl SqlConnection<Box<dyn BoxableIo>> {
     /// Naive connection function for the SQL client
     pub fn connect(connection_str: &str) 
-        -> Box<Future<Item = SqlConnection<Box<BoxableIo>>, Error=Error> + Send>
+        -> Box<dyn Future<Item = SqlConnection<Box<dyn BoxableIo>>, Error=Error> + Send>
     {
         let future = parse_connection_str(connection_str)
             .into_future()
@@ -889,7 +885,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     fn do_prepare_exec<'b>(
         &self,
         stmt: &Statement,
-        params: &'b [&'b ToSql],
+        params: &'b [&'b dyn ToSql],
     ) -> TokenRpcRequest<'b> {
         let mut param_str = String::with_capacity(10 * params.len());
 
@@ -935,7 +931,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
         }
     }
 
-    fn do_exec<'a>(&self, handle: i32, params: &'a [&'a ToSql]) -> TokenRpcRequest<'a> {
+    fn do_exec<'a>(&self, handle: i32, params: &'a [&'a dyn ToSql]) -> TokenRpcRequest<'a> {
         let mut params_meta = vec![
             RpcParam {
                 // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
@@ -963,7 +959,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     fn internal_exec<R: StmtResult<I>>(
         mut self,
         stmt: Statement,
-        params: &[&ToSql],
+        params: &[&dyn ToSql],
     ) -> StmtStream<I, R> {
         // call sp_prepare (with valid handle) or sp_prepexec (initializer)
         let (req, meta) = if let Some((handle, meta)) = stmt.get_handle_for(
@@ -991,7 +987,7 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     pub fn query<S: Into<Statement>>(
         self,
         stmt: S,
-        params: &[&ToSql],
+        params: &[&dyn ToSql],
     ) -> QueryResult<StmtStream<I, QueryStream<I>>> {
         QueryResult::new(self.internal_exec(stmt.into(), params))
     }
@@ -1002,13 +998,13 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
     pub fn exec<S: Into<Statement>>(
         self,
         stmt: S,
-        params: &[&ToSql],
+        params: &[&dyn ToSql],
     ) -> ExecResult<StmtStream<I, ExecFuture<I>>> {
         ExecResult::new(self.internal_exec(stmt.into(), params))
     }
 
     /// Start a transaction
-    pub fn transaction(self) -> Box<Future<Item = Transaction<I>, Error = Error>> {
+    pub fn transaction(self) -> Box<dyn Future<Item = Transaction<I>, Error = Error>> {
         Box::new(
             self.simple_exec("set implicit_transactions on")
                 .and_then(|(result, conn)| {
@@ -1035,8 +1031,8 @@ impl<I: BoxableIo + Sized + 'static> SqlConnection<I> {
 fn _ensure_sync() {
     fn _ensure<T: Send>() {}
     _ensure::<Error>();
-    _ensure::<SqlConnection<Box<BoxableIo>>>();
-    _ensure::<stmt::QueryResult<query::ResultSetStream<Box<BoxableIo>, QueryStream<Box<BoxableIo>>>>>();
+    _ensure::<SqlConnection<Box<dyn BoxableIo>>>();
+    _ensure::<stmt::QueryResult<query::ResultSetStream<Box<dyn BoxableIo>, QueryStream<Box<dyn BoxableIo>>>>>();
 }
 
 #[cfg(test)]
@@ -1046,8 +1042,8 @@ mod tests {
     use futures_state_stream::StateStream;
     use tokio;
     use tokio::executor::current_thread;
-    use query::ExecFuture;
-    use stmt::ExecResult;
+    use crate::query::ExecFuture;
+    use crate::stmt::ExecResult;
     use super::{BoxableIo, SqlConnection, Error, Result, Transaction};
 
     /// allow to modify the
@@ -1059,7 +1055,7 @@ mod tests {
         )
     }
 
-    pub fn new_connection() -> SqlConnection<Box<BoxableIo>> {
+    pub fn new_connection() -> SqlConnection<Box<dyn BoxableIo>> {
         let future = SqlConnection::connect(connection_string().as_str());
         current_thread::block_on_all(future).unwrap()
     }
@@ -1291,7 +1287,7 @@ mod tests {
         fn check_test_value<I: BoxableIo + 'static>(
             conn: SqlConnection<I>,
             value: i32,
-        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
+        ) -> Box<dyn Future<Item = SqlConnection<I>, Error = Error>> {
             Box::new(conn.simple_query("SELECT test FROM #temp;").for_each(
                 move |row| {
                     let val: i32 = row.get(0);
@@ -1304,7 +1300,7 @@ mod tests {
         fn update_test_value<I: BoxableIo + 'static>(
             transaction: Transaction<I>,
             commit: bool,
-        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
+        ) -> Box<dyn Future<Item = SqlConnection<I>, Error = Error>> {
             Box::new(
                 transaction
                     .simple_exec("UPDATE #Temp SET test=44;")
@@ -1352,7 +1348,7 @@ mod tests {
 
         fn check_test_value<I: BoxableIo + 'static>(
             conn: SqlConnection<I>,
-        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
+        ) -> Box<dyn Future<Item = SqlConnection<I>, Error = Error>> {
             Box::new(
                 conn.simple_query("SELECT test FROM #temp;")
                     .for_each(move |row| {
@@ -1388,7 +1384,7 @@ mod tests {
         fn check_test_value<I: BoxableIo + 'static>(
             conn: SqlConnection<I>,
             value: String,
-        ) -> Box<Future<Item = SqlConnection<I>, Error = Error>> {
+        ) -> Box<dyn Future<Item = SqlConnection<I>, Error = Error>> {
             Box::new(
                 conn.simple_query("SELECT test FROM #temp;")
                     .for_each(move |row| {
@@ -1441,7 +1437,7 @@ mod tests {
                 ::futures::finished((conn.prepare("SELECT @P1 + @P2"), conn))
             })
             .and_then(|(stmt, conn)| {
-                fn handle_row(row: ::query::QueryRow) -> Result<()> {
+                fn handle_row(row: crate::query::QueryRow) -> Result<()> {
                     let val: i32 = row.get(0);
                     assert_eq!(val, 3i32);
                     Ok(())

@@ -1,21 +1,22 @@
 ///! token stream definitions
 use std::borrow::Cow;
+use std::convert::TryFrom;
 use std::sync::Arc;
 use bytes::Bytes;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll};
-use transport::{Io, NoLength, PrimitiveWrites, ReadState, Str, TdsTransport};
-use types::{ColumnData, TypeInfo};
-use protocol::{self, FeatureLevel, PacketHeader, PacketStatus, PacketType, PacketWriter};
-use {FromUint, Error, Result};
+use crate::transport::{Io, NoLength, PrimitiveWrites, ReadState, Str, TdsTransport};
+use crate::types::{ColumnData, TypeInfo};
+use crate::protocol::{self, FeatureLevel, PacketHeader, PacketStatus, PacketType, PacketWriter};
+use crate::{Error, Result};
 
 /// read a token from an underlying transport
 pub trait ParseToken<I: Io> {
-    fn parse_token(&mut TdsTransport<I>) -> Poll<TdsResponseToken, Error>;
+    fn parse_token(t: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error>;
 }
 
 pub trait WriteToken<I: Io> {
-    fn write_token(&self, &mut TdsTransport<I>) -> Result<()>;
+    fn write_token(&self, t: &mut TdsTransport<I>) -> Result<()>;
 }
 
 uint_enum! {
@@ -128,33 +129,33 @@ uint_enum! {
 impl<I: Io> ParseToken<I> for TokenEnvChange {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let ty = trans.inner.read_u8()?;
-        let token = match EnvChangeTy::from_u8(ty) {
-            Some(EnvChangeTy::Database) => {
+        let token = match EnvChangeTy::try_from(ty) {
+            Ok(EnvChangeTy::Database) => {
                 let new_value = try_ready!(trans.inner.read_varchar::<u8>(false));
                 let old_value = try_ready!(trans.inner.read_varchar::<u8>(false));
                 TokenEnvChange::Database(new_value, old_value)
             }
-            Some(EnvChangeTy::PacketSize) => {
+            Ok(EnvChangeTy::PacketSize) => {
                 let new_value = try_ready!(trans.inner.read_varchar::<u8>(false));
                 let old_value = try_ready!(trans.inner.read_varchar::<u8>(false));
                 let new_size = new_value.as_str().parse::<u32>()?;
                 let old_size = old_value.as_str().parse::<u32>()?;
                 TokenEnvChange::PacketSize(new_size, old_size)
             }
-            Some(EnvChangeTy::SqlCollation) => {
+            Ok(EnvChangeTy::SqlCollation) => {
                 let new_value = try_ready!(trans.inner.read_varbyte::<u8>());
                 let old_value = try_ready!(trans.inner.read_varbyte::<u8>());
                 TokenEnvChange::SqlCollation(new_value, old_value)
             }
-            Some(EnvChangeTy::BeginTransaction) => {
+            Ok(EnvChangeTy::BeginTransaction) => {
                 assert_eq!(trans.inner.read_u8()?, 8);
                 let new_value = trans.inner.read_u64::<LittleEndian>()?;
                 let old_value = trans.inner.read_u8()?;
                 assert_eq!(old_value, 0);
                 TokenEnvChange::BeginTransaction(new_value)
             }
-            Some(ty @ EnvChangeTy::RollbackTransaction) |
-            Some(ty @ EnvChangeTy::CommitTransaction) => {
+            Ok(ty @ EnvChangeTy::RollbackTransaction) |
+            Ok(ty @ EnvChangeTy::CommitTransaction) => {
                 let new_value = trans.inner.read_u8()?;
                 assert_eq!(new_value, 0);
                 assert_eq!(trans.inner.read_u8()?, 8);
@@ -232,8 +233,8 @@ impl<I: Io> ParseToken<I> for TokenLoginAck {
     fn parse_token(trans: &mut TdsTransport<I>) -> Poll<TdsResponseToken, Error> {
         let token = TokenLoginAck {
             interface: trans.inner.read_u8()?,
-            tds_version: FeatureLevel::from_u32(trans.inner.read_u32::<BigEndian>()?)
-                .ok_or(Error::Protocol("loginack: invalid tds version".into()))?,
+            tds_version: FeatureLevel::try_from(trans.inner.read_u32::<BigEndian>()?)
+                .map_err(|_| Error::Protocol("loginack: invalid tds version".into()))?,
             prog_name: try_ready!(trans.inner.read_varchar::<u8>(false)),
             version: trans.inner.read_u32::<LittleEndian>()?,
         };
@@ -428,8 +429,8 @@ impl<I: Io> ParseToken<I> for TokenRow {
                     };
                     trans.read_state = Some(ReadState::Row(row_tok, column_data, col_state));
                     // this closure cannot be executed here since Async::Ready is handled above, only used for type conversion
-                    return ret.map(|async| {
-                        async.map(|_| ((None as Option<TdsResponseToken>).unwrap()))
+                    return ret.map(|ret_async| {
+                        ret_async.map(|_| ((None as Option<TdsResponseToken>).unwrap()))
                     });
                 }
             }

@@ -5,10 +5,10 @@ use std::sync::Arc;
 use futures::{Async, Future, Poll, Sink, Stream};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
-use query::{ExecFuture, QueryStream};
-use tokens::{DoneStatus, TdsResponseToken, TokenColMetaData};
-use types::{ColumnData, ToSql};
-use {BoxableIo, SqlConnection, StmtResult, Error};
+use crate::query::{ExecFuture, QueryStream};
+use crate::tokens::{DoneStatus, TdsResponseToken, TokenColMetaData};
+use crate::types::{ColumnData, ToSql};
+use crate::{BoxableIo, SqlConnection, StmtResult, Error};
 
 /// A prepared statement which is prepared on the first execution
 /// (which is a technical requirement since you need to know the types)
@@ -78,7 +78,7 @@ impl<I: BoxableIo, R: StmtResult<I>> StmtStream<I, R> {
         conn: SqlConnection<I>,
         stmt: Statement,
         meta: Option<Arc<TokenColMetaData>>,
-        params: &[&ToSql],
+        params: &[&dyn ToSql],
     ) -> Self {
         let signature = params.iter().map(|x| x.to_sql()).collect();
         StmtStream {

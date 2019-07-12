@@ -1,16 +1,17 @@
 ///! type converting, mostly translating the types received from the database into rust types
 use std::borrow::Cow;
+use std::convert::TryFrom;
 use std::fmt;
 use std::io::Write;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use encoding::{DecoderTrap, Encoding};
 use futures::{Async, Poll};
-use tokens::BaseMetaDataColumn;
-use plp::PLPChunkWriter;
-use transport::{Io, NoLength, PrimitiveWrites, Str, TdsTransport};
-use plp::ReadTyMode;
-use collation;
-use {FromUint, Error, Result};
+use crate::tokens::BaseMetaDataColumn;
+use crate::plp::PLPChunkWriter;
+use crate::transport::{Io, NoLength, PrimitiveWrites, Str, TdsTransport};
+use crate::plp::ReadTyMode;
+use crate::collation;
+use crate::{Error, Result};
 
 macro_rules! from_column_data {
     ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
@@ -149,7 +150,7 @@ impl Collation {
     }
 
     /// return an encoding for a given collation
-    pub fn encoding(&self) -> Option<&'static Encoding> {
+    pub fn encoding(&self) -> Option<&'static dyn Encoding> {
         if self.sort_id == 0 {
             collation::lcid_to_encoding(self.lcid())
         } else {
@@ -238,10 +239,10 @@ impl fmt::Display for Guid {
 impl TypeInfo {
     pub fn parse<I: Io>(trans: &mut TdsTransport<I>) -> Poll<TypeInfo, Error> {
         let ty = trans.inner.read_u8()?;
-        if let Some(ty) = FixedLenType::from_u8(ty) {
+        if let Ok(ty) = FixedLenType::try_from(ty) {
             return Ok(Async::Ready(TypeInfo::FixedLen(ty)));
         }
-        if let Some(ty) = VarLenType::from_u8(ty) {
+        if let Ok(ty) = VarLenType::try_from(ty) {
             let len = match ty {
                 VarLenType::Bitn |
                 VarLenType::Intn |
@@ -736,8 +737,8 @@ to_sql!(
 impl<'a> ToSql for &'a str {
     fn to_sql(&self) -> &'static str {
         match self.len() {
-            0...4000 => "NVARCHAR(4000)",
-            4001...MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
+            0..=4000 => "NVARCHAR(4000)",
+            4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
             _ => "NTEXT",
         }
     }
@@ -771,8 +772,8 @@ mod tests {
     use futures::Future;
     use futures_state_stream::StateStream;
     use super::{Guid, Numeric};
-    use SqlConnection;
-    use tests::connection_string;
+    use crate::SqlConnection;
+    use crate::tests::connection_string;
     use std::iter;
     use std::borrow::Cow;
 
@@ -817,7 +818,7 @@ mod tests {
                     
                     // skip tests with null values
                     let ret = current_thread::block_on_all(future);
-                    if let Err(::Error::Server(ref err @ ::TokenError{ code: 515, .. })) = ret {
+                    if let Err(crate::Error::Server(ref err @ crate::TokenError{ code: 515, .. })) = ret {
                         println!("Skipped because of null value\n {:?}", err);
                         return
                     }

@@ -2,7 +2,7 @@
 use std::io::{Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use super::{ColumnData, FromColumnData, ToColumnData, ToSql};
-use {Error, Result};
+use crate::{Error, Result};
 
 /// prepares a statement which selects a passed value
 /// this tests serialization of a parameter and deserialization
@@ -98,9 +98,9 @@ impl Time {
     #[inline]
     pub fn len(&self) -> Result<u8> {
         Ok(match self.scale {
-            0...2 => 3,
-            3...4 => 4,
-            5...7 => 5,
+            0..=2 => 3,
+            3..=4 => 4,
+            5..=7 => 5,
             _ => {
                 return Err(Error::Protocol(
                     format!("timen: invalid scale {}", self.scale).into(),
@@ -132,9 +132,9 @@ impl Time {
 
     pub fn decode<R: Read>(mut rd: R, n: usize, len: u8) -> Result<Time> {
         let val = match (n, len) {
-            (0...2, 3) => rd.read_u16::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 16,
-            (3...4, 4) => rd.read_u32::<LittleEndian>()? as u64,
-            (5...7, 5) => rd.read_u32::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 32,
+            (0..=2, 3) => rd.read_u16::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 16,
+            (3..=4, 4) => rd.read_u32::<LittleEndian>()? as u64,
+            (5..=7, 5) => rd.read_u32::<LittleEndian>()? as u64 | (rd.read_u8()? as u64) << 32,
             _ => {
                 return Err(Error::Protocol(
                     format!("timen: invalid length {}", n).into(),
@@ -180,9 +180,9 @@ mod chrono {
     extern crate chrono;
 
     use self::chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
-    use types::{ColumnData, FromColumnData, ToColumnData, ToSql};
+    use crate::types::{ColumnData, FromColumnData, ToColumnData, ToSql};
     use super::{Date, DateTime2, Time};
-    use {Error, Result};
+    use crate::{Error, Result};
 
     #[inline]
     fn from_days(days: i64, start_year: i32) -> NaiveDate {
@@ -231,7 +231,7 @@ mod chrono {
     );
     to_column_data!(self_,
         NaiveDateTime => {
-            use types::time::chrono::chrono::Timelike;
+            use crate::types::time::chrono::chrono::Timelike;
 
             let date = self_.date();
             let time = self_.time();
@@ -255,9 +255,9 @@ mod chrono {
         use futures::Future;
         use futures_state_stream::StateStream;
         use tokio::executor::current_thread;
-        use tests::connection_string;
+        use crate::tests::connection_string;
         use super::chrono::{NaiveDate, NaiveDateTime};
-        use SqlConnection;
+        use crate::SqlConnection;
 
         static DATETIME_TEST_STR: &'static str = "2015-09-05 23:56:04.0100020";
 
@@ -322,8 +322,8 @@ mod tests {
     use futures_state_stream::StateStream;
     use tokio::executor::current_thread;
     use super::{Date, DateTime, DateTime2, SmallDateTime, Time};
-    use SqlConnection;
-    use tests::connection_string;
+    use crate::SqlConnection;
+    use crate::tests::connection_string;
 
     test_timedatatype!(
         test_datetime: DateTime = DateTime {

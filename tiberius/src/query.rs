@@ -3,9 +3,9 @@ use std::marker::PhantomData;
 use futures::{Async, Future, Poll, Sink, Stream};
 use futures::sync::oneshot;
 use futures_state_stream::{StateStream, StreamEvent};
-use tokens::{DoneStatus, TdsResponseToken, TokenRow};
-use types::FromColumnData;
-use {BoxableIo, SqlConnection, StmtResult, Error, Result};
+use crate::tokens::{DoneStatus, TdsResponseToken, TokenRow};
+use crate::types::FromColumnData;
+use crate::{BoxableIo, SqlConnection, StmtResult, Error, Result};
 
 /// A query result consists of multiple query streams (amount of executed queries = amount of results)
 #[must_use = "streams do nothing unless polled"]

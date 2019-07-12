@@ -1,12 +1,13 @@
 //! protocol abstraction, mostly type definitions (meta)
 use std::borrow::Cow;
 use std::cmp;
+use std::convert::TryFrom;
 use std::io::{self, Cursor, Write};
 use std::mem;
 use futures::Sink;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use transport::{Io, TdsTransport, TdsTransportInner};
-use {FromUint, Error, Result, DRIVER_VERSION};
+use crate::transport::{Io, TdsTransport, TdsTransportInner};
+use crate::{Error, Result, DRIVER_VERSION};
 
 /// The amount of bytes a packet header consists of
 pub const HEADER_BYTES: usize = 8;
@@ -103,10 +104,10 @@ impl PacketHeader {
     pub fn unserialize(buf: &[u8]) -> Result<PacketHeader> {
         let mut cursor = Cursor::new(buf);
         Ok(PacketHeader {
-            ty: PacketType::from_u8(cursor.read_u8()?)
-                .ok_or(Error::Protocol("header: invalid packet type".into()))?,
-            status: PacketStatus::from_u8(cursor.read_u8()?)
-                .ok_or(Error::Protocol("header: invalid packet status".into()))?,
+            ty: PacketType::try_from(cursor.read_u8()?)
+                .map_err(|_| Error::Protocol("header: invalid packet type".into()))?,
+            status: PacketStatus::try_from(cursor.read_u8()?)
+                .map_err(|_| Error::Protocol("header: invalid packet status".into()))?,
             length: cursor.read_u16::<BigEndian>()?,
             spid: cursor.read_u16::<BigEndian>()?,
             id: cursor.read_u8()?,
@@ -246,7 +247,7 @@ impl<'a> UnserializeMessage<PreloginMessage> for &'a [u8] {
                 // encryption
                 1 => {
                     let encrypt = cursor.read_u8()?;
-                    ret.encryption = EncryptionLevel::from_u8(encrypt).ok_or(Error::Protocol(
+                    ret.encryption = EncryptionLevel::try_from(encrypt).map_err(|_| Error::Protocol(
                         format!("invalid encryption value: {}", encrypt).into()
                     ))?;
                 }

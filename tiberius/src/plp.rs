@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll};
 
-use Error;
+use crate::Error;
 
 /// Mode for type reader.
 #[derive(Debug, Clone, Copy)]

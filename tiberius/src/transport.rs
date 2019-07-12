@@ -1,6 +1,7 @@
 //! low level transport that deals with reading bytes from an underlying Io
 //! handling data split accross packets, etc.
 use std::collections::VecDeque;
+use std::convert::TryFrom;
 use std::fmt;
 use std::io::{self, Cursor, Write};
 use std::mem;
@@ -11,11 +12,11 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use bytes::{BufMut, Bytes, BytesMut};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll, Sink, StartSend};
-use protocol::{self, PacketHeader, PacketStatus};
-use plp::{ReadTyMode, ReadTyState};
-use tokens::{TdsResponseToken, TokenColMetaData, TokenEnvChange, Tokens};
-use types::ColumnData;
-use {FromUint, Error};
+use crate::protocol::{self, PacketHeader, PacketStatus};
+use crate::plp::{ReadTyMode, ReadTyState};
+use crate::tokens::{TdsResponseToken, TokenColMetaData, TokenEnvChange, Tokens};
+use crate::types::ColumnData;
+use crate::Error;
 
 pub trait Io: AsyncRead + AsyncWrite {}
 impl<I: AsyncRead + AsyncWrite> Io for I {}
@@ -29,10 +30,10 @@ pub mod tls {
     use std::io::{self, Read, Write};
     use futures::Poll;
     use tokio::io::{AsyncRead, AsyncWrite};
-    use protocol::{self, PacketHeader, PacketStatus, PacketType};
-    use transport::Io;
+    use crate::protocol::{self, PacketHeader, PacketStatus, PacketType};
+    use crate::transport::Io;
     pub use self::tokio_tls::{Connect, TlsStream};
-    use Error;
+    use crate::Error;
 
     impl From<native_tls::Error> for Error {
         fn from(e: native_tls::Error) -> Error {
@@ -296,11 +297,11 @@ impl<I: Io> DerefMut for TdsTransportInner<I> {
 }
 
 pub trait ReadSize<R: io::Read> {
-    fn read_size(&mut R) -> io::Result<usize>;
+    fn read_size(s: &mut R) -> io::Result<usize>;
 }
 
 pub trait WriteSize<W: io::Write> {
-    fn write_size(&mut W, size: usize) -> io::Result<()>;
+    fn write_size(w: &mut W, size: usize) -> io::Result<()>;
 }
 
 /// B_VARCHAR
@@ -385,11 +386,11 @@ impl<I: Io> TdsTransport<I> {
             // read a token
             if self.read_state.is_none() {
                 let raw_token = self.inner.read_u8()?;
-                let token = Tokens::from_u8(raw_token);
+                let token = Tokens::try_from(raw_token);
 
                 self.commit_read_state(match token {
-                    Some(token) => ReadState::Generic(token, None),
-                    None => panic!("invalid token received 0x{:x}", raw_token),
+                    Ok(token) => ReadState::Generic(token, None),
+                    Err(()) => panic!("invalid token received 0x{:x}", raw_token),
                 });
             }
 
