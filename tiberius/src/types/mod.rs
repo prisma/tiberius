@@ -536,12 +536,12 @@ impl<'a> ColumnData<'a> {
                                 9 => trans.inner.read_u64::<LittleEndian>()? as i128 * sign,
                                 13 => {
                                     let mut bytes = [0u8; 12]; //u96
-                                    trans.inner.read_bytes_to(&mut bytes)?;
+                                    try_ready!(trans.inner.read_bytes_to(&mut bytes));
                                     read_d128(&bytes) as i128 * sign
                                 }
                                 17 => {
                                     let mut bytes = [0u8; 16]; //u128
-                                    trans.inner.read_bytes_to(&mut bytes)?;
+                                    try_ready!(trans.inner.read_bytes_to(&mut bytes));
                                     read_d128(&bytes) as i128 * sign
                                 }
                                 x => {
@@ -864,6 +864,41 @@ mod tests {
         let future = SqlConnection::connect(connection_string().as_ref()).and_then(|conn| {
             conn.simple_query("select cast(577.05 as decimal(20, 12))").for_each(|row| {
                 assert_eq!(format!("{}", row.get::<_, Numeric>(0)), "577.050000000000");
+                Ok(())
+            })
+        });
+        current_thread::block_on_all(future).unwrap();
+    }
+
+    #[test]
+    fn test_numeric_many_records() {
+        let future = SqlConnection::connect(connection_string().as_ref()).and_then(|conn| {
+            conn.simple_query(
+                r#"
+                    with cte as (
+                        SELECT CAST(999999999.99 as DECIMAL(28, 12)) c
+                        UNION ALL
+                        SELECT  CAST(999999999.99 as DECIMAL(28, 12)) c FROM cte
+                    )
+                    SELECT TOP 50 * FROM cte
+                    UNION ALL 
+                    SELECT TOP 50 * FROM cte
+                    UNION ALL 
+                    SELECT TOP 50 * FROM cte
+                    UNION ALL 
+                    SELECT TOP 50 * FROM cte
+                    UNION ALL 
+                    SELECT TOP 50 * FROM cte
+                    UNION ALL 
+                    SELECT TOP 50 * FROM cte
+                    UNION ALL 
+                    SELECT TOP 50 * FROM cte
+                    UNION ALL 
+                    SELECT TOP 50 * FROM cte
+                "#,
+            )
+            .for_each(|r| {
+                assert_eq!(Numeric::new_with_scale(999999999990000000000, 12), r.get::<_, Numeric>(0));
                 Ok(())
             })
         });
