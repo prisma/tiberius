@@ -5,7 +5,6 @@
 ///!
 ///! [1] https://github.com/Microsoft/mssql-jdbc/blob/eb14f63077c47ef1fc1c690deb8cfab602baeb85/src/main/java/com/microsoft/sqlserver/jdbc/SQLCollation.java
 ///! [2] https://github.com/lifthrasiir/rust-encoding/blob/496823171f15d9b9446b2ec3fb7765f22346256b/src/label.rs#L282
-
 use encoding::{self, Encoding};
 
 /// https://github.com/Microsoft/mssql-jdbc/blob/eb14f63077c47ef1fc1c690deb8cfab602baeb85/src/main/java/com/microsoft/sqlserver/jdbc/SQLCollation.java#L102-L310
@@ -330,6 +329,7 @@ pub fn sortid_to_encoding(sort_id: u8) -> Option<&'static dyn Encoding> {
     }
 }
 
+/* TODO
 #[cfg(test)]
 mod tests {
     use futures_state_stream::StateStream;
@@ -355,3 +355,4 @@ mod tests {
         assert_eq!(i, 1);
     }
 }
+*/
