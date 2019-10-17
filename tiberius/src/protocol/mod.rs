@@ -2,9 +2,9 @@ use bitflags::bitflags;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::borrow::Cow;
 use std::convert::TryFrom;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::io::{self, Cursor, Write};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::{event, Level};
 
@@ -52,7 +52,7 @@ pub use tokenstream::*;
 mod login;
 pub use login::{LoginMessage, PreloginMessage};
 mod types;
-pub use types::{ColumnData};
+pub use types::ColumnData;
 
 uint_enum! {
     #[repr(u32)]
@@ -218,7 +218,7 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
         }
     }
 
-    pub (crate) fn remaining_buf(&self) -> &[u8] {
+    pub(crate) fn remaining_buf(&self) -> &[u8] {
         &self.buf[self.pos..]
     }
 
@@ -231,7 +231,10 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
             self.pos = 0;
         }
         let mut header_buf = vec![0u8; HEADER_BYTES];
-        event!(Level::TRACE, read_bytes= self.conn.read_exact(&mut header_buf).await?);
+        event!(
+            Level::TRACE,
+            read_bytes = self.conn.read_exact(&mut header_buf).await?
+        );
         let header = PacketHeader::unserialize(&header_buf)?;
         Ok(header)
     }
@@ -246,7 +249,10 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
         let pos = self.buf.len();
         self.buf
             .resize(pos + header.length as usize - HEADER_BYTES, 0);
-        event!(Level::TRACE, read_bytes= self.conn.read_exact(&mut self.buf[pos..]).await?);
+        event!(
+            Level::TRACE,
+            read_bytes = self.conn.read_exact(&mut self.buf[pos..]).await?
+        );
         if header.status == PacketStatus::EndOfMessage {
             self.done = true;
         }
@@ -297,7 +303,7 @@ impl<'a, C: AsyncWrite + Unpin> PacketWriter<'a, C> {
         self.header_template.length = self.buf.len() as u16;
         self.header_template
             .serialize(&mut self.buf[..HEADER_BYTES])?;
-        event!(Level::TRACE, write_bytes= self.buf.len());
+        event!(Level::TRACE, write_bytes = self.buf.len());
         self.conn.write_all(&self.buf).await?;
         self.buf.truncate(HEADER_BYTES);
         Ok(())
@@ -320,7 +326,11 @@ enum AllHeaderTy {
     TraceActivity = 3,
 }
 
-pub async fn write_trans_descriptor<C: AsyncWrite + Unpin>(w: &mut PacketWriter<'_, C>, ctx: &Context, id: u64) -> Result<()> {
+pub async fn write_trans_descriptor<C: AsyncWrite + Unpin>(
+    w: &mut PacketWriter<'_, C>,
+    ctx: &Context,
+    id: u64,
+) -> Result<()> {
     let mut buf = [0u8; 22];
     let mut cursor = Cursor::new(&mut buf[..]);
     cursor.write_u32::<LittleEndian>(ALL_HEADERS_LEN_TX as u32)?;

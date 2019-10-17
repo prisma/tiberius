@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::convert::Infallible;
 use std::fmt;
 use std::io;
 
@@ -28,7 +29,13 @@ pub enum Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
-        unimplemented!()
+        unimplemented!() // TODO
+    }
+}
+
+impl From<Infallible> for Error {
+    fn from(_: Infallible) -> Self {
+        unreachable!()
     }
 }
 

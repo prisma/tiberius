@@ -80,7 +80,7 @@ impl PreloginMessage {
             }
             cursor.set_position(old_pos);
         }
-        
+
         Ok(ret)
     }
 

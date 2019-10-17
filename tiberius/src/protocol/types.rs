@@ -131,31 +131,51 @@ pub enum ColumnData {
 impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
     pub async fn read_type_info(&mut self, ctx: &protocol::Context) -> Result<TypeInfo> {
         let ty = self.read_bytes(1).await?[0];
-        
+
         if let Ok(ty) = FixedLenType::try_from(ty) {
             return Ok(TypeInfo::FixedLen(ty));
         }
         match VarLenType::try_from(ty) {
-            Err(()) => return Err(Error::Protocol(format!("invalid or unsupported column type: {:?}", ty).into())),
-            Ok(ty) => {
-                unimplemented!()
+            Err(()) => {
+                return Err(Error::Protocol(
+                    format!("invalid or unsupported column type: {:?}", ty).into(),
+                ))
             }
+            Ok(ty) => unimplemented!(),
         }
     }
 
-    pub async fn read_column_data(&mut self, ctx: &protocol::Context, meta: &protocol::tokenstream::BaseMetaDataColumn) -> Result<ColumnData> {
+    pub async fn read_column_data(
+        &mut self,
+        ctx: &protocol::Context,
+        meta: &protocol::tokenstream::BaseMetaDataColumn,
+    ) -> Result<ColumnData> {
         let ret = match meta.ty {
             TypeInfo::FixedLen(ref fixed_ty) => match *fixed_ty {
                 FixedLenType::Bit => ColumnData::Bit(self.read_bytes(1).await?[0] != 0),
                 FixedLenType::Int1 => ColumnData::I8(self.read_bytes(1).await?.read_i8()?),
-                FixedLenType::Int2 => ColumnData::I16(self.read_bytes(2).await?.read_i16::<LittleEndian>()?),
-                FixedLenType::Int4 => ColumnData::I32(self.read_bytes(4).await?.read_i32::<LittleEndian>()?),
-                FixedLenType::Int8 => ColumnData::I64(self.read_bytes(8).await?.read_i64::<LittleEndian>()?),
-                FixedLenType::Float4 => ColumnData::F32(self.read_bytes(4).await?.read_f32::<LittleEndian>()?),
-                FixedLenType::Float8 => ColumnData::F64(self.read_bytes(8).await?.read_f64::<LittleEndian>()?),
+                FixedLenType::Int2 => {
+                    ColumnData::I16(self.read_bytes(2).await?.read_i16::<LittleEndian>()?)
+                }
+                FixedLenType::Int4 => {
+                    ColumnData::I32(self.read_bytes(4).await?.read_i32::<LittleEndian>()?)
+                }
+                FixedLenType::Int8 => {
+                    ColumnData::I64(self.read_bytes(8).await?.read_i64::<LittleEndian>()?)
+                }
+                FixedLenType::Float4 => {
+                    ColumnData::F32(self.read_bytes(4).await?.read_f32::<LittleEndian>()?)
+                }
+                FixedLenType::Float8 => {
+                    ColumnData::F64(self.read_bytes(8).await?.read_f64::<LittleEndian>()?)
+                }
                 // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
                 // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
-                _ => return Err(Error::Protocol(format!("unsupported fixed type decoding: {:?}", fixed_ty).into())),
+                _ => {
+                    return Err(Error::Protocol(
+                        format!("unsupported fixed type decoding: {:?}", fixed_ty).into(),
+                    ))
+                }
             },
         };
         Ok(ret)

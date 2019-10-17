@@ -1,13 +1,15 @@
 //! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
 #![allow(unused_imports, dead_code)] // TODO
-#![recursion_limit="256"]
+#![recursion_limit = "256"]
 
-use std::result;
+use std::convert::TryInto;
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
+use std::net::SocketAddr;
+use std::result;
 use std::sync::{atomic, Arc};
 use std::task::{self, Poll};
-use std::io;
 
 use async_stream::try_stream;
 use byteorder::LittleEndian;
@@ -17,7 +19,7 @@ use futures_util::{pin_mut, ready};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{self, mpsc};
-use tracing::{self, event, debug_span, trace_span, Level};
+use tracing::{self, debug_span, event, trace_span, Level};
 use winauth::NextBytes;
 
 mod collation;
@@ -41,9 +43,9 @@ pub(crate) fn get_driver_version() -> u64 {
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
 pub struct ConnectParams {
-    // pub host: Cow<'static, str>,
+    pub host: String,
     pub ssl: EncryptionLevel,
-    // pub trust_cert: bool,
+    pub trust_cert: bool,
     // pub auth: AuthMethod,
     // pub target_db: Option<Cow<'static, str>>,
     // pub spn: Cow<'static, str>,
@@ -56,7 +58,7 @@ struct TlsNegotiateWrapper<S> {
     header_buf: [u8; protocol::HEADER_BYTES],
     header_pos: usize,
     read_remaining: usize,
-    
+
     wr_buf: Vec<u8>,
     header_written: bool,
 }
@@ -77,11 +79,15 @@ impl<S> TlsNegotiateWrapper<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsNegotiateWrapper<S> {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut task::Context, mut buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context,
+        mut buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
         if !self.pending_handshake {
             return Pin::new(&mut self.stream).poll_read(cx, buf);
         }
-        
+
         let span = trace_span!("TlsNeg::poll_read");
         let enter_ = span.enter();
 
@@ -89,21 +95,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsNegotiateWrapper<S> {
         if !inner.header_buf[inner.header_pos..].is_empty() {
             event!(Level::TRACE, "read_header");
             while !inner.header_buf[inner.header_pos..].is_empty() {
-                let read = ready!(Pin::new(&mut inner.stream).poll_read(cx, &mut inner.header_buf[inner.header_pos..]))?;
-                event!(Level::TRACE, read_header_bytes= read);
+                let read = ready!(Pin::new(&mut inner.stream)
+                    .poll_read(cx, &mut inner.header_buf[inner.header_pos..]))?;
+                event!(Level::TRACE, read_header_bytes = read);
                 if read == 0 {
                     return Poll::Ready(Ok(0));
                 }
                 inner.header_pos += read;
             }
-            
+
             let header = protocol::PacketHeader::unserialize(&inner.header_buf)
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-            
+
             assert_eq!(header.ty, protocol::PacketType::PreLogin);
             assert_eq!(header.status, protocol::PacketStatus::EndOfMessage);
             inner.read_remaining = header.length as usize - protocol::HEADER_BYTES;
-            event!(Level::TRACE, packet_bytes= inner.read_remaining);
+            event!(Level::TRACE, packet_bytes = inner.read_remaining);
         }
 
         let max_read = ::std::cmp::min(inner.read_remaining, buf.len());
@@ -117,14 +124,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsNegotiateWrapper<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsNegotiateWrapper<S> {
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut task::Context, buf: &[u8]) -> Poll<io::Result<usize>> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
         if !self.pending_handshake {
             return Pin::new(&mut self.stream).poll_write(cx, buf);
         }
 
         let span = trace_span!("TlsNeg::poll_write");
         let enter_ = span.enter();
-        event!(Level::TRACE, amount= buf.len());
+        event!(Level::TRACE, amount = buf.len());
 
         self.wr_buf.extend_from_slice(buf);
         Poll::Ready(Ok(buf.len()))
@@ -145,10 +156,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsNegotiateWrapper<S> {
                 header.serialize(&mut inner.wr_buf)?;
                 inner.header_written = true;
             }
-            
+
             while !inner.wr_buf.is_empty() {
-                let written = ready!(Pin::new(&mut inner.stream).poll_write(cx, &mut inner.wr_buf))?;
-                event!(Level::TRACE, written= written);
+                let written =
+                    ready!(Pin::new(&mut inner.stream).poll_write(cx, &mut inner.wr_buf))?;
+                event!(Level::TRACE, written = written);
                 inner.wr_buf.drain(..written);
             }
             inner.wr_buf.resize(protocol::HEADER_BYTES, 0);
@@ -176,7 +188,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
         msg.encryption = self.params.ssl;
         if msg.encryption != EncryptionLevel::NotSupported {
             #[cfg(not(feature = "tls"))]
-            panic!("TLS support is not enabled in this build, but required for this configuration!");
+            panic!(
+                "TLS support is not enabled in this build, but required for this configuration!"
+            );
         }
         let mut buf = msg.serialize()?;
         let header = protocol::PacketHeader {
@@ -192,10 +206,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
         let response = protocol::PreloginMessage::unserialize(&mut reader).await?;
         println!("{:?}", response);
         self.params.ssl = match (msg.encryption, response.encryption) {
-            (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => EncryptionLevel::NotSupported,
+            (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
+                EncryptionLevel::NotSupported
+            }
             (EncryptionLevel::Off, EncryptionLevel::Off) => EncryptionLevel::Off,
-            (EncryptionLevel::On, EncryptionLevel::Off) | 
-            (EncryptionLevel::On, EncryptionLevel::NotSupported) => {
+            (EncryptionLevel::On, EncryptionLevel::Off)
+            | (EncryptionLevel::On, EncryptionLevel::NotSupported) => {
                 panic!("todo: terminate connection, invalid encryption")
             }
             (_, _) => EncryptionLevel::On,
@@ -205,18 +221,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
 
     async fn tls_handshake(mut self) -> Result<Connecting<impl AsyncRead + AsyncWrite + Unpin>> {
         let mut builder = native_tls::TlsConnector::builder();
-        // TODO if disable_verification {
-            builder.danger_accept_invalid_certs(true);
-                    // .danger_accept_invalid_hostnames(true)
-                    // .use_sni(false);
-        // }
+        if self.params.trust_cert {
+            builder
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
+                .use_sni(false);
+        }
 
         let cx = builder.build().unwrap();
         let connector = tokio_tls::TlsConnector::from(cx);
 
         let wrapped = TlsNegotiateWrapper::new(self.stream);
         let mut ret = Connecting {
-            stream: connector.connect("", wrapped).await.expect("TODO: handle error"),
+            stream: connector
+                .connect("", wrapped)
+                .await
+                .expect("TODO: handle error"),
             ctx: self.ctx,
             params: self.params,
         };
@@ -255,14 +275,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
         let mut reader = protocol::TokenStreamReader::new(reader);
         assert_eq!(reader.read_token().await?, protocol::TokenType::SSPI);
         let sso_bytes = reader.read_sspi_token().await?;
-        event!(Level::TRACE, sspi_len= sso_bytes.len());
+        event!(Level::TRACE, sspi_len = sso_bytes.len());
         match sso_client.next_bytes(Some(sso_bytes))? {
             Some(sso_response) => {
-                event!(Level::TRACE, sspi_response_len= sso_response.len());
+                event!(Level::TRACE, sspi_response_len = sso_response.len());
                 let header = protocol::PacketHeader {
                     ty: protocol::PacketType::TDSv7Login,
                     status: protocol::PacketStatus::EndOfMessage,
-                    ..self.ctx.new_header(sso_response.len() + protocol::HEADER_BYTES)
+                    ..self
+                        .ctx
+                        .new_header(sso_response.len() + protocol::HEADER_BYTES)
                 };
                 let mut header_buf = [0u8; protocol::HEADER_BYTES];
                 header.serialize(&mut header_buf)?;
@@ -277,14 +299,20 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
     }
 }
 
-
-pub async fn connect(params: ConnectParams) -> Result<Client> {
-    //let addr = .parse::<::std::net::SocketAddr>().unwrap();
-    let mut stream = TcpStream::connect("localhost:1433").await?;
+pub async fn connect_tcp<P>(params: P, addr: SocketAddr) -> Result<Client>
+where
+    P: TryInto<ConnectParams>,
+    P::Error: Into<Error>,
+{
+    let mut stream = TcpStream::connect(addr).await?;
     stream.set_nodelay(true)?;
     let mut ctx = protocol::Context::new();
 
-    let mut connecting = Connecting { stream, ctx, params };
+    let mut connecting = Connecting {
+        stream,
+        ctx,
+        params: params.try_into().map_err(|err| err.into())?,
+    };
     connecting.prelogin().await?;
     let mut connecting = connecting.tls_handshake().await?;
     connecting.login().await?;
@@ -323,11 +351,12 @@ pub async fn connect(params: ConnectParams) -> Result<Client> {
     };
 
     let mut f = conn.into_future();
-    let conn_fut: Pin<Box<dyn Future<Output = Result<()>>>> = Box::pin(future::poll_fn(move |ctx| {
-        let span = trace_span!("conn");
-        let _enter = span.enter();
-        unsafe { Pin::new_unchecked(&mut f) }.poll(ctx)
-    }));
+    let conn_fut: Pin<Box<dyn Future<Output = Result<()>>>> =
+        Box::pin(future::poll_fn(move |ctx| {
+            let span = trace_span!("conn");
+            let _enter = span.enter();
+            unsafe { Pin::new_unchecked(&mut f) }.poll(ctx)
+        }));
 
     let inner = Client {
         ctx,
@@ -353,8 +382,9 @@ struct Connection {
 
 impl Connection {
     async fn into_future(mut self) -> Result<()> {
-        let mut reader = protocol::TokenStreamReader::new(protocol::PacketReader::new(&mut self.reader));
-       
+        let mut reader =
+            protocol::TokenStreamReader::new(protocol::PacketReader::new(&mut self.reader));
+
         let mut current_receiver = None;
         loop {
             event!(Level::TRACE, "reading next token");
@@ -369,7 +399,10 @@ impl Connection {
                         current_receiver = Some(self.result_receivers.next().await.unwrap());
                     }
                     event!(Level::TRACE, sent_row= ?row);
-                    let _ = current_receiver.as_mut().unwrap().try_send(ConnectionResult::Row(row));
+                    let _ = current_receiver
+                        .as_mut()
+                        .unwrap()
+                        .try_send(ConnectionResult::Row(row));
                 }
                 protocol::TokenType::Done => {
                     let done = reader.read_done_token(&self.ctx).await?;
@@ -378,7 +411,10 @@ impl Connection {
                     if !done.status.contains(protocol::DoneStatus::MORE) {
                         current_receiver = None; // TODO: only if single resultset
                     } else {
-                        let _ = current_receiver.as_mut().unwrap().try_send(ConnectionResult::NextResultSet);
+                        let _ = current_receiver
+                            .as_mut()
+                            .unwrap()
+                            .try_send(ConnectionResult::NextResultSet);
                     }
                 }
                 _ => panic!("TODO: unsupported token: {:?}", ty),
@@ -396,12 +432,12 @@ pub struct Client {
 
 impl Client {
     async fn simple_query<'a>(&'a self, query: &str) -> Result<QueryStream> {
-        let span = debug_span!("simple_query", query=query);
+        let span = debug_span!("simple_query", query = query);
         let _enter = span.enter();
-        
+
         let mut writer = self.writer.clone();
         let mut writer = writer.lock().await;
-            
+
         // Subscribe for results
         let (sender, mut receiver) = mpsc::unbounded_channel();
         // let mut receiver = receiver.fuse();
@@ -463,12 +499,15 @@ impl Drop for QueryStream {
 impl tokio::stream::Stream for QueryStream {
     type Item = Result<row::Row>;
 
-    fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context) -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context,
+    ) -> std::task::Poll<Option<Self::Item>> {
         if self.done || self.has_next_resultset {
             return Poll::Ready(None);
         }
-        
-        // Handle incoming results and paralelly allow the connection 
+
+        // Handle incoming results and paralelly allow the connection
         // to dispatch results to other streams (or us)
         match self.results.poll_next_unpin(cx) {
             Poll::Pending => match self.conn_handler.poll_unpin(cx) {
@@ -476,7 +515,7 @@ impl tokio::stream::Stream for QueryStream {
                 Poll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
                 // The connection future never terminates, except for errors.
                 Poll::Ready(Ok(_)) => unreachable!(),
-            }
+            },
             Poll::Ready(Some(ConnectionResult::Row(row))) => Poll::Ready(Some(Ok(row::Row(row)))),
             Poll::Ready(Some(ConnectionResult::NextResultSet)) => {
                 self.has_next_resultset = true;
@@ -492,8 +531,8 @@ impl tokio::stream::Stream for QueryStream {
 
 #[cfg(test)]
 mod tests {
-    use futures_util::stream::StreamExt;
     use futures_util::pin_mut;
+    use futures_util::stream::StreamExt;
     use tracing::{span, Level};
 
     #[tokio::test]
@@ -503,9 +542,15 @@ mod tests {
             .finish();
         tracing::subscriber::set_global_default(subscriber).unwrap();
 
-        let client = super::connect(super::ConnectParams {
-            ssl: super::protocol::EncryptionLevel::Required,
-        }).await?;
+        let client = super::connect(
+            super::ConnectParams {
+                ssl: super::protocol::EncryptionLevel::Required,
+                host: "".to_owned(),
+                trust_cert: true,
+            },
+            "127.0.0.1:1433".parse().unwrap(),
+        )
+        .await?;
 
         let stream = client.simple_query("SELECT 42; SELECT 49").await?;
         pin_mut!(stream);

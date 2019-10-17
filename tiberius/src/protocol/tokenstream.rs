@@ -344,10 +344,21 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         Ok(token)
     }
 
-    pub async fn read_basemetadata_column(&mut self, ctx: &protocol::Context) -> Result<BaseMetaDataColumn> {
-        let _user_ty = self.reader.read_bytes(4).await?.read_u32::<LittleEndian>()?;
+    pub async fn read_basemetadata_column(
+        &mut self,
+        ctx: &protocol::Context,
+    ) -> Result<BaseMetaDataColumn> {
+        let _user_ty = self
+            .reader
+            .read_bytes(4)
+            .await?
+            .read_u32::<LittleEndian>()?;
 
-        let raw_flags = self.reader.read_bytes(2).await?.read_u16::<LittleEndian>()?;
+        let raw_flags = self
+            .reader
+            .read_bytes(2)
+            .await?
+            .read_u16::<LittleEndian>()?;
         let flags = ColmetaDataFlags::from_bits(raw_flags).unwrap();
 
         let ty = self.reader.read_type_info(ctx).await?;
@@ -372,7 +383,11 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_colmetadata_token(&mut self, ctx: &protocol::Context) -> Result<()> {
-        let column_count = self.reader.read_bytes(2).await?.read_u16::<LittleEndian>()?;
+        let column_count = self
+            .reader
+            .read_bytes(2)
+            .await?
+            .read_u16::<LittleEndian>()?;
 
         let mut columns = vec![];
         if column_count > 0 && column_count < 0xffff {
@@ -388,7 +403,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
                     col_name: {
                         let len = self.reader.read_bytes(1).await?[0] as usize;
                         read_varchar(self.reader.read_bytes(2 * len).await?)?
-                    }
+                    },
                 };
                 columns.push(meta);
             }
@@ -400,8 +415,10 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_row_token(&mut self, ctx: &protocol::Context) -> Result<TokenRow> {
-        let col_meta = ctx.last_meta
-            .lock().unwrap()
+        let col_meta = ctx
+            .last_meta
+            .lock()
+            .unwrap()
             .clone()
             .ok_or(Error::Protocol("missing colmeta data".into()))?;
 
@@ -409,7 +426,8 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
             columns: Vec::with_capacity(col_meta.columns.len()),
         };
         for (i, column) in col_meta.columns.iter().enumerate() {
-            row.columns.push(self.reader.read_column_data(ctx, &column.base).await?);
+            row.columns
+                .push(self.reader.read_column_data(ctx, &column.base).await?);
         }
         Ok(row)
     }
