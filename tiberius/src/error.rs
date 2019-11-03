@@ -3,6 +3,8 @@ use std::convert::Infallible;
 use std::fmt;
 use std::io;
 
+use crate::protocol;
+
 // TODO: keep private
 #[derive(Debug)]
 pub struct ClonableIoError(io::Error);
@@ -23,7 +25,7 @@ pub enum Error {
     Utf8(std::str::Utf8Error),
     Utf16,
     ParseInt(std::num::ParseIntError),
-    // Server(TokenError),
+    Server(protocol::TokenError),
     Canceled,
 }
 

@@ -51,11 +51,13 @@ mod tokenstream;
 pub use tokenstream::*;
 mod login;
 pub use login::{LoginMessage, PreloginMessage};
+pub mod rpc;
 mod types;
 pub use types::ColumnData;
 
 uint_enum! {
     #[repr(u32)]
+    #[derive(PartialOrd)]
     pub enum FeatureLevel {
         SqlServerV7 = 0x70000000,
         SqlServer2000 = 0x71000000,
@@ -187,9 +189,10 @@ impl PacketHeader {
 
     pub fn unserialize(buf: &[u8]) -> Result<PacketHeader> {
         let mut cursor = Cursor::new(buf);
+        let raw_ty = cursor.read_u8()?;
         Ok(PacketHeader {
-            ty: PacketType::try_from(cursor.read_u8()?)
-                .map_err(|_| Error::Protocol("header: invalid packet type".into()))?,
+            ty: PacketType::try_from(raw_ty)
+                .map_err(|_| Error::Protocol(format!("header: invalid packet type: {}", raw_ty).into()))?,
             status: PacketStatus::try_from(cursor.read_u8()?)
                 .map_err(|_| Error::Protocol("header: invalid packet status".into()))?,
             length: cursor.read_u16::<BigEndian>()?,
@@ -231,10 +234,8 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
             self.pos = 0;
         }
         let mut header_buf = vec![0u8; HEADER_BYTES];
-        event!(
-            Level::TRACE,
-            read_bytes = self.conn.read_exact(&mut header_buf).await?
-        );
+        let read_bytes = self.conn.read_exact(&mut header_buf).await?;
+        event!(Level::TRACE, read_bytes);
         let header = PacketHeader::unserialize(&header_buf)?;
         Ok(header)
     }
@@ -249,9 +250,10 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
         let pos = self.buf.len();
         self.buf
             .resize(pos + header.length as usize - HEADER_BYTES, 0);
+        let read_bytes = self.conn.read_exact(&mut self.buf[pos..]).await?;
         event!(
             Level::TRACE,
-            read_bytes = self.conn.read_exact(&mut self.buf[pos..]).await?
+            read_bytes
         );
         if header.status == PacketStatus::EndOfMessage {
             self.done = true;
@@ -329,7 +331,7 @@ enum AllHeaderTy {
 pub async fn write_trans_descriptor<C: AsyncWrite + Unpin>(
     w: &mut PacketWriter<'_, C>,
     ctx: &Context,
-    id: u64,
+    id: u64, // TODO: move into context
 ) -> Result<()> {
     let mut buf = [0u8; 22];
     let mut cursor = Cursor::new(&mut buf[..]);

@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::future::{self, FutureExt};
@@ -14,7 +15,8 @@ use tracing::{self, debug_span, event, trace_span, Level};
 use winauth::NextBytes;
 
 use crate::protocol::{self, EncryptionLevel};
-use crate::{Client, Connection, Error, Result, TlsNegotiateWrapper};
+use crate::tls::TlsNegotiateWrapper;
+use crate::{Connection, Error, Result};
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
 pub struct ConnectParams {
@@ -30,7 +32,7 @@ pub async fn connect_tcp_sql_browser<P>(
     params: P,
     mut addr: SocketAddr,
     instance_name: &str,
-) -> Result<Client>
+) -> Result<Connection>
 where
     P: TryInto<ConnectParams>,
     P::Error: Into<Error>,
@@ -72,7 +74,7 @@ where
     return connect_tcp(params, addr).await;
 }
 
-pub async fn connect_tcp<P>(params: P, addr: SocketAddr) -> Result<Client>
+pub async fn connect_tcp<P>(params: P, addr: SocketAddr) -> Result<Connection>
 where
     P: TryInto<ConnectParams>,
     P::Error: Into<Error>,
@@ -114,30 +116,30 @@ where
         }
     }
 
-    let (sender, result_receivers) = mpsc::unbounded_channel();
+    let (result_sender, result_receiver) = mpsc::unbounded_channel();
 
     let ctx = Arc::new(connecting.ctx);
-    let conn = Connection {
-        ctx: ctx.clone(),
-        reader: Box::new(reader),
-        result_receivers,
+    let writer = Arc::new(sync::Mutex::new(Box::new(writer) as Box<dyn AsyncWrite + Unpin>));
+    let close_handle_queue = Arc::new(Mutex::new(vec![]));
+    let mut conn = Connection {
+        ctx,
+        writer,
+        // This won't be used by the worker future anyways, so we do not care about this definition cycle
+        conn_handler: (Box::pin(futures_util::future::ok(())) as Pin<Box<dyn Future<Output = Result<()>>>>).shared(),
+        result_sender,
+        close_handle_queue,
     };
 
-    let mut f = conn.into_future();
+    let mut f = conn.clone().into_worker_future(Box::new(reader), result_receiver);
     let conn_fut: Pin<Box<dyn Future<Output = Result<()>>>> =
         Box::pin(future::poll_fn(move |ctx| {
             let span = trace_span!("conn");
             let _enter = span.enter();
             unsafe { Pin::new_unchecked(&mut f) }.poll(ctx)
         }));
-
-    let inner = Client {
-        ctx,
-        writer: Arc::new(sync::Mutex::new(Box::new(writer))),
-        conn_handler: conn_fut.shared(),
-        sender,
-    };
-    Ok(inner)
+    
+    conn.conn_handler = conn_fut.shared();
+    Ok(conn)
 }
 
 struct Connecting<S> {

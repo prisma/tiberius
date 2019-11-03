@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::protocol;
 use crate::{Error, Result};
@@ -68,6 +68,15 @@ uint_enum! {
     }
 }
 
+impl VarLenType {
+    fn bytes_length(&self) -> usize {
+        match *self {
+            VarLenType::Intn => 1,
+            _ => unimplemented!()
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Collation {
     /// LCID ColFlags Version
@@ -95,8 +104,8 @@ impl Collation {
 #[derive(Debug)]
 pub enum TypeInfo {
     FixedLen(FixedLenType),
-    /*VarLenSized(VarLenType, usize, Option<Collation>),
-    VarLenSizedPrecision {
+    VarLenSized(VarLenType, usize, Option<Collation>),
+    /*VarLenSizedPrecision {
         ty: VarLenType,
         size: usize,
         precision: u8,
@@ -114,6 +123,7 @@ pub enum ColumnData {
     F32(f32),
     F64(f64),
     Bit(bool),
+    String(String),
     /* Guid(Cow<'a, Guid>),
     DateTime(time::DateTime),
     SmallDateTime(time::SmallDateTime),
@@ -126,6 +136,38 @@ pub enum ColumnData {
     BString(Str),
     Binary(Cow<'a, [u8]>),
     Numeric(Numeric),*/
+}
+
+impl ColumnData {
+    pub async fn write_to<'a, C>(
+        &self,
+        ctx: &protocol::Context,
+        writer: &mut protocol::PacketWriter<'a, C>,
+    ) -> Result<()>
+    where
+        C: AsyncWrite + Unpin,
+    {
+        match *self {
+            ColumnData::I32(val) => {
+                let bytes = [&[VarLenType::Intn as u8, 4, 4][..], &val.to_le_bytes()].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+            }
+            ColumnData::String(ref str_) if str_.len() <= 4000 => {
+                let bytes = [
+                    &[VarLenType::NVarchar as u8],
+                    &8000u16.to_le_bytes()[..],
+                    &[0u8; 5][..],
+                    &(2 * str_.len() as u16).to_le_bytes(),
+                ].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+                for codepoint in str_.encode_utf16() {
+                    writer.write_bytes(&ctx, &codepoint.to_le_bytes()).await?;
+                }
+            }
+            _ => panic!("TODO: {:?}", *self), // TODO
+        }
+        Ok(())
+    }
 }
 
 impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
@@ -141,8 +183,46 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
                     format!("invalid or unsupported column type: {:?}", ty).into(),
                 ))
             }
-            Ok(ty) => unimplemented!(),
+            Ok(ty) => {
+                let len = match ty.bytes_length() {
+                    1 => self.read_bytes(1).await?[0] as usize,
+                    _ => unimplemented!()
+                };
+
+                Ok(TypeInfo::VarLenSized(ty, len, None))
+            }
         }
+    }
+
+    pub async fn read_fixed_len_type(&mut self, ctx: &protocol::Context, ty: FixedLenType) -> Result<ColumnData> {
+        let ret = match ty {
+            FixedLenType::Null => ColumnData::None,
+            FixedLenType::Bit => ColumnData::Bit(self.read_bytes(1).await?[0] != 0),
+            FixedLenType::Int1 => ColumnData::I8(self.read_bytes(1).await?.read_i8()?),
+            FixedLenType::Int2 => {
+                ColumnData::I16(self.read_bytes(2).await?.read_i16::<LittleEndian>()?)
+            }
+            FixedLenType::Int4 => {
+                ColumnData::I32(self.read_bytes(4).await?.read_i32::<LittleEndian>()?)
+            }
+            FixedLenType::Int8 => {
+                ColumnData::I64(self.read_bytes(8).await?.read_i64::<LittleEndian>()?)
+            }
+            FixedLenType::Float4 => {
+                ColumnData::F32(self.read_bytes(4).await?.read_f32::<LittleEndian>()?)
+            }
+            FixedLenType::Float8 => {
+                ColumnData::F64(self.read_bytes(8).await?.read_f64::<LittleEndian>()?)
+            }
+            // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
+            // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
+            _ => {
+                return Err(Error::Protocol(
+                    format!("unsupported fixed type decoding: {:?}", ty).into(),
+                ))
+            }
+        };
+        Ok(ret)
     }
 
     pub async fn read_column_data(
@@ -151,32 +231,25 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
         meta: &protocol::tokenstream::BaseMetaDataColumn,
     ) -> Result<ColumnData> {
         let ret = match meta.ty {
-            TypeInfo::FixedLen(ref fixed_ty) => match *fixed_ty {
-                FixedLenType::Bit => ColumnData::Bit(self.read_bytes(1).await?[0] != 0),
-                FixedLenType::Int1 => ColumnData::I8(self.read_bytes(1).await?.read_i8()?),
-                FixedLenType::Int2 => {
-                    ColumnData::I16(self.read_bytes(2).await?.read_i16::<LittleEndian>()?)
+            TypeInfo::FixedLen(ref fixed_ty) => self.read_fixed_len_type(&ctx, *fixed_ty).await?,
+            TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
+                match *ty {
+                    VarLenType::Intn => {
+                        assert!(collation.is_none());
+                        let recv_len = self.read_bytes(1).await?[0] as usize;
+                        let translated_ty = match recv_len {
+                            0 => FixedLenType::Null,
+                            1 => FixedLenType::Int1,
+                            2 => FixedLenType::Int2,
+                            4 => FixedLenType::Int4,
+                            8 =>  FixedLenType::Int8,
+                            _ => unimplemented!(),
+                        };
+                        self.read_fixed_len_type(&ctx, translated_ty).await?
+                    }
+                    _ => unimplemented!(),
                 }
-                FixedLenType::Int4 => {
-                    ColumnData::I32(self.read_bytes(4).await?.read_i32::<LittleEndian>()?)
-                }
-                FixedLenType::Int8 => {
-                    ColumnData::I64(self.read_bytes(8).await?.read_i64::<LittleEndian>()?)
-                }
-                FixedLenType::Float4 => {
-                    ColumnData::F32(self.read_bytes(4).await?.read_f32::<LittleEndian>()?)
-                }
-                FixedLenType::Float8 => {
-                    ColumnData::F64(self.read_bytes(8).await?.read_f64::<LittleEndian>()?)
-                }
-                // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
-                // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
-                _ => {
-                    return Err(Error::Protocol(
-                        format!("unsupported fixed type decoding: {:?}", fixed_ty).into(),
-                    ))
-                }
-            },
+            }
         };
         Ok(ret)
     }

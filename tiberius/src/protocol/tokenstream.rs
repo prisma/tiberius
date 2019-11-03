@@ -46,7 +46,9 @@ uint_enum! {
         SSPI = 0xED,
         EnvChange = 0xE3,
         Done = 0xFD,
+        /// stored procedure completed
         DoneProc = 0xFE,
+        /// sql within stored procedure completed
         DoneInProc = 0xFF,
     }
 }
@@ -169,10 +171,35 @@ pub struct MetaDataColumn {
     pub col_name: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct TokenError {
+    /// ErrorCode
+    pub code: u32,
+    /// ErrorState (describing code)
+    state: u8,
+    /// The class (severity) of the error
+    class: u8,
+    /// The error message
+    message: String,
+    server: String,
+    procedure: String,
+    line: u32,
+}
+
 #[derive(Debug)]
 pub struct TokenRow {
     // pub meta: Arc<TokenColMetaData>,
     pub columns: Vec<ColumnData>,
+}
+
+#[derive(Debug)]
+pub struct TokenReturnValue {
+    pub param_ordinal: u16,
+    pub param_name: String,
+    /// return value of user defined function
+    pub udf: bool,
+    pub meta: BaseMetaDataColumn,
+    pub value: ColumnData,
 }
 
 pub struct TokenStreamReader<'a, C: AsyncRead> {
@@ -430,5 +457,73 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
                 .push(self.reader.read_column_data(ctx, &column.base).await?);
         }
         Ok(row)
+    }
+
+    pub async fn read_return_status_token(&mut self, ctx: &protocol::Context) -> Result<u32> {
+        let status = self
+            .reader
+            .read_bytes(4)
+            .await?
+            .read_u32::<LittleEndian>()?;
+        Ok(status)
+    }
+
+    pub async fn read_return_value_token(&mut self, ctx: &protocol::Context) -> Result<TokenReturnValue> {
+        let param_ordinal = self.reader.read_bytes(2).await?.read_u16::<LittleEndian>()?;
+        let param_name_len = self.reader.read_bytes(1).await?[0] as usize;
+        let param_name = read_varchar(self.reader.read_bytes(2 * param_name_len).await?)?;
+        let udf = match self.reader.read_bytes(1).await?[0] {
+            0x01 => false,
+            0x02 => true,
+            _ => return Err(Error::Protocol("ReturnValue: invalid status".into())),
+        };
+        let meta = self.read_basemetadata_column(&ctx).await?;
+        let token = TokenReturnValue {
+            param_ordinal,
+            param_name,
+            udf,
+            value: self.reader.read_column_data(&ctx, &meta).await?,
+            meta,
+        };
+        Ok(token)
+    }
+
+    pub async fn read_error_token(&mut self, ctx: &protocol::Context) -> Result<TokenError> {
+        let length = self
+            .reader
+            .read_bytes(2)
+            .await?
+            .read_u16::<LittleEndian>()? as usize;
+        let mut content = Cursor::new(self.reader.read_bytes(length).await?);
+
+        let code = content.read_u32::<LittleEndian>()?;
+        let state = content.read_u8()?;
+        let class = content.read_u8()?;
+        let message_len = content.read_u16::<LittleEndian>()? as usize;
+        let message = read_varchar(content.read_slice(2 * message_len))?;
+        let server_len = content.read_u8()? as usize;
+        let server = read_varchar(content.read_slice(2 * server_len))?;
+        let procedure_len = content.read_u8()? as usize;
+        let procedure = read_varchar(content.read_slice(2 * procedure_len))?;
+        let line = if ctx.version > protocol::FeatureLevel::SqlServer2005 {
+            content.read_u32::<LittleEndian>()?
+        } else {
+            content.read_u16::<LittleEndian>()? as u32
+        };
+        
+        let token = TokenError {
+            code,
+            state,
+            class,
+            message,
+            server,
+            procedure,
+            line,
+        };
+        if content.position() as usize != content.get_ref().len() {
+            debug_assert_eq!(content.position() as usize, content.get_ref().len());
+            return Err(Error::Protocol("incomplete error token read".into()));
+        }
+        Ok(token)
     }
 }

@@ -11,7 +11,7 @@ keywords = ["tds", "mssql", "sql"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-async-stream = "0.1"
+# async-stream = "0.1"
 bitflags = "1.0"
 byteorder = "1.0"
 # bytes = "0.4.3"
@@ -20,7 +20,7 @@ encoding = "0.2"
 #fnv = "1.0"
 #futures-preview = "0.3.0-alpha.17"
 futures-util-preview = { version = "0.3.0-alpha.19" }
-tracing = "0.1.9"
+tracing = { version = "0.1", features = ["log"] }
 #chrono = { version = "0.4.0", optional = true }
 winauth = { version = "0.0.4" }
 native-tls = { version = "0.2.1", optional = true }
@@ -28,7 +28,7 @@ tokio = { version = "=0.2.0-alpha.6" }
 tokio-tls = { version = "=0.3.0-alpha.6", optional = true }
 
 [dev-dependencies]
-tracing-subscriber = "0.1"
+env_logger = "0.7"
 
 [features]
 default = ["tls"] # "chrono"
