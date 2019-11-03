@@ -468,8 +468,15 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         Ok(status)
     }
 
-    pub async fn read_return_value_token(&mut self, ctx: &protocol::Context) -> Result<TokenReturnValue> {
-        let param_ordinal = self.reader.read_bytes(2).await?.read_u16::<LittleEndian>()?;
+    pub async fn read_return_value_token(
+        &mut self,
+        ctx: &protocol::Context,
+    ) -> Result<TokenReturnValue> {
+        let param_ordinal = self
+            .reader
+            .read_bytes(2)
+            .await?
+            .read_u16::<LittleEndian>()?;
         let param_name_len = self.reader.read_bytes(1).await?[0] as usize;
         let param_name = read_varchar(self.reader.read_bytes(2 * param_name_len).await?)?;
         let udf = match self.reader.read_bytes(1).await?[0] {
@@ -510,7 +517,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         } else {
             content.read_u16::<LittleEndian>()? as u32
         };
-        
+
         let token = TokenError {
             code,
             state,

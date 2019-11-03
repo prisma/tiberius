@@ -1,29 +1,63 @@
-use tiberius::{Error, Result};
 use futures_util::{StreamExt, TryStreamExt};
+use std::env;
+use tiberius::{Error, Result};
 
 use std::sync::Once;
 static LOGGER_SETUP: Once = Once::new();
 
+// encrypt=false (default with tls feature enabled)
 async fn connect() -> Result<tiberius::Connection> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
-    
-    tiberius::connect_tcp(
-        tiberius::ConnectParams {
-            ssl: tiberius::EncryptionLevel::Required,
-            host: "".to_owned(),
-            trust_cert: true,
-        },
-        "127.0.0.1:1433".parse().unwrap(),
-    ).await
+
+    let conn_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+        "server=tcp:127.0.0.1,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    );
+    tiberius::connect(&conn_str).await
+}
+
+// encrypt=true
+#[tokio::test]
+async fn test_conn_full_encryption() -> Result<()> {
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+
+    let conn_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+        "server=tcp:127.0.0.1,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    ) + ";encrypt=true";
+    let conn = tiberius::connect(&conn_str).await?;
+    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+
+    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![-4i32]);
+    Ok(())
+}
+
+// encrypt=none
+#[tokio::test]
+async fn test_conn_unencrypted() -> Result<()> {
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+
+    let conn_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+        "server=tcp:127.0.0.1,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    ) + ";encrypt=none";
+    let conn = tiberius::connect(&conn_str).await?;
+    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+
+    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![-4i32]);
+    Ok(())
 }
 
 #[tokio::test]
 async fn test_type_i32() -> Result<()> {
     let conn = connect().await?;
-    let mut stream = conn.query("SELECT @P1", &[&-4i32]).await?;
-    
+    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+
     let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
     assert_eq!(rows?, vec![-4i32]);
     Ok(())
@@ -36,7 +70,7 @@ async fn test_prepared_select_reexecute() -> Result<()> {
         .map(|_| "SELECT 1")
         .collect::<Vec<_>>()
         .join(" UNION ALL ");
-    
+
     println!("a{}b", sql);
     let stmt = conn.prepare(&sql).await?;
     for _ in 0..3 {

@@ -191,8 +191,9 @@ impl PacketHeader {
         let mut cursor = Cursor::new(buf);
         let raw_ty = cursor.read_u8()?;
         Ok(PacketHeader {
-            ty: PacketType::try_from(raw_ty)
-                .map_err(|_| Error::Protocol(format!("header: invalid packet type: {}", raw_ty).into()))?,
+            ty: PacketType::try_from(raw_ty).map_err(|_| {
+                Error::Protocol(format!("header: invalid packet type: {}", raw_ty).into())
+            })?,
             status: PacketStatus::try_from(cursor.read_u8()?)
                 .map_err(|_| Error::Protocol("header: invalid packet status".into()))?,
             length: cursor.read_u16::<BigEndian>()?,
@@ -251,10 +252,7 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
         self.buf
             .resize(pos + header.length as usize - HEADER_BYTES, 0);
         let read_bytes = self.conn.read_exact(&mut self.buf[pos..]).await?;
-        event!(
-            Level::TRACE,
-            read_bytes
-        );
+        event!(Level::TRACE, read_bytes);
         if header.status == PacketStatus::EndOfMessage {
             self.done = true;
         }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,7 +16,7 @@ use tracing::{self, debug_span, event, trace_span, Level};
 use winauth::NextBytes;
 
 use crate::protocol::{self, EncryptionLevel};
-use crate::tls::TlsNegotiateWrapper;
+use crate::tls::{MaybeTlsStream, TlsPreloginWrapper, TlsStream};
 use crate::{Connection, Error, Result};
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
@@ -23,9 +24,27 @@ pub struct ConnectParams {
     pub host: String,
     pub ssl: EncryptionLevel,
     pub trust_cert: bool,
-    // pub auth: AuthMethod,
-    // pub target_db: Option<Cow<'static, str>>,
-    // pub spn: Cow<'static, str>,
+    pub target_db: Option<String>, // TODO
+                                   // pub auth: AuthMethod,
+                                   // pub spn: Cow<'static, str>,
+}
+
+impl ConnectParams {
+    /// Get a default/zeroed set of connection params
+    pub fn new() -> ConnectParams {
+        ConnectParams {
+            host: "".to_owned(),
+            ssl: if cfg!(feature = "tls") {
+                EncryptionLevel::Off
+            } else {
+                EncryptionLevel::NotSupported
+            },
+            target_db: None,
+            trust_cert: false,
+            // auth: AuthMethod::SqlServer("".into(), "".into()),
+            // spn: Cow::Borrowed(""),
+        }
+    }
 }
 
 pub async fn connect_tcp_sql_browser<P>(
@@ -119,27 +138,218 @@ where
     let (result_sender, result_receiver) = mpsc::unbounded_channel();
 
     let ctx = Arc::new(connecting.ctx);
-    let writer = Arc::new(sync::Mutex::new(Box::new(writer) as Box<dyn AsyncWrite + Unpin>));
+    let writer = Arc::new(sync::Mutex::new(
+        Box::new(writer) as Box<dyn AsyncWrite + Unpin>
+    ));
     let close_handle_queue = Arc::new(Mutex::new(vec![]));
     let mut conn = Connection {
         ctx,
         writer,
         // This won't be used by the worker future anyways, so we do not care about this definition cycle
-        conn_handler: (Box::pin(futures_util::future::ok(())) as Pin<Box<dyn Future<Output = Result<()>>>>).shared(),
+        conn_handler: (Box::pin(futures_util::future::ok(()))
+            as Pin<Box<dyn Future<Output = Result<()>>>>)
+            .shared(),
         result_sender,
         close_handle_queue,
     };
 
-    let mut f = conn.clone().into_worker_future(Box::new(reader), result_receiver);
+    let mut f = conn
+        .clone()
+        .into_worker_future(Box::new(reader), result_receiver);
     let conn_fut: Pin<Box<dyn Future<Output = Result<()>>>> =
         Box::pin(future::poll_fn(move |ctx| {
             let span = trace_span!("conn");
             let _enter = span.enter();
             unsafe { Pin::new_unchecked(&mut f) }.poll(ctx)
         }));
-    
+
     conn.conn_handler = conn_fut.shared();
     Ok(conn)
+}
+
+/// A dynamic connection target
+#[derive(PartialEq, Debug)]
+enum ConnectTarget {
+    Tcp(SocketAddr),
+    TcpViaSQLBrowser(SocketAddr, String),
+}
+
+pub async fn connect(connection_str: &str) -> Result<Connection> {
+    let mut connect_params = ConnectParams::new();
+    let mut target: Option<ConnectTarget> = None;
+
+    let mut input = &connection_str[..];
+    while !input.is_empty() {
+        // (MSDN) The basic format of a connection string includes a series of keyword/value
+        // pairs separated by semicolons. The equal sign (=) connects each keyword and its value.
+        let key = {
+            let mut t = input.splitn(2, '=');
+            let key = t.next().unwrap();
+            if let Some(i) = t.next() {
+                input = i;
+            } else {
+                return Err(Error::Conversion(
+                    "connection string expected key. expected `=` never found".into(),
+                ));
+            }
+            key.trim().to_lowercase()
+        };
+
+        // (MSDN) To include values that contain a semicolon, single-quote character,
+        // or double-quote character, the value must be enclosed in double quotation marks.
+        // If the value contains both a semicolon and a double-quote character, the value can
+        // be enclosed in single quotation marks.
+        let quote_char = match &input[0..1] {
+            "'" => Some('\''),
+            "\"" => Some('"'),
+            _ => None,
+        };
+
+        let value = if let Some(quote_char) = quote_char {
+            let mut value = String::new();
+            loop {
+                let mut t = input.splitn(3, quote_char);
+                t.next().unwrap(); // skip first quote character
+                value.push_str(t.next().unwrap());
+                input = t.next().unwrap_or("");
+                if input.starts_with(quote_char) {
+                    // (MSDN) If the value contains both single-quote and double-quote
+                    // characters, the quotation mark character used to enclose the value must
+                    // be doubled every time it occurs within the value.
+                    value.push(quote_char);
+                } else if input.trim_start().starts_with(";") {
+                    input = input.trim_start().trim_start_matches(";");
+                    break;
+                } else if input.is_empty() {
+                    break;
+                } else {
+                    return Err(Error::Conversion(
+                        "connection string: text after escape sequence".into(),
+                    ));
+                }
+            }
+            value
+        } else {
+            let mut t = input.splitn(2, ';');
+            let value = t.next().unwrap();
+            input = t.next().unwrap_or("");
+            // (MSDN) To include preceding or trailing spaces in the string value, the value
+            // must be enclosed in either single quotation marks or double quotation marks.
+            value.trim().to_owned()
+        };
+
+        fn parse_bool<T: AsRef<str>>(v: T) -> Result<bool> {
+            match v.as_ref().trim().to_lowercase().as_str() {
+                "true" | "yes" => Ok(true),
+                "false" | "no" => Ok(false),
+                _ => Err(Error::Conversion(
+                    "connection string: not a valid boolean".into(),
+                )),
+            }
+        }
+
+        match key.as_str() {
+            "server" => {
+                if value.starts_with("tcp:") {
+                    let mut parts: Vec<_> = value[4..].split(',').collect();
+                    assert!(!parts.is_empty() && parts.len() < 3);
+                    if parts.len() == 1 {
+                        // Connect using a host and an instance name, we first need to resolve to a port
+                        parts = parts[0].split('\\').collect();
+                        let addr =
+                            (parts[0], 1434)
+                                .to_socket_addrs()?
+                                .nth(0)
+                                .ok_or(Error::Conversion(
+                                    "connection string: could not resolve server address".into(),
+                                ))?;
+                        target = Some(ConnectTarget::TcpViaSQLBrowser(addr, parts[1].to_owned()));
+                    } else if parts.len() == 2 {
+                        // Connect using a TCP target
+                        let (host, port) = (parts[0], parts[1].parse::<u16>()?);
+                        let addr =
+                            (host, port)
+                                .to_socket_addrs()?
+                                .nth(0)
+                                .ok_or(Error::Conversion(
+                                    "connection string: could not resolve server address".into(),
+                                ))?;
+                        target = Some(ConnectTarget::Tcp(addr));
+                    }
+                    connect_params.host = parts[0].to_owned().into();
+                }
+            }
+            "integratedsecurity" => {
+                if value.to_lowercase() == "sspi" || parse_bool(&value)? {
+                    /* TODO #[cfg(windows)]
+                    {
+                        connect_params.auth = AuthMethod::SSPI_SSO;
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
+                    }*/
+                }
+            }
+            "uid" | "username" | "user" => {
+                /* TODO connect_params.auth = match connect_params.auth {
+                    AuthMethod::SqlServer(ref mut username, _) |
+                    AuthMethod::WinAuth(ref mut username, _) => {
+                        *username = value.into_owned().into();
+                        continue;
+                    }
+                    #[cfg(windows)]
+                    AuthMethod::SSPI_SSO => {
+                        AuthMethod::WinAuth(value.into_owned().into(), "".into())
+                    }
+                };*/
+            }
+            "password" | "pwd" => {
+                /* TODO connect_params.auth = match connect_params.auth {
+                    AuthMethod::SqlServer(_, ref mut password) |
+                    AuthMethod::WinAuth(_, ref mut password) => {
+                        *password = value.into_owned().into();
+                        continue;
+                    }
+                    #[cfg(windows)]
+                    AuthMethod::SSPI_SSO => {
+                        AuthMethod::WinAuth("".into(), value.into_owned().into())
+                    }
+                }; */
+            }
+            "database" => {
+                connect_params.target_db = Some(value);
+            }
+            "trustservercertificate" => {
+                connect_params.trust_cert = parse_bool(value)?;
+            }
+            "encrypt" => {
+                connect_params.ssl = if value == "none" {
+                    EncryptionLevel::NotSupported
+                } else if parse_bool(value)? {
+                    EncryptionLevel::Required
+                } else {
+                    EncryptionLevel::Off
+                };
+            }
+            _ => {
+                return Err(Error::Conversion(
+                    format!("connection string: unknown config option: {:?}", key).into(),
+                ))
+            }
+        }
+    }
+
+    let target = target.ok_or(Error::Conversion(
+        "connection string pointing into the void. no connection endpoint specified.".into(),
+    ))?;
+    event!(Level::DEBUG, connecting = tracing::field::debug(&target));
+    match target {
+        ConnectTarget::Tcp(addr) => connect_tcp(connect_params, addr).await,
+        ConnectTarget::TcpViaSQLBrowser(addr, instance_name) => {
+            connect_tcp_sql_browser(connect_params, addr, &instance_name).await
+        }
+    }
 }
 
 struct Connecting<S> {
@@ -148,7 +358,7 @@ struct Connecting<S> {
     params: ConnectParams,
 }
 
-impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
     async fn prelogin(&mut self) -> Result<()> {
         // Send PreLogin
         let mut msg = protocol::PreloginMessage::new();
@@ -159,6 +369,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
                 "TLS support is not enabled in this build, but required for this configuration!"
             );
         }
+        println!("{:?}", msg);
         let mut buf = msg.serialize()?;
         let header = protocol::PacketHeader {
             ty: protocol::PacketType::PreLogin,
@@ -186,32 +397,48 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
         Ok(())
     }
 
-    async fn tls_handshake(mut self) -> Result<Connecting<impl AsyncRead + AsyncWrite + Unpin>> {
-        let mut builder = native_tls::TlsConnector::builder();
-        if self.params.trust_cert {
-            builder
-                .danger_accept_invalid_certs(true)
-                .danger_accept_invalid_hostnames(true)
-                .use_sni(false);
-        }
+    async fn tls_handshake(
+        mut self,
+    ) -> Result<Connecting<MaybeTlsStream<S, impl TlsStream<Ret = S> + Unpin>>> {
+        let stream: MaybeTlsStream<_, _> = if self.params.ssl != EncryptionLevel::NotSupported {
+            let mut builder = native_tls::TlsConnector::builder();
+            if self.params.trust_cert {
+                builder
+                    .danger_accept_invalid_certs(true)
+                    .danger_accept_invalid_hostnames(true)
+                    .use_sni(false);
+            }
 
-        let cx = builder.build().unwrap();
-        let connector = tokio_tls::TlsConnector::from(cx);
+            let cx = builder.build().unwrap();
+            let connector = tokio_tls::TlsConnector::from(cx);
 
-        let wrapped = TlsNegotiateWrapper::new(self.stream);
-        let mut ret = Connecting {
-            stream: connector
+            let wrapped = TlsPreloginWrapper::new(self.stream);
+            let mut stream = connector
                 .connect("", wrapped)
                 .await
-                .expect("TODO: handle error"),
+                .expect("TODO: handle error");
+            event!(Level::TRACE, "TLS handshake done");
+
+            stream.get_mut().pending_handshake = false;
+            MaybeTlsStream::Tls(stream)
+        } else {
+            MaybeTlsStream::Raw(self.stream)
+        };
+
+        let mut ret = Connecting {
+            stream,
             ctx: self.ctx,
             params: self.params,
         };
-        event!(Level::TRACE, "TLS handshake done");
-        ret.stream.get_mut().pending_handshake = false;
         Ok(ret)
     }
+}
 
+impl<R, T> Connecting<MaybeTlsStream<R, T>>
+where
+    R: AsyncRead + AsyncWrite + Unpin,
+    T: TlsStream<Ret = R> + Unpin,
+{
     async fn login(&mut self) -> Result<()> {
         let mut login_message = protocol::LoginMessage::new();
         let mut builder = winauth::windows::NtlmSspiBuilder::new(); // TODO SPN, channel bindings
@@ -227,6 +454,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Connecting<S> {
         header.serialize(&mut buf)?;
         event!(Level::TRACE, "Sending login");
         self.stream.write_all(&buf).await?;
+        self.stream.flush().await?;
+        if let EncryptionLevel::Off = self.params.ssl {
+            event!(Level::TRACE, "Disabling encryption again");
+            self.stream = MaybeTlsStream::Raw(match self.stream {
+                MaybeTlsStream::Tls(ref mut tls) => tls.take_inner(),
+                _ => unreachable!(),
+            });
+        }
 
         // Perform SSO
         let mut reader = protocol::PacketReader::new(&mut self.stream);

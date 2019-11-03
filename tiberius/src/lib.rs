@@ -5,8 +5,8 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
-use std::mem;
 use std::io;
+use std::mem;
 use std::pin::Pin;
 use std::result;
 use std::sync::{atomic, Arc, Mutex};
@@ -25,13 +25,15 @@ mod connect;
 mod error;
 mod prepared;
 mod protocol;
+use protocol::rpc::{
+    RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags, TokenRpcRequest,
+};
 use protocol::ColumnData;
 pub use protocol::EncryptionLevel;
-use protocol::rpc::{RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags, TokenRpcRequest};
 mod row;
 mod tls;
 
-pub use connect::{connect_tcp, connect_tcp_sql_browser, ConnectParams};
+pub use connect::{connect, connect_tcp, connect_tcp_sql_browser, ConnectParams};
 pub use error::Error;
 pub type Result<T> = result::Result<T, Error>;
 pub use row::Row;
@@ -67,14 +69,12 @@ impl Connection {
         let (result_sender, _) = mpsc::unbounded_channel();
 
         for free_handle in free_handles {
-            event!(Level::DEBUG, unprepare=free_handle);
-            let params = vec![
-                RpcParam {
-                    name: Cow::Borrowed("handle"),
-                    flags: RpcStatusFlags::PARAM_BY_REF_VALUE,
-                    value: ColumnData::I32(free_handle),
-                },
-            ];
+            event!(Level::DEBUG, unprepare = free_handle);
+            let params = vec![RpcParam {
+                name: Cow::Borrowed("handle"),
+                flags: RpcStatusFlags::PARAM_BY_REF_VALUE,
+                value: ColumnData::I32(free_handle),
+            }];
 
             let req = TokenRpcRequest {
                 proc_id: RpcProcIdValue::Id(RpcProcId::SpUnprepare),
@@ -83,16 +83,21 @@ impl Connection {
             };
             let writer = self.writer.clone();
             let mut writer = writer.lock().await;
-            self.result_sender.try_send(result_sender.clone()).expect("TODO");
+            self.result_sender
+                .try_send(result_sender.clone())
+                .expect("TODO");
             req.write_to(&self.ctx, &mut *writer).await?;
         }
 
         Ok(())
     }
 
-    async fn into_worker_future(mut self, mut reader: Box<dyn AsyncRead + Unpin>, mut result_receiver: mpsc::UnboundedReceiver<mpsc::UnboundedSender<ReceivedToken>>) -> Result<()> {
-        let mut reader =
-            protocol::TokenStreamReader::new(protocol::PacketReader::new(&mut reader));
+    async fn into_worker_future(
+        mut self,
+        mut reader: Box<dyn AsyncRead + Unpin>,
+        mut result_receiver: mpsc::UnboundedReceiver<mpsc::UnboundedSender<ReceivedToken>>,
+    ) -> Result<()> {
+        let mut reader = protocol::TokenStreamReader::new(protocol::PacketReader::new(&mut reader));
 
         let mut next_receiver = true;
         let mut current_receiver = None;
@@ -120,7 +125,9 @@ impl Connection {
                     let done = reader.read_done_token(&self.ctx).await?;
 
                     // TODO: make sure we panic when executing 2 queries but only expecting one result
-                    if ty == protocol::TokenType::Done && !done.status.contains(protocol::DoneStatus::MORE) {
+                    if ty == protocol::TokenType::Done
+                        && !done.status.contains(protocol::DoneStatus::MORE)
+                    {
                         next_receiver = true;
                     }
                     println!("xx: {:?}", ty);
@@ -146,10 +153,7 @@ impl Connection {
                 _ => panic!("Token {:?} unimplemented!", ty),
             };
             event!(Level::TRACE, "recv token: {:?}", recv_token);
-            let _ = current_receiver
-                .as_mut()
-                .unwrap()
-                .try_send(recv_token);
+            let _ = current_receiver.as_mut().unwrap().try_send(recv_token);
         }
     }
 }
@@ -207,7 +211,13 @@ impl Connection {
         Ok(qs)
     }
 
-    async fn rpc_perform_query<'a>(&'a self, proc_id: RpcProcId, mut rpc_params: Vec<RpcParam<'static>>, params: &'a [&dyn prepared::ToSql], stmt_handle: Arc<atomic::AtomicI32>) -> Result<QueryStream<PreparedStream>> {
+    async fn rpc_perform_query<'a>(
+        &'a self,
+        proc_id: RpcProcId,
+        mut rpc_params: Vec<RpcParam<'static>>,
+        params: &'a [&dyn prepared::ToSql],
+        stmt_handle: Arc<atomic::AtomicI32>,
+    ) -> Result<QueryStream<PreparedStream>> {
         let mut param_str = String::new();
         for (i, param) in params.iter().enumerate() {
             if i > 0 {
@@ -223,11 +233,11 @@ impl Connection {
                 value: param_data,
             });
         }
-        
+
         if let Some(params) = rpc_params.iter_mut().find(|x| x.name == "params") {
-           params.value = ColumnData::String(param_str.into());
+            params.value = ColumnData::String(param_str.into());
         }
-        
+
         let req = TokenRpcRequest {
             proc_id: RpcProcIdValue::Id(proc_id),
             flags: RpcOptionFlags::empty(),
@@ -237,7 +247,7 @@ impl Connection {
         let writer = self.writer.clone();
         let mut writer = writer.lock().await;
 
-         // Subscribe for results
+        // Subscribe for results
         let (sender, receiver) = mpsc::unbounded_channel();
         self.result_sender.clone().try_send(sender).expect("TODO");
 
@@ -250,14 +260,22 @@ impl Connection {
         println!("WAITING for results");
         let qs = QueryStream {
             conn_handler: self.conn_handler.clone(),
-            results: PreparedStream { results: receiver, stmt_handle, read_ahead: None },
+            results: PreparedStream {
+                results: receiver,
+                stmt_handle,
+                read_ahead: None,
+            },
             done: false,
             has_next_resultset: false,
         };
         Ok(qs)
     }
 
-    async fn sp_execute_sql(&self, query: &str, params: &[&dyn prepared::ToSql]) -> Result<QueryStream<PreparedStream>> {
+    async fn sp_execute_sql(
+        &self,
+        query: &str,
+        params: &[&dyn prepared::ToSql],
+    ) -> Result<QueryStream<PreparedStream>> {
         let mut rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
@@ -272,10 +290,16 @@ impl Connection {
         ];
 
         let dummy = Arc::new(atomic::AtomicI32::new(0));
-        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params, dummy).await
+        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params, dummy)
+            .await
     }
 
-    async fn sp_prep_exec(&self, ret_handle: Arc<atomic::AtomicI32>, query: &str, params: &[&dyn prepared::ToSql]) -> Result<QueryStream<PreparedStream>> {
+    async fn sp_prep_exec(
+        &self,
+        ret_handle: Arc<atomic::AtomicI32>,
+        query: &str,
+        params: &[&dyn prepared::ToSql],
+    ) -> Result<QueryStream<PreparedStream>> {
         let mut rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("handle"),
@@ -294,33 +318,47 @@ impl Connection {
             },
         ];
 
-        self.rpc_perform_query(RpcProcId::SpPrepExec, rpc_params, params, ret_handle).await
+        self.rpc_perform_query(RpcProcId::SpPrepExec, rpc_params, params, ret_handle)
+            .await
     }
 
-    async fn sp_execute(&self, stmt_handle: Arc<atomic::AtomicI32>, query: &str, params: &[&dyn prepared::ToSql]) -> Result<QueryStream<PreparedStream>> {
-        let mut rpc_params = vec![
-            RpcParam {
-                // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
-                // not specifying the name is better anyways to reduce overhead on execute
-                name: Cow::Borrowed(""),
-                flags: RpcStatusFlags::empty(),
-                value: ColumnData::I32(stmt_handle.load(atomic::Ordering::SeqCst)),
-            },
-        ];
+    async fn sp_execute(
+        &self,
+        stmt_handle: Arc<atomic::AtomicI32>,
+        query: &str,
+        params: &[&dyn prepared::ToSql],
+    ) -> Result<QueryStream<PreparedStream>> {
+        let mut rpc_params = vec![RpcParam {
+            // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
+            // not specifying the name is better anyways to reduce overhead on execute
+            name: Cow::Borrowed(""),
+            flags: RpcStatusFlags::empty(),
+            value: ColumnData::I32(stmt_handle.load(atomic::Ordering::SeqCst)),
+        }];
 
-        self.rpc_perform_query(RpcProcId::SpExecute, rpc_params, params, stmt_handle).await
+        self.rpc_perform_query(RpcProcId::SpExecute, rpc_params, params, stmt_handle)
+            .await
     }
 
     /// Execute a statement and return each resultset containing rows
-    /// 
+    ///
     /// You can access further resultsets using [ResultSet::next_resultset].
     /// # Panics
     /// Panics If you do not handle all resultsets.
-    pub async fn query<S>(&self, stmt: S, params: &[&dyn prepared::ToSql]) -> Result<impl ResultSet<Result<row::Row>>> where S: ToStatement {
+    pub async fn query<S>(
+        &self,
+        stmt: S,
+        params: &[&dyn prepared::ToSql],
+    ) -> Result<impl ResultSet<Result<row::Row>>>
+    where
+        S: ToStatement,
+    {
         let stmt = stmt.to_stmt();
-        
+
         match stmt {
-            private::StatementRepr::QueryString(ref query) => self.sp_execute_sql(query, params).await,
+            private::StatementRepr::QueryString(ref query) => {
+                self.sp_execute_sql(query, params).await
+            }
             private::StatementRepr::Statement(ref stmt) => {
                 // use sp_executesql for 1st call -> sp_prepexec on 2nd -> then sp_execute
                 // as microsoft JDBC driver by default (#83)
@@ -331,7 +369,10 @@ impl Connection {
                 }
 
                 let mut inserted = true;
-                let mut stmt_handle = stmt.handles.lock().expect("TODO")
+                let mut stmt_handle = stmt
+                    .handles
+                    .lock()
+                    .expect("TODO")
                     .entry(query_signature)
                     .and_modify(|_| inserted = false)
                     .or_insert_with(|| Arc::new(atomic::AtomicI32::new(0)))
@@ -356,10 +397,10 @@ impl Connection {
     ///
     /// This is a lazy operation and will not do anything until the returned statement is used.
     /// Every statement can contain multiple underlying prepared statements.
-    /// Passing differently typed arguments to .query() tells the server to prepare an 
+    /// Passing differently typed arguments to .query() tells the server to prepare an
     /// additional statement specific for these argument types.
     pub async fn prepare(&self, query: &str) -> Result<Statement> {
-        let stmt = Statement { 
+        let stmt = Statement {
             query: query.to_owned(),
             handles: Mutex::new(HashMap::new()),
             close_handle_queue: self.close_handle_queue.clone(),
@@ -428,7 +469,10 @@ struct QueryStream<S> {
     has_next_resultset: bool,
 }
 
-impl<S> ResultSet<Result<row::Row>> for QueryStream<S> where S: tokio::stream::Stream<Item = ReceivedToken> + Unpin {
+impl<S> ResultSet<Result<row::Row>> for QueryStream<S>
+where
+    S: tokio::stream::Stream<Item = ReceivedToken> + Unpin,
+{
     /// Move to the next resultset and make `poll_next` return rows for it
     fn next_resultset(&mut self) -> bool {
         if self.has_next_resultset {
@@ -447,7 +491,10 @@ impl<S> Drop for QueryStream<S> {
     }
 }
 
-impl<S> tokio::stream::Stream for QueryStream<S> where S: tokio::stream::Stream<Item = ReceivedToken> + Unpin {
+impl<S> tokio::stream::Stream for QueryStream<S>
+where
+    S: tokio::stream::Stream<Item = ReceivedToken> + Unpin,
+{
     type Item = Result<row::Row>;
 
     fn poll_next(
@@ -466,7 +513,7 @@ impl<S> tokio::stream::Stream for QueryStream<S> where S: tokio::stream::Stream<
                 Poll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
                 // The connection future never terminates, except for errors.
                 Poll::Ready(Ok(_)) => unreachable!(),
-            }
+            },
             Poll::Ready(Some(token)) => match token {
                 ReceivedToken::Row(row) => Poll::Ready(Some(Ok(row::Row(row)))),
                 ReceivedToken::Done(ref done) => {
@@ -476,8 +523,10 @@ impl<S> tokio::stream::Stream for QueryStream<S> where S: tokio::stream::Stream<
                     }
                     Poll::Ready(None)
                 }
-                ReceivedToken::DoneProc(_) | ReceivedToken::ReturnStatus(_) | ReceivedToken::ReturnValue(_) => unimplemented!(),
-            }
+                ReceivedToken::DoneProc(_)
+                | ReceivedToken::ReturnStatus(_)
+                | ReceivedToken::ReturnValue(_) => unimplemented!(),
+            },
             Poll::Ready(None) => {
                 self.done = true;
                 Poll::Ready(None)
@@ -517,7 +566,9 @@ impl tokio::stream::Stream for PreparedStream {
                     }
                     Poll::Ready(Some(row_token))
                 }
-                Some(ReceivedToken::Done(done)) if done.status.contains(protocol::DoneStatus::MORE) => {
+                Some(ReceivedToken::Done(done))
+                    if done.status.contains(protocol::DoneStatus::MORE) =>
+                {
                     let pending = self.read_ahead.take();
                     // we do not know yet, if what follows is the trailer of the stored procedure call or another resultset
                     self.read_ahead = Some(ReceivedToken::Done(done));
@@ -543,12 +594,12 @@ impl tokio::stream::Stream for PreparedStream {
                         _ => unreachable!(),
                     };
                     // TODO: think about multiple competing prepares (=> we prepared the same thing multiple times,
-                    //       because stmt handle not ready yet and 0 is still stored before updated by a successful prepare) 
+                    //       because stmt handle not ready yet and 0 is still stored before updated by a successful prepare)
                     self.stmt_handle.store(handle, atomic::Ordering::SeqCst); // TODO
                     continue;
                 }
-                Some(ReceivedToken::ReturnStatus(_))  => continue,
-                item => Poll::Ready(item)
+                Some(ReceivedToken::ReturnStatus(_)) => continue,
+                item => Poll::Ready(item),
             };
         }
     }

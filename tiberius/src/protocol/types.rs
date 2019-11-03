@@ -72,7 +72,7 @@ impl VarLenType {
     fn bytes_length(&self) -> usize {
         match *self {
             VarLenType::Intn => 1,
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }
@@ -158,7 +158,8 @@ impl ColumnData {
                     &8000u16.to_le_bytes()[..],
                     &[0u8; 5][..],
                     &(2 * str_.len() as u16).to_le_bytes(),
-                ].concat();
+                ]
+                .concat();
                 writer.write_bytes(&ctx, &bytes).await?;
                 for codepoint in str_.encode_utf16() {
                     writer.write_bytes(&ctx, &codepoint.to_le_bytes()).await?;
@@ -186,7 +187,7 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
             Ok(ty) => {
                 let len = match ty.bytes_length() {
                     1 => self.read_bytes(1).await?[0] as usize,
-                    _ => unimplemented!()
+                    _ => unimplemented!(),
                 };
 
                 Ok(TypeInfo::VarLenSized(ty, len, None))
@@ -194,7 +195,11 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
         }
     }
 
-    pub async fn read_fixed_len_type(&mut self, ctx: &protocol::Context, ty: FixedLenType) -> Result<ColumnData> {
+    pub async fn read_fixed_len_type(
+        &mut self,
+        ctx: &protocol::Context,
+        ty: FixedLenType,
+    ) -> Result<ColumnData> {
         let ret = match ty {
             FixedLenType::Null => ColumnData::None,
             FixedLenType::Bit => ColumnData::Bit(self.read_bytes(1).await?[0] != 0),
@@ -232,24 +237,22 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
     ) -> Result<ColumnData> {
         let ret = match meta.ty {
             TypeInfo::FixedLen(ref fixed_ty) => self.read_fixed_len_type(&ctx, *fixed_ty).await?,
-            TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
-                match *ty {
-                    VarLenType::Intn => {
-                        assert!(collation.is_none());
-                        let recv_len = self.read_bytes(1).await?[0] as usize;
-                        let translated_ty = match recv_len {
-                            0 => FixedLenType::Null,
-                            1 => FixedLenType::Int1,
-                            2 => FixedLenType::Int2,
-                            4 => FixedLenType::Int4,
-                            8 =>  FixedLenType::Int8,
-                            _ => unimplemented!(),
-                        };
-                        self.read_fixed_len_type(&ctx, translated_ty).await?
-                    }
-                    _ => unimplemented!(),
+            TypeInfo::VarLenSized(ref ty, ref len, ref collation) => match *ty {
+                VarLenType::Intn => {
+                    assert!(collation.is_none());
+                    let recv_len = self.read_bytes(1).await?[0] as usize;
+                    let translated_ty = match recv_len {
+                        0 => FixedLenType::Null,
+                        1 => FixedLenType::Int1,
+                        2 => FixedLenType::Int2,
+                        4 => FixedLenType::Int4,
+                        8 => FixedLenType::Int8,
+                        _ => unimplemented!(),
+                    };
+                    self.read_fixed_len_type(&ctx, translated_ty).await?
                 }
-            }
+                _ => unimplemented!(),
+            },
         };
         Ok(ret)
     }
