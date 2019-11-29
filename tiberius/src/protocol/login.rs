@@ -4,7 +4,7 @@ use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::io::{self, Cursor, Write};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 
 /// The prelogin packet used to initialize a connection
 #[derive(Debug)]
@@ -292,7 +292,7 @@ impl<'a> LoginMessage<'a> {
 
         let mut data_offset = cursor.position() as usize + var_data.len() * 2 * 2 + 6;
 
-        for (i, value) in var_data.into_iter().enumerate() {
+        for (i, value) in var_data.iter().enumerate() {
             // write the client ID (created from the MAC address)
             if i == 9 {
                 cursor.write_u32::<LittleEndian>(0)?; //TODO:

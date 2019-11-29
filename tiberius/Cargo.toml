@@ -19,16 +19,17 @@ encoding = "0.2"
 # log = "0.4.7"
 #fnv = "1.0"
 #futures-preview = "0.3.0-alpha.17"
-futures-util-preview = { version = "0.3.0-alpha.19" }
+futures-util = { version = "0.3.0" }
 tracing = { version = "0.1", features = ["log"] }
 #chrono = { version = "0.4.0", optional = true }
 winauth = { version = "0.0.4" }
 native-tls = { version = "0.2.1", optional = true }
-tokio = { version = "=0.2.0-alpha.6" }
-tokio-tls = { version = "=0.3.0-alpha.6", optional = true }
+tokio = { version = "0.2", features = ["sync", "io-std", "stream", "time", "io-util", "tcp", "udp"] }
+tokio-tls = { version = "0.3", optional = true }
 
 [dev-dependencies]
 env_logger = "0.7"
+tokio = { version = "0.2", features = ["macros"] }
 
 [features]
 default = ["tls"] # "chrono"

@@ -4,11 +4,11 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::future::{self, FutureExt};
-use tokio::future::FutureExt as TokioFutureExt;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::{self, mpsc};
@@ -21,12 +21,12 @@ use crate::{Connection, Error, Result};
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
 pub struct ConnectParams {
-    pub host: String,
-    pub ssl: EncryptionLevel,
-    pub trust_cert: bool,
-    pub target_db: Option<String>, // TODO
-                                   // pub auth: AuthMethod,
-                                   // pub spn: Cow<'static, str>,
+    pub(crate) host: String,
+    pub(crate) ssl: EncryptionLevel,
+    pub(crate) trust_cert: bool,
+    pub(crate) target_db: Option<String>, // TODO
+                                          // pub auth: AuthMethod,
+                                          // pub spn: Cow<'static, str>,
 }
 
 impl ConnectParams {
@@ -70,11 +70,11 @@ where
     socket.send_to(&msg, &addr).await?;
     let mut buf = vec![0u8; 4096];
     let timeout = Duration::from_millis(1000); // TODO: make configurable
-    let len = socket.recv(&mut buf).timeout(timeout).await.map_err(
-        |_elapsed: tokio::timer::timeout::Elapsed| {
+    let len = tokio::time::timeout(timeout, socket.recv(&mut buf))
+        .await
+        .map_err(|_elapsed: tokio::time::Elapsed| {
             Error::Conversion("SQL browser timeout during resolving instance".into())
-        },
-    )??;
+        })??;
     buf.truncate(len);
 
     let err = Error::Conversion("could not resolve instance".into());
@@ -119,7 +119,14 @@ where
     while let token = ts.read_token().await? {
         match token {
             protocol::TokenType::EnvChange => {
-                println!("env change {:?}", ts.read_env_change_token().await?);
+                let change = ts.read_env_change_token().await?;
+                match change {
+                    protocol::TokenEnvChange::PacketSize(new_size, _) => {
+                        connecting.ctx.packet_size.store(new_size, Ordering::SeqCst)
+                    }
+                    _ => (),
+                }
+                println!("env change {:?}", change);
             }
             protocol::TokenType::Info => {
                 println!("info {:?}", ts.read_info_token().await?);
@@ -153,14 +160,15 @@ where
         close_handle_queue,
     };
 
-    let mut f = conn
-        .clone()
-        .into_worker_future(Box::new(reader), result_receiver);
+    let mut f = Box::pin(
+        conn.clone()
+            .into_worker_future(Box::new(reader), result_receiver),
+    );
     let conn_fut: Pin<Box<dyn Future<Output = Result<()>>>> =
         Box::pin(future::poll_fn(move |ctx| {
             let span = trace_span!("conn");
             let _enter = span.enter();
-            unsafe { Pin::new_unchecked(&mut f) }.poll(ctx)
+            f.poll_unpin(ctx)
         }));
 
     conn.conn_handler = conn_fut.shared();
@@ -369,7 +377,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
                 "TLS support is not enabled in this build, but required for this configuration!"
             );
         }
-        println!("{:?}", msg);
         let mut buf = msg.serialize()?;
         let header = protocol::PacketHeader {
             ty: protocol::PacketType::PreLogin,
@@ -382,7 +389,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
         // Wait for PreLogin response
         let mut reader = protocol::PacketReader::new(&mut self.stream);
         let response = protocol::PreloginMessage::unserialize(&mut reader).await?;
-        println!("{:?}", response);
         self.params.ssl = match (msg.encryption, response.encryption) {
             (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
                 EncryptionLevel::NotSupported

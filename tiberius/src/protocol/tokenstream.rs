@@ -39,6 +39,7 @@ uint_enum! {
         Error = 0xAA,
         Info = 0xAB,
         Order = 0xA9,
+        ColInfo = 0xA5,
         ReturnValue = 0xAC,
         LoginAck = 0xAD,
         Row = 0xD1,
@@ -200,6 +201,11 @@ pub struct TokenReturnValue {
     pub udf: bool,
     pub meta: BaseMetaDataColumn,
     pub value: ColumnData,
+}
+
+#[derive(Debug)]
+pub struct TokenOrder {
+    column_indexes: Vec<u16>,
 }
 
 pub struct TokenStreamReader<'a, C: AsyncRead> {
@@ -409,7 +415,10 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         Ok(meta)
     }
 
-    pub async fn read_colmetadata_token(&mut self, ctx: &protocol::Context) -> Result<()> {
+    pub async fn read_colmetadata_token(
+        &mut self,
+        ctx: &protocol::Context,
+    ) -> Result<TokenColMetaData> {
         let column_count = self
             .reader
             .read_bytes(2)
@@ -437,7 +446,22 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         }
 
         let meta = TokenColMetaData { columns };
-        *ctx.last_meta.lock().unwrap() = Some(Arc::new(meta));
+        Ok(meta)
+    }
+
+    pub async fn read_colinfo_token(&mut self, ctx: &protocol::Context) -> Result<()> {
+        let mut byte_length = self
+            .reader
+            .read_bytes(2)
+            .await?
+            .read_u16::<LittleEndian>()?;
+        /*let mut col_names = vec![];
+        while byte_length > 0 {
+            let col_num = self.reader.read_bytes(1).await?[0];
+            let table_num = self.reader.read_bytes(1).await?[0];
+            let status = self.reader.read_bytes(1).await?[0];
+        }*/
+        self.reader.read_bytes(byte_length as usize).await?;
         Ok(())
     }
 
@@ -532,5 +556,25 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
             return Err(Error::Protocol("incomplete error token read".into()));
         }
         Ok(token)
+    }
+
+    pub async fn read_order_token(&mut self, ctx: &protocol::Context) -> Result<TokenOrder> {
+        let len = self
+            .reader
+            .read_bytes(2)
+            .await?
+            .read_u16::<LittleEndian>()?
+            / 2;
+
+        let mut column_indexes = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            column_indexes.push(
+                self.reader
+                    .read_bytes(2)
+                    .await?
+                    .read_u16::<LittleEndian>()?,
+            );
+        }
+        Ok(TokenOrder { column_indexes })
     }
 }

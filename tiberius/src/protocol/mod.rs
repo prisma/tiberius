@@ -3,7 +3,7 @@ use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::io::{self, Cursor, Write};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::{event, Level};
@@ -88,7 +88,7 @@ uint_enum! {
 /// Context, that might be required to make sure we understand and are understood by the server
 pub struct Context {
     pub version: FeatureLevel,
-    pub packet_size: usize,
+    pub packet_size: AtomicU32,
     pub packet_id: AtomicU8,
     pub last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
 }
@@ -97,7 +97,7 @@ impl Context {
     pub fn new() -> Context {
         Context {
             version: FeatureLevel::SqlServerN,
-            packet_size: 4096,
+            packet_size: AtomicU32::new(4096),
             packet_id: AtomicU8::new(0),
             last_meta: Mutex::new(None),
         }
@@ -105,6 +105,10 @@ impl Context {
 
     pub fn new_header(&self, length: usize) -> PacketHeader {
         PacketHeader::new(length, self.packet_id.fetch_add(1, Ordering::SeqCst))
+    }
+
+    pub fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
+        *self.last_meta.lock().unwrap() = Some(meta);
     }
 }
 
@@ -286,8 +290,9 @@ impl<'a, C: AsyncWrite + Unpin> PacketWriter<'a, C> {
     }
 
     pub async fn write_bytes(&mut self, ctx: &Context, mut buf: &[u8]) -> Result<()> {
+        let packet_size = ctx.packet_size.load(Ordering::SeqCst) as usize;
         while !buf.is_empty() {
-            let free_buf_space = ctx.packet_size - self.buf.len();
+            let free_buf_space = packet_size - self.buf.len();
             let writable = std::cmp::min(buf.len(), free_buf_space);
             self.buf.extend_from_slice(&buf[..writable]);
             buf = &buf[writable..];

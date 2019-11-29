@@ -1,4 +1,5 @@
 use std::io;
+use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
@@ -31,7 +32,7 @@ where
     R: AsyncRead + Unpin,
     T: AsyncRead + Unpin,
 {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
+    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
         match self {
             MaybeTlsStream::Raw(s) => s.prepare_uninitialized_buffer(buf),
             MaybeTlsStream::Tls(s) => s.prepare_uninitialized_buffer(buf),
@@ -166,10 +167,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
         }
 
         let span = trace_span!("TlsNeg::poll_write");
-        println!("GG1");
         let enter_ = span.enter();
         event!(Level::TRACE, amount = buf.len());
-        println!("GG2");
 
         self.wr_buf.extend_from_slice(buf);
         Poll::Ready(Ok(buf.len()))

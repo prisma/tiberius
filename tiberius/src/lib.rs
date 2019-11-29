@@ -13,7 +13,8 @@ use std::sync::{atomic, Arc, Mutex};
 use std::task::{self, Poll};
 use std::thread;
 
-use futures_util::future::{self, FutureExt};
+use bitflags::bitflags;
+use futures_util::future::{self, FutureExt, TryFutureExt};
 use futures_util::ready;
 use futures_util::stream::StreamExt;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -45,6 +46,44 @@ pub(crate) fn get_driver_version() -> u64 {
         .fold(0u64, |acc, part| {
             acc | (part.1.parse::<u64>().unwrap() << (part.0 * 8))
         })
+}
+
+/// A future that is powered by another future, that drives progress of this future
+struct MotoredFuture<M: Unpin, F: Unpin> {
+    motor: M,
+    future: F,
+}
+
+impl<M, F, MR, FR> Future for MotoredFuture<M, F>
+where
+    M: Future<Output = Result<MR>> + Unpin,
+    F: Future<Output = Result<FR>> + Unpin,
+{
+    type Output = F::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let mut done = false;
+
+        loop {
+            match self.future.poll_unpin(cx) {
+                x @ Poll::Ready(_) => return x,
+                Poll::Pending => {
+                    match self.motor.poll_unpin(cx) {
+                        Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                        Poll::Ready(_) => unreachable!(),
+                        // After pulling the motor, try once if the future is now ready,
+                        // to reduce roundtrips through the event loop.
+                        Poll::Pending => {
+                            if done {
+                                return Poll::Pending;
+                            }
+                            done = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -84,7 +123,7 @@ impl Connection {
             let writer = self.writer.clone();
             let mut writer = writer.lock().await;
             self.result_sender
-                .try_send(result_sender.clone())
+                .send(result_sender.clone())
                 .expect("TODO");
             req.write_to(&self.ctx, &mut *writer).await?;
         }
@@ -114,7 +153,8 @@ impl Connection {
             let recv_token = match ty {
                 protocol::TokenType::ColMetaData => {
                     let meta = reader.read_colmetadata_token(&self.ctx).await?;
-                    continue; // TODO
+                    self.ctx.set_last_meta(Arc::new(meta));
+                    continue;
                 }
                 protocol::TokenType::Row => {
                     let row = reader.read_row_token(&self.ctx).await?;
@@ -130,7 +170,6 @@ impl Connection {
                     {
                         next_receiver = true;
                     }
-                    println!("xx: {:?}", ty);
                     ReceivedToken::Done(done)
                 }
                 protocol::TokenType::DoneProc => {
@@ -150,10 +189,18 @@ impl Connection {
                     let err = reader.read_error_token(&self.ctx).await?;
                     return Err(error::Error::Server(err));
                 }
+                protocol::TokenType::Order => {
+                    let _ = reader.read_order_token(&self.ctx).await?;
+                    continue;
+                }
+                protocol::TokenType::ColInfo => {
+                    let _ = reader.read_colinfo_token(&self.ctx).await?;
+                    continue;
+                }
                 _ => panic!("Token {:?} unimplemented!", ty),
             };
             event!(Level::TRACE, "recv token: {:?}", recv_token);
-            let _ = current_receiver.as_mut().unwrap().try_send(recv_token);
+            let _ = current_receiver.as_mut().unwrap().send(recv_token);
         }
     }
 }
@@ -182,10 +229,10 @@ impl Connection {
         let mut writer = writer.lock().await;
 
         // Subscribe for results
-        let (sender, receiver) = mpsc::unbounded_channel();
-        self.result_sender.clone().try_send(sender).expect("TODO");
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        self.result_sender.clone().send(sender).expect("TODO");
 
-        // Fire a query
+        // Fire a query (TODO: use for simple_exec?)
         event!(Level::DEBUG, "WRITING simple QUERY");
         let header = protocol::PacketHeader {
             ty: protocol::PacketType::SQLBatch,
@@ -200,10 +247,10 @@ impl Connection {
         }
         wr.finish(&self.ctx).await?;
         ::std::mem::drop(writer);
-
-        println!("WAITING for results");
+        let mut conn_handler = self.conn_handler.clone();
+        
         let qs = QueryStream {
-            conn_handler: self.conn_handler.clone(),
+            conn_handler,
             results: receiver,
             done: false,
             has_next_resultset: false,
@@ -249,7 +296,7 @@ impl Connection {
 
         // Subscribe for results
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.result_sender.clone().try_send(sender).expect("TODO");
+        self.result_sender.clone().send(sender).expect("TODO");
 
         // Fire a query
         event!(Level::DEBUG, "QUERY ({:?})", proc_id);
@@ -257,7 +304,6 @@ impl Connection {
         req.write_to(&self.ctx, &mut *writer).await?;
         ::std::mem::drop(writer);
 
-        println!("WAITING for results");
         let qs = QueryStream {
             conn_handler: self.conn_handler.clone(),
             results: PreparedStream {
@@ -456,7 +502,7 @@ impl ToStatement for &Statement {
     }
 }
 
-pub trait ResultSet<I>: tokio::stream::Stream<Item = I> {
+pub trait ResultSet<I>: futures_util::stream::Stream<Item = I> {
     /// Move to the next resultset and make `poll_next` return rows for it
     fn next_resultset(&mut self) -> bool;
 }
@@ -471,7 +517,7 @@ struct QueryStream<S> {
 
 impl<S> ResultSet<Result<row::Row>> for QueryStream<S>
 where
-    S: tokio::stream::Stream<Item = ReceivedToken> + Unpin,
+    S: futures_util::stream::Stream<Item = ReceivedToken> + Unpin,
 {
     /// Move to the next resultset and make `poll_next` return rows for it
     fn next_resultset(&mut self) -> bool {
@@ -491,9 +537,9 @@ impl<S> Drop for QueryStream<S> {
     }
 }
 
-impl<S> tokio::stream::Stream for QueryStream<S>
+impl<S> futures_util::stream::Stream for QueryStream<S>
 where
-    S: tokio::stream::Stream<Item = ReceivedToken> + Unpin,
+    S: futures_util::stream::Stream<Item = ReceivedToken> + Unpin,
 {
     type Item = Result<row::Row>;
 
@@ -507,30 +553,31 @@ where
 
         // Handle incoming results and paralelly allow the connection
         // to dispatch results to other streams (or us)
-        match self.results.poll_next_unpin(cx) {
-            Poll::Pending => match self.conn_handler.poll_unpin(cx) {
-                Poll::Pending => Poll::Pending,
-                Poll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
-                // The connection future never terminates, except for errors.
-                Poll::Ready(Ok(_)) => unreachable!(),
-            },
-            Poll::Ready(Some(token)) => match token {
-                ReceivedToken::Row(row) => Poll::Ready(Some(Ok(row::Row(row)))),
-                ReceivedToken::Done(ref done) => {
-                    self.has_next_resultset = done.status.contains(protocol::DoneStatus::MORE);
-                    if !self.has_next_resultset {
-                        self.done = true;
-                    }
-                    Poll::Ready(None)
-                }
-                ReceivedToken::DoneProc(_)
-                | ReceivedToken::ReturnStatus(_)
-                | ReceivedToken::ReturnValue(_) => unimplemented!(),
-            },
-            Poll::Ready(None) => {
+        let self_ = &mut *self;
+        let mut motored = MotoredFuture {
+            motor: &mut self_.conn_handler,
+            future: &mut self_.results.next().map(Ok),
+        };
+
+        let token = match { ready!(motored.poll_unpin(cx))? } {
+            None => {
                 self.done = true;
+                return Poll::Ready(None);
+            }
+            Some(token) => token,
+        };
+        match token {
+            ReceivedToken::Row(row) => Poll::Ready(Some(Ok(row::Row(row)))),
+            ReceivedToken::Done(ref done) => {
+                self.has_next_resultset = done.status.contains(protocol::DoneStatus::MORE);
+                if !self.has_next_resultset {
+                    self.done = true;
+                }
                 Poll::Ready(None)
             }
+            ReceivedToken::DoneProc(_)
+            | ReceivedToken::ReturnStatus(_)
+            | ReceivedToken::ReturnValue(_) => unimplemented!(),
         }
     }
 }
@@ -541,7 +588,7 @@ struct PreparedStream {
     stmt_handle: Arc<atomic::AtomicI32>,
 }
 
-impl tokio::stream::Stream for PreparedStream {
+impl futures_util::stream::Stream for PreparedStream {
     type Item = ReceivedToken;
 
     fn poll_next(
