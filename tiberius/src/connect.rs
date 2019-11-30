@@ -142,7 +142,7 @@ where
         }
     }
 
-    let (result_sender, result_receiver) = mpsc::unbounded_channel();
+    let (result_callback_queue, result_receiver) = mpsc::unbounded_channel();
 
     let ctx = Arc::new(connecting.ctx);
     let writer = Arc::new(sync::Mutex::new(
@@ -156,7 +156,7 @@ where
         conn_handler: (Box::pin(futures_util::future::ok(()))
             as Pin<Box<dyn Future<Output = Result<()>>>>)
             .shared(),
-        result_sender,
+        result_callback_queue,
         close_handle_queue,
     };
 
@@ -403,6 +403,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
         Ok(())
     }
 
+    // TODO: feature tls
     async fn tls_handshake(
         mut self,
     ) -> Result<Connecting<MaybeTlsStream<S, impl TlsStream<Ret = S> + Unpin>>> {
@@ -447,6 +448,7 @@ where
 {
     async fn login(&mut self) -> Result<()> {
         let mut login_message = protocol::LoginMessage::new();
+        // TODO: linux / different auth methods
         let mut builder = winauth::windows::NtlmSspiBuilder::new(); // TODO SPN, channel bindings
         let mut sso_client = builder.build()?;
         let buf = sso_client.next_bytes(None)?;

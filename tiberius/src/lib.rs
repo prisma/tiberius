@@ -1,6 +1,6 @@
 //! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
 #![allow(unused_imports, dead_code)] // TODO
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -23,6 +23,7 @@ use tracing::{self, debug_span, event, trace_span, Level};
 
 mod collation;
 mod connect;
+mod cursor;
 mod error;
 mod prepared;
 mod protocol;
@@ -105,7 +106,7 @@ impl Connection {
                 mem::swap(&mut free_handles, &mut **guard);
             }
         }
-        let (result_sender, _) = mpsc::unbounded_channel();
+        let (result_callback_queue, _) = mpsc::unbounded_channel();
 
         for free_handle in free_handles {
             event!(Level::DEBUG, unprepare = free_handle);
@@ -122,8 +123,8 @@ impl Connection {
             };
             let writer = self.writer.clone();
             let mut writer = writer.lock().await;
-            self.result_sender
-                .send(result_sender.clone())
+            self.result_callback_queue
+                .send(result_callback_queue.clone())
                 .expect("TODO");
             req.write_to(&self.ctx, &mut *writer).await?;
         }
@@ -148,7 +149,10 @@ impl Connection {
             if next_receiver {
                 event!(Level::TRACE, "next_receiver");
                 next_receiver = false;
-                current_receiver = Some(result_receiver.next().await.unwrap());
+                current_receiver = result_receiver
+                    .next()
+                    .now_or_never()
+                    .expect("No receiver registered.");
             }
             let recv_token = match ty {
                 protocol::TokenType::ColMetaData => {
@@ -211,11 +215,16 @@ pub struct Connection {
     ctx: Arc<protocol::Context>,
     writer: Arc<sync::Mutex<Box<dyn AsyncWrite + Unpin>>>,
     conn_handler: future::Shared<Pin<Box<dyn Future<Output = Result<()>>>>>,
-    result_sender: mpsc::UnboundedSender<mpsc::UnboundedSender<ReceivedToken>>,
+    result_callback_queue: mpsc::UnboundedSender<mpsc::UnboundedSender<ReceivedToken>>,
     close_handle_queue: Arc<Mutex<Vec<i32>>>,
 }
 
 impl Connection {
+    /// Returns a connection object that provides cursored operations
+    pub fn cursored(&self) -> cursor::Connection {
+        cursor::Connection(self.clone())
+    }
+
     /// Execute a simple query and return multiple resultsets which consist of multiple rows.
     ///
     /// # Warning
@@ -225,12 +234,13 @@ impl Connection {
         let span = debug_span!("simple_query", query = query);
         let _enter = span.enter();
 
-        let writer = self.writer.clone();
-        let mut writer = writer.lock().await;
+        let writer_arc = self.writer.clone();
+        let mut writer = writer_arc.lock().await;
 
         // Subscribe for results
         let (sender, mut receiver) = mpsc::unbounded_channel();
-        self.result_sender.clone().send(sender).expect("TODO");
+        let result_callback_queue = self.result_callback_queue.clone();
+        result_callback_queue.send(sender.clone()).expect("TODO");
 
         // Fire a query (TODO: use for simple_exec?)
         event!(Level::DEBUG, "WRITING simple QUERY");
@@ -248,10 +258,10 @@ impl Connection {
         wr.finish(&self.ctx).await?;
         ::std::mem::drop(writer);
         let mut conn_handler = self.conn_handler.clone();
-        
+
         let qs = QueryStream {
             conn_handler,
-            results: receiver,
+            results: receiver.map(Ok),
             done: false,
             has_next_resultset: false,
         };
@@ -296,7 +306,10 @@ impl Connection {
 
         // Subscribe for results
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.result_sender.clone().send(sender).expect("TODO");
+        self.result_callback_queue
+            .clone()
+            .send(sender)
+            .expect("TODO");
 
         // Fire a query
         event!(Level::DEBUG, "QUERY ({:?})", proc_id);
@@ -517,7 +530,7 @@ struct QueryStream<S> {
 
 impl<S> ResultSet<Result<row::Row>> for QueryStream<S>
 where
-    S: futures_util::stream::Stream<Item = ReceivedToken> + Unpin,
+    S: futures_util::stream::Stream<Item = Result<ReceivedToken>> + Unpin,
 {
     /// Move to the next resultset and make `poll_next` return rows for it
     fn next_resultset(&mut self) -> bool {
@@ -539,7 +552,7 @@ impl<S> Drop for QueryStream<S> {
 
 impl<S> futures_util::stream::Stream for QueryStream<S>
 where
-    S: futures_util::stream::Stream<Item = ReceivedToken> + Unpin,
+    S: futures_util::stream::Stream<Item = Result<ReceivedToken>> + Unpin,
 {
     type Item = Result<row::Row>;
 
@@ -564,7 +577,7 @@ where
                 self.done = true;
                 return Poll::Ready(None);
             }
-            Some(token) => token,
+            Some(token) => token?,
         };
         match token {
             ReceivedToken::Row(row) => Poll::Ready(Some(Ok(row::Row(row)))),
@@ -589,7 +602,7 @@ struct PreparedStream {
 }
 
 impl futures_util::stream::Stream for PreparedStream {
-    type Item = ReceivedToken;
+    type Item = Result<ReceivedToken>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -597,7 +610,7 @@ impl futures_util::stream::Stream for PreparedStream {
     ) -> std::task::Poll<Option<Self::Item>> {
         loop {
             if let Some(ReceivedToken::Row(_)) = self.read_ahead {
-                return Poll::Ready(self.read_ahead.take());
+                return Poll::Ready(self.read_ahead.take().map(Ok));
             }
 
             let item = ready!(self.results.poll_next_unpin(cx));
@@ -609,9 +622,9 @@ impl futures_util::stream::Stream for PreparedStream {
                 Some(row_token @ ReceivedToken::Row(_)) if done_pending => {
                     if let Some(read_ahead) = self.read_ahead.take() {
                         self.read_ahead = Some(row_token);
-                        return Poll::Ready(Some(read_ahead));
+                        return Poll::Ready(Some(Ok(read_ahead)));
                     }
-                    Poll::Ready(Some(row_token))
+                    Poll::Ready(Some(Ok(row_token)))
                 }
                 Some(ReceivedToken::Done(done))
                     if done.status.contains(protocol::DoneStatus::MORE) =>
@@ -622,7 +635,7 @@ impl futures_util::stream::Stream for PreparedStream {
 
                     // e.g. if empty resultset
                     if let Some(read_ahead) = pending {
-                        return Poll::Ready(Some(read_ahead));
+                        return Poll::Ready(Some(read_ahead).map(Ok));
                     }
                     continue;
                 }
@@ -632,7 +645,7 @@ impl futures_util::stream::Stream for PreparedStream {
                         continue;
                     }
                     // signal completion of all resultsets, when the stored procedure completed
-                    Poll::Ready(Some(ReceivedToken::Done(done)))
+                    Poll::Ready(Some(Ok(ReceivedToken::Done(done))))
                 }
                 // TODO: ensure it's the "last" one
                 Some(ReceivedToken::ReturnValue(ref ret_val)) => {
@@ -646,7 +659,7 @@ impl futures_util::stream::Stream for PreparedStream {
                     continue;
                 }
                 Some(ReceivedToken::ReturnStatus(_)) => continue,
-                item => Poll::Ready(item),
+                item => Poll::Ready(item.map(Ok)),
             };
         }
     }

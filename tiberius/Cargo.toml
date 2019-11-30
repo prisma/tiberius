@@ -11,7 +11,7 @@ keywords = ["tds", "mssql", "sql"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-# async-stream = "0.1"
+async-stream = "0.2"
 bitflags = "1.0"
 byteorder = "1.0"
 # bytes = "0.4.3"

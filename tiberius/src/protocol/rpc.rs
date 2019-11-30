@@ -14,6 +14,9 @@ use crate::{Error, Result};
 #[repr(u8)]
 #[derive(Clone, Copy, Debug)]
 pub enum RpcProcId {
+    SpCursorOpen = 2,
+    SpCursorFetch = 7,
+    SpCursorClose = 9,
     SpExecuteSQL = 10,
     SpPrepare = 11,
     SpExecute = 12,

@@ -113,7 +113,7 @@ pub enum TypeInfo {
     },*/
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ColumnData {
     None,
     I8(i8),

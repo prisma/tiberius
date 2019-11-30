@@ -450,7 +450,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_colinfo_token(&mut self, ctx: &protocol::Context) -> Result<()> {
-        let mut byte_length = self
+        let byte_length = self
             .reader
             .read_bytes(2)
             .await?

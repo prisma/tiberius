@@ -54,6 +54,32 @@ async fn test_conn_unencrypted() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_simple_query() -> Result<()> {
+    let conn = connect().await?;
+
+    let mut sum: i64 = 0;
+    let mut stream = conn.simple_query("SELECT TOP (1000) n = ROW_NUMBER() OVER (ORDER BY [object_id]) FROM sys.all_objects ORDER BY n;").await?;
+    while let Some(row) = stream.next().await {
+        sum += row?.get::<_, i64>(0);
+    }
+    assert_eq!(sum, (1000 * 1001) / 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_simple_query_cursored() -> Result<()> {
+    let conn = connect().await?;
+
+    let mut sum: i64 = 0;
+    let mut stream = conn.cursored().simple_query("SELECT TOP (1000) n = ROW_NUMBER() OVER (ORDER BY [object_id]) FROM sys.all_objects ORDER BY n;").await?;
+    while let Some(row) = stream.next().await {
+        sum += row?.get::<_, i64>(0);
+    }
+    assert_eq!(sum, (1000 * 1001) / 2);
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_type_i32() -> Result<()> {
     let conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
@@ -71,7 +97,6 @@ async fn test_prepared_select_reexecute() -> Result<()> {
         .collect::<Vec<_>>()
         .join(" UNION ALL ");
 
-    println!("a{}b", sql);
     let stmt = conn.prepare(&sql).await?;
     for _ in 0..3 {
         let stream = conn.query(&stmt, &[]).await?;
