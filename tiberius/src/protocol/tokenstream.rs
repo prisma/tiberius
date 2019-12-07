@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bitflags::bitflags;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead};
 
 use crate::protocol;
 use crate::protocol::types::ColumnData;

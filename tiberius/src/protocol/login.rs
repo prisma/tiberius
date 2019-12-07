@@ -4,7 +4,7 @@ use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::io::{self, Cursor, Write};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite};
 
 /// The prelogin packet used to initialize a connection
 #[derive(Debug)]
