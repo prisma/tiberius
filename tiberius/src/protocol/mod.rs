@@ -255,7 +255,7 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
 
     pub async fn read_packet_with_header(&mut self, header: &PacketHeader) -> Result<()> {
         use tokio::io::AsyncReadExt;
-        
+
         let pos = self.buf.len();
         self.buf
             .resize(pos + header.length as usize - HEADER_BYTES, 0);
@@ -322,7 +322,7 @@ impl<'a, C: AsyncWrite + Unpin> PacketWriter<'a, C> {
 
     pub async fn finish(mut self, ctx: &Context) -> Result<()> {
         use tokio::io::AsyncWriteExt;
-        
+
         self.header_template.status = PacketStatus::EndOfMessage;
         self.flush_packet(ctx).await?;
         event!(Level::TRACE, "flush");

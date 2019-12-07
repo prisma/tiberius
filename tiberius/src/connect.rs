@@ -24,9 +24,38 @@ pub struct ConnectParams {
     pub(crate) host: String,
     pub(crate) ssl: EncryptionLevel,
     pub(crate) trust_cert: bool,
-    pub(crate) target_db: Option<String>, // TODO
-                                          // pub auth: AuthMethod,
-                                          // pub spn: Cow<'static, str>,
+    pub(crate) target_db: Option<String>,
+    pub(crate) auth: AuthMethod,
+    // pub spn: Cow<'static, str>, // TODO
+}
+
+pub struct AuthMethod(AuthMethodInner);
+
+impl AuthMethod {
+    pub fn sql_server(user: String, password: String) -> AuthMethod {
+        AuthMethod(AuthMethodInner::SqlServer { user, password })
+    }
+
+    pub fn integrated() -> AuthMethod {
+        AuthMethod(AuthMethodInner::WindowsIntegrated)
+    }
+}
+
+#[derive(Debug)]
+enum AuthMethodInner {
+    None,
+    /// SQL Server integrated authentication
+    SqlServer {
+        user: String,
+        password: String,
+    },
+    /// Windows authentication
+    Windows {
+        user: String,
+        password: String,
+    },
+    /// Windows-integrated Authentication (SSPI / sspi)
+    WindowsIntegrated,
 }
 
 impl ConnectParams {
@@ -41,7 +70,7 @@ impl ConnectParams {
             },
             target_db: None,
             trust_cert: false,
-            // auth: AuthMethod::SqlServer("".into(), "".into()),
+            auth: AuthMethod(AuthMethodInner::None),
             // spn: Cow::Borrowed(""),
         }
     }
@@ -98,9 +127,9 @@ where
     P: TryInto<ConnectParams>,
     P::Error: Into<Error>,
 {
-    let mut stream = TcpStream::connect(addr).await?;
+    let stream = TcpStream::connect(addr).await?;
     stream.set_nodelay(true)?;
-    let mut ctx = protocol::Context::new();
+    let ctx = protocol::Context::new();
 
     let mut connecting = Connecting {
         stream,
@@ -289,41 +318,52 @@ pub async fn connect(connection_str: &str) -> Result<Connection> {
             }
             "integratedsecurity" => {
                 if value.to_lowercase() == "sspi" || parse_bool(&value)? {
-                    /* TODO #[cfg(windows)]
-                    {
-                        connect_params.auth = AuthMethod::SSPI_SSO;
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        connect_params.auth = AuthMethod::WinAuth("".into(), "".into());
-                    }*/
+                    connect_params.auth = AuthMethod(match connect_params.auth.0 {
+                        AuthMethodInner::None | AuthMethodInner::WindowsIntegrated => AuthMethodInner::WindowsIntegrated,
+                        AuthMethodInner::SqlServer { user, password }
+                        | AuthMethodInner::Windows { user, password } => {
+                            AuthMethodInner::Windows { user, password }
+                        }
+                    });
                 }
             }
             "uid" | "username" | "user" => {
-                /* TODO connect_params.auth = match connect_params.auth {
-                    AuthMethod::SqlServer(ref mut username, _) |
-                    AuthMethod::WinAuth(ref mut username, _) => {
-                        *username = value.into_owned().into();
-                        continue;
+                let user = value;
+                connect_params.auth = AuthMethod(match connect_params.auth.0 {
+                    AuthMethodInner::None => AuthMethodInner::SqlServer {
+                        user,
+                        password: "".to_owned(),
+                    },
+                    AuthMethodInner::SqlServer { password, .. } => {
+                        AuthMethodInner::SqlServer { user, password }
                     }
-                    #[cfg(windows)]
-                    AuthMethod::SSPI_SSO => {
-                        AuthMethod::WinAuth(value.into_owned().into(), "".into())
+                    AuthMethodInner::Windows { password, .. } => {
+                        AuthMethodInner::Windows { user, password }
                     }
-                };*/
+                    AuthMethodInner::WindowsIntegrated => AuthMethodInner::Windows {
+                        user,
+                        password: "".to_owned(),
+                    },
+                });
             }
             "password" | "pwd" => {
-                /* TODO connect_params.auth = match connect_params.auth {
-                    AuthMethod::SqlServer(_, ref mut password) |
-                    AuthMethod::WinAuth(_, ref mut password) => {
-                        *password = value.into_owned().into();
-                        continue;
+                let password = value;
+                connect_params.auth = AuthMethod(match connect_params.auth.0 {
+                    AuthMethodInner::None => AuthMethodInner::SqlServer {
+                        user: "".to_owned(),
+                        password,
+                    },
+                    AuthMethodInner::SqlServer { user, .. } => {
+                        AuthMethodInner::SqlServer { user, password }
                     }
-                    #[cfg(windows)]
-                    AuthMethod::SSPI_SSO => {
-                        AuthMethod::WinAuth("".into(), value.into_owned().into())
+                    AuthMethodInner::Windows { user, .. } => {
+                        AuthMethodInner::Windows { user, password }
                     }
-                }; */
+                    AuthMethodInner::WindowsIntegrated => AuthMethodInner::Windows {
+                        user: "".to_owned(),
+                        password,
+                    },
+                });
             }
             "database" => {
                 connect_params.target_db = Some(value);
@@ -405,7 +445,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
 
     // TODO: feature tls
     async fn tls_handshake(
-        mut self,
+        self,
     ) -> Result<Connecting<MaybeTlsStream<S, impl TlsStream<Ret = S> + Unpin>>> {
         let stream: MaybeTlsStream<_, _> = if self.params.ssl != EncryptionLevel::NotSupported {
             let mut builder = native_tls::TlsConnector::builder();
@@ -432,7 +472,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
             MaybeTlsStream::Raw(self.stream)
         };
 
-        let mut ret = Connecting {
+        let ret = Connecting {
             stream,
             ctx: self.ctx,
             params: self.params,
@@ -447,12 +487,31 @@ where
     T: TlsStream<Ret = R> + Unpin,
 {
     async fn login(&mut self) -> Result<()> {
+        match &self.params.auth.0 {
+            #[cfg(windows)]
+            AuthMethodInner::WindowsIntegrated => {
+                let builder = winauth::windows::NtlmSspiBuilder::new();
+                let sspi_client = builder.build()?;
+                self.login_start(Some(sspi_client)).await
+            }
+            AuthMethodInner::None => panic!("No authentication method specified"), // TODO?
+            x => panic!("Auth method not supported {:?}", x),
+        }
+    }
+
+    async fn login_start(
+        &mut self,
+        mut sspi_client: Option<impl winauth::NextBytes>,
+    ) -> Result<()> {
         let mut login_message = protocol::LoginMessage::new();
         // TODO: linux / different auth methods
-        let mut builder = winauth::windows::NtlmSspiBuilder::new(); // TODO SPN, channel bindings
-        let mut sso_client = builder.build()?;
-        let buf = sso_client.next_bytes(None)?;
-        login_message.integrated_security = buf;
+        // TODO SPN, channel bindings
+
+        if let Some(ref mut sspi_client) = sspi_client {
+            let buf = sspi_client.next_bytes(None)?;
+            login_message.integrated_security = buf;
+        }
+
         let mut buf = login_message.serialize(&self.ctx)?;
         let header = protocol::PacketHeader {
             ty: protocol::PacketType::TDSv7Login,
@@ -471,7 +530,14 @@ where
             });
         }
 
-        // Perform SSO
+        if let Some(sspi_client) = sspi_client {
+            self.login_finish_sspi(sspi_client).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn login_finish_sspi(&mut self, mut sspi_client: impl winauth::NextBytes) -> Result<()> {
         let mut reader = protocol::PacketReader::new(&mut self.stream);
         let header = reader.read_header().await?;
         event!(Level::TRACE, "Received {:?}", header.ty);
@@ -484,23 +550,23 @@ where
 
         let mut reader = protocol::TokenStreamReader::new(reader);
         assert_eq!(reader.read_token().await?, protocol::TokenType::SSPI);
-        let sso_bytes = reader.read_sspi_token().await?;
-        event!(Level::TRACE, sspi_len = sso_bytes.len());
-        match sso_client.next_bytes(Some(sso_bytes))? {
-            Some(sso_response) => {
-                event!(Level::TRACE, sspi_response_len = sso_response.len());
+        let sspi_bytes = reader.read_sspi_token().await?;
+        event!(Level::TRACE, sspi_len = sspi_bytes.len());
+        match sspi_client.next_bytes(Some(sspi_bytes))? {
+            Some(sspi_response) => {
+                event!(Level::TRACE, sspi_response_len = sspi_response.len());
                 let header = protocol::PacketHeader {
                     ty: protocol::PacketType::TDSv7Login,
                     status: protocol::PacketStatus::EndOfMessage,
                     ..self
                         .ctx
-                        .new_header(sso_response.len() + protocol::HEADER_BYTES)
+                        .new_header(sspi_response.len() + protocol::HEADER_BYTES)
                 };
                 let mut header_buf = [0u8; protocol::HEADER_BYTES];
                 header.serialize(&mut header_buf)?;
                 let mut buf = vec![];
                 buf.extend_from_slice(&header_buf);
-                buf.extend_from_slice(&sso_response);
+                buf.extend_from_slice(&sspi_response);
                 self.stream.write_all(&buf).await?;
             }
             None => unreachable!(),
