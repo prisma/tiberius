@@ -96,6 +96,7 @@ impl Connection {
                 writer: writer_arc,
             }
             .into_stream(),
+            current_columns: None,
             done: false,
             has_next_resultset: false,
         };

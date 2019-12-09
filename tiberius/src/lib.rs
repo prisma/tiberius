@@ -262,6 +262,7 @@ impl Connection {
         let qs = QueryStream {
             conn_handler,
             results: receiver.map(Ok),
+            current_columns: None,
             done: false,
             has_next_resultset: false,
         };
@@ -324,6 +325,7 @@ impl Connection {
                 stmt_handle,
                 read_ahead: None,
             },
+            current_columns: None,
             done: false,
             has_next_resultset: false,
         };
@@ -522,6 +524,7 @@ pub trait ResultSet<I>: futures_util::stream::Stream<Item = I> {
 
 struct QueryStream<S> {
     conn_handler: future::Shared<Pin<Box<dyn Future<Output = Result<()>>>>>,
+    current_columns: Option<(Arc<protocol::TokenColMetaData>, Arc<Vec<row::Column>>)>,
     results: S,
 
     done: bool,
@@ -580,8 +583,29 @@ where
             Some(token) => token?,
         };
         match token {
-            ReceivedToken::Row(row) => Poll::Ready(Some(Ok(row::Row(row)))),
+            ReceivedToken::Row(row) => {
+                let initial = match self.current_columns {
+                    None => true,
+                    Some((ref old, _)) if !Arc::ptr_eq(old, &row.meta) => true,
+                    _ => false,
+                };
+                if initial {
+                    let column_meta = row
+                        .meta
+                        .columns
+                        .iter()
+                        .map(|x| row::Column {
+                            name: x.col_name.clone(),
+                        })
+                        .collect::<Vec<_>>();
+                    self.current_columns = Some((row.meta.clone(), Arc::new(column_meta)));
+                }
+
+                let columns = self.current_columns.as_ref().unwrap().1.clone();
+                Poll::Ready(Some(Ok(row::Row { columns, data: row })))
+            }
             ReceivedToken::Done(ref done) => {
+                self.current_columns = None;
                 self.has_next_resultset = done.status.contains(protocol::DoneStatus::MORE);
                 if !self.has_next_resultset {
                     self.done = true;

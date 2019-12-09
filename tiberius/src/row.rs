@@ -1,6 +1,7 @@
 use crate::protocol;
 use crate::protocol::ColumnData;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
 use crate::error::Error;
 use crate::Result;
@@ -23,7 +24,21 @@ macro_rules! from_column_data {
 }
 
 #[derive(Debug)] // TODO
-pub struct Row(pub(crate) protocol::TokenRow);
+pub struct Column {
+    pub(crate) name: String,
+}
+
+impl Column {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[derive(Debug)] // TODO
+pub struct Row {
+    pub(crate) columns: Arc<Vec<Column>>,
+    pub(crate) data: protocol::TokenRow,
+}
 
 pub trait QueryIdx {
     fn idx(&self, row: &Row) -> Option<usize>;
@@ -36,9 +51,13 @@ impl QueryIdx for usize {
 }
 
 impl Row {
+    pub fn columns(&self) -> &[Column] {
+        &self.columns
+    }
+
     /// Returns the amount of columns in the row
     pub fn len(&self) -> usize {
-        self.0.columns.len()
+        self.data.columns.len()
     }
 
     /// Retrieve a column's value for a given column index
@@ -68,7 +87,7 @@ impl Row {
             None => return Ok(None),
         };
 
-        let col_data = &self.0.columns[idx];
+        let col_data = &self.data.columns[idx];
         R::try_from(col_data).map(Some)
     }
 }

@@ -189,7 +189,7 @@ pub struct TokenError {
 
 #[derive(Debug)]
 pub struct TokenRow {
-    // pub meta: Arc<TokenColMetaData>,
+    pub meta: Arc<TokenColMetaData>,
     pub columns: Vec<ColumnData>,
 }
 
@@ -474,6 +474,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
             .ok_or(Error::Protocol("missing colmeta data".into()))?;
 
         let mut row = TokenRow {
+            meta: col_meta.clone(),
             columns: Vec::with_capacity(col_meta.columns.len()),
         };
         for (i, column) in col_meta.columns.iter().enumerate() {
