@@ -319,7 +319,9 @@ pub async fn connect(connection_str: &str) -> Result<Connection> {
             "integratedsecurity" => {
                 if value.to_lowercase() == "sspi" || parse_bool(&value)? {
                     connect_params.auth = AuthMethod(match connect_params.auth.0 {
-                        AuthMethodInner::None | AuthMethodInner::WindowsIntegrated => AuthMethodInner::WindowsIntegrated,
+                        AuthMethodInner::None | AuthMethodInner::WindowsIntegrated => {
+                            AuthMethodInner::WindowsIntegrated
+                        }
                         AuthMethodInner::SqlServer { user, password }
                         | AuthMethodInner::Windows { user, password } => {
                             AuthMethodInner::Windows { user, password }
@@ -443,11 +445,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
         Ok(())
     }
 
-    // TODO: feature tls
+    #[cfg(feature = "tls")]
     async fn tls_handshake(
         self,
-    ) -> Result<Connecting<MaybeTlsStream<S, impl TlsStream<Ret = S> + Unpin>>> {
-        let stream: MaybeTlsStream<_, _> = if self.params.ssl != EncryptionLevel::NotSupported {
+    ) -> Result<Connecting<MaybeTlsStream<impl TlsStream<Ret = S> + Unpin>>> {
+        let stream: MaybeTlsStream<_> = if self.params.ssl != EncryptionLevel::NotSupported {
             let mut builder = native_tls::TlsConnector::builder();
             if self.params.trust_cert {
                 builder
@@ -479,13 +481,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Connecting<S> {
         };
         Ok(ret)
     }
+
+    #[cfg(not(feature = "tls"))]
+    async fn tls_handshake(self) -> Result<Connecting<MaybeTlsStream<S>>> {
+        assert_eq!(self.params.ssl, EncryptionLevel::NotSupported);
+        Ok(Connecting {
+            stream: MaybeTlsStream::Raw(self.stream),
+            ctx: self.ctx,
+            params: self.params,
+        })
+    }
 }
 
-impl<R, T> Connecting<MaybeTlsStream<R, T>>
-where
-    R: AsyncRead + AsyncWrite + Unpin,
-    T: TlsStream<Ret = R> + Unpin,
-{
+impl<T: TlsStream> Connecting<MaybeTlsStream<T>> {
     async fn login(&mut self) -> Result<()> {
         match &self.params.auth.0 {
             #[cfg(windows)]
@@ -522,6 +530,17 @@ where
         event!(Level::TRACE, "Sending login");
         self.stream.write_all(&buf).await?;
         self.stream.flush().await?;
+        self.post_login_encryption();
+
+        if let Some(sspi_client) = sspi_client {
+            self.login_finish_sspi(sspi_client).await
+        } else {
+            Ok(())
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    fn post_login_encryption(&mut self) {
         if let EncryptionLevel::Off = self.params.ssl {
             event!(Level::TRACE, "Disabling encryption again");
             self.stream = MaybeTlsStream::Raw(match self.stream {
@@ -529,12 +548,11 @@ where
                 _ => unreachable!(),
             });
         }
+    }
 
-        if let Some(sspi_client) = sspi_client {
-            self.login_finish_sspi(sspi_client).await
-        } else {
-            Ok(())
-        }
+    #[cfg(not(feature = "tls"))]
+    fn post_login_encryption(&self) {
+        assert_eq!(self.params.ssl, EncryptionLevel::NotSupported);
     }
 
     async fn login_finish_sspi(&mut self, mut sspi_client: impl winauth::NextBytes) -> Result<()> {

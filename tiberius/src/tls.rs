@@ -8,11 +8,18 @@ use futures_util::ready;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{self, debug_span, event, trace_span, Level};
 
-pub trait TlsStream: AsyncRead + AsyncWrite {
-    type Ret: AsyncRead + AsyncWrite;
+pub trait TlsStream: AsyncRead + AsyncWrite + Unpin {
+    type Ret: AsyncRead + AsyncWrite + Unpin;
+    #[cfg(feature = "tls")]
     fn take_inner(&mut self) -> Self::Ret;
 }
 
+#[cfg(not(feature = "tls"))]
+impl<X: AsyncRead + AsyncWrite + Unpin> TlsStream for X {
+    type Ret = X;
+}
+
+#[cfg(feature = "tls")]
 impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream for tokio_tls::TlsStream<TlsPreloginWrapper<S>> {
     type Ret = S;
 
@@ -22,16 +29,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> TlsStream for tokio_tls::TlsStream<TlsPr
 }
 
 // TODO: AsyncWrite/Reads buf methods
-pub enum MaybeTlsStream<R, T> {
-    Raw(R),
+pub enum MaybeTlsStream<T: TlsStream> {
+    Raw(T::Ret),
     Tls(T),
 }
 
-impl<R, T> AsyncRead for MaybeTlsStream<R, T>
-where
-    R: AsyncRead + Unpin,
-    T: AsyncRead + Unpin,
-{
+impl<T: TlsStream> AsyncRead for MaybeTlsStream<T> {
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
         match self {
             MaybeTlsStream::Raw(s) => s.prepare_uninitialized_buffer(buf),
@@ -51,11 +54,7 @@ where
     }
 }
 
-impl<R, T> AsyncWrite for MaybeTlsStream<R, T>
-where
-    R: AsyncWrite + Unpin,
-    T: AsyncWrite + Unpin,
-{
+impl<T: TlsStream> AsyncWrite for MaybeTlsStream<T> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut task::Context,
