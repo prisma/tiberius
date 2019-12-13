@@ -218,30 +218,22 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_token(&mut self) -> Result<TokenType> {
-        let ty_byte = self.reader.read_bytes(1).await?[0];
+        let ty_byte = self.reader.read_u8().await?;
         let ty = TokenType::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;
         Ok(ty)
     }
 
     pub async fn read_sspi_token(&mut self) -> Result<&[u8]> {
-        let len = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()? as usize;
+        let len = self.reader.read_u16::<LittleEndian>().await? as usize;
         let bytes = self.reader.read_bytes(len).await?;
         Ok(bytes)
     }
 
     pub async fn read_env_change_token(&mut self) -> Result<TokenEnvChange> {
-        let stream_len = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()? as usize;
+        let stream_len = self.reader.read_u16::<LittleEndian>().await? as usize;
 
-        let ty_byte = self.reader.read_bytes(1).await?[0];
+        let ty_byte = self.reader.read_u8().await?;
         let ty = EnvChangeTy::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid envchange type {:x}", ty_byte).into()))?;
         let mut env_value_data = Cursor::new(self.reader.read_bytes(stream_len - 1).await?);
@@ -299,11 +291,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_info_token(&mut self) -> Result<TokenInfo> {
-        let length = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()? as usize;
+        let length = self.reader.read_u16::<LittleEndian>().await? as usize;
         let mut content = Cursor::new(self.reader.read_bytes(length).await?);
 
         let token = TokenInfo {
@@ -331,11 +319,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_login_ack_token(&mut self) -> Result<TokenLoginAck> {
-        let length = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()? as usize;
+        let length = self.reader.read_u16::<LittleEndian>().await? as usize;
         let mut content = Cursor::new(self.reader.read_bytes(length).await?);
 
         let token = TokenLoginAck {
@@ -381,17 +365,9 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         &mut self,
         ctx: &protocol::Context,
     ) -> Result<BaseMetaDataColumn> {
-        let _user_ty = self
-            .reader
-            .read_bytes(4)
-            .await?
-            .read_u32::<LittleEndian>()?;
+        let _user_ty = self.reader.read_u32::<LittleEndian>().await?;
 
-        let raw_flags = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()?;
+        let raw_flags = self.reader.read_u16::<LittleEndian>().await?;
         let flags = ColmetaDataFlags::from_bits(raw_flags).unwrap();
 
         let ty = self.reader.read_type_info(ctx).await?;
@@ -419,11 +395,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         &mut self,
         ctx: &protocol::Context,
     ) -> Result<TokenColMetaData> {
-        let column_count = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()?;
+        let column_count = self.reader.read_u16::<LittleEndian>().await?;
 
         let mut columns = vec![];
         if column_count > 0 && column_count < 0xffff {
@@ -437,7 +409,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
                 let meta = MetaDataColumn {
                     base: self.read_basemetadata_column(ctx).await?,
                     col_name: {
-                        let len = self.reader.read_bytes(1).await?[0] as usize;
+                        let len = self.reader.read_u8().await? as usize;
                         read_varchar(self.reader.read_bytes(2 * len).await?)?
                     },
                 };
@@ -450,16 +422,12 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_colinfo_token(&mut self, ctx: &protocol::Context) -> Result<()> {
-        let byte_length = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()?;
+        let byte_length = self.reader.read_u16::<LittleEndian>().await?;
         /*let mut col_names = vec![];
         while byte_length > 0 {
-            let col_num = self.reader.read_bytes(1).await?[0];
-            let table_num = self.reader.read_bytes(1).await?[0];
-            let status = self.reader.read_bytes(1).await?[0];
+            let col_num = self.reader.read_u8().await?;
+            let table_num = self.reader.read_u8().await?;
+            let status = self.reader.read_u8().await?;
         }*/
         self.reader.read_bytes(byte_length as usize).await?;
         Ok(())
@@ -485,11 +453,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_return_status_token(&mut self, ctx: &protocol::Context) -> Result<u32> {
-        let status = self
-            .reader
-            .read_bytes(4)
-            .await?
-            .read_u32::<LittleEndian>()?;
+        let status = self.reader.read_u32::<LittleEndian>().await?;
         Ok(status)
     }
 
@@ -497,14 +461,10 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         &mut self,
         ctx: &protocol::Context,
     ) -> Result<TokenReturnValue> {
-        let param_ordinal = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()?;
-        let param_name_len = self.reader.read_bytes(1).await?[0] as usize;
+        let param_ordinal = self.reader.read_u16::<LittleEndian>().await?;
+        let param_name_len = self.reader.read_u8().await? as usize;
         let param_name = read_varchar(self.reader.read_bytes(2 * param_name_len).await?)?;
-        let udf = match self.reader.read_bytes(1).await?[0] {
+        let udf = match self.reader.read_u8().await? {
             0x01 => false,
             0x02 => true,
             _ => return Err(Error::Protocol("ReturnValue: invalid status".into())),
@@ -521,11 +481,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_error_token(&mut self, ctx: &protocol::Context) -> Result<TokenError> {
-        let length = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()? as usize;
+        let length = self.reader.read_u16::<LittleEndian>().await? as usize;
         let mut content = Cursor::new(self.reader.read_bytes(length).await?);
 
         let code = content.read_u32::<LittleEndian>()?;
@@ -560,21 +516,11 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
     }
 
     pub async fn read_order_token(&mut self, ctx: &protocol::Context) -> Result<TokenOrder> {
-        let len = self
-            .reader
-            .read_bytes(2)
-            .await?
-            .read_u16::<LittleEndian>()?
-            / 2;
+        let len = self.reader.read_u16::<LittleEndian>().await? / 2;
 
         let mut column_indexes = Vec::with_capacity(len as usize);
         for _ in 0..len {
-            column_indexes.push(
-                self.reader
-                    .read_bytes(2)
-                    .await?
-                    .read_u16::<LittleEndian>()?,
-            );
+            column_indexes.push(self.reader.read_u16::<LittleEndian>().await?);
         }
         Ok(TokenOrder { column_indexes })
     }

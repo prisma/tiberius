@@ -276,7 +276,31 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
         self.pos += n;
         Ok(ret)
     }
+
+    pub async fn read_u8(&mut self) -> Result<u8> {
+        Ok(self.read_bytes(1).await?[0])
+    }
+
+    pub async fn read_i8(&mut self) -> Result<i8> {
+        Ok(self.read_u8().await? as i8)
+    }
 }
+
+macro_rules! read_byteorder_impl {
+    ( $( $name:ident, $ty:ty ),* ) => {
+        impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
+            $(
+                pub async fn $name<B: byteorder::ByteOrder>(&mut self) -> Result<$ty> {
+                    Ok(self.read_bytes(::std::mem::size_of::<$ty>()).await?.$name::<B>()?)
+                }
+            )*
+        }
+    }
+}
+read_byteorder_impl!(
+    read_u32, u32, read_i32, i32, read_u16, u16, read_i16, i16, read_f32, f32, read_f64, f64,
+    read_i64, i64
+);
 
 pub struct PacketWriter<'a, C: AsyncWrite> {
     conn: &'a mut C,

@@ -173,7 +173,7 @@ impl ColumnData {
 
 impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
     pub async fn read_type_info(&mut self, ctx: &protocol::Context) -> Result<TypeInfo> {
-        let ty = self.read_bytes(1).await?[0];
+        let ty = self.read_u8().await?;
 
         if let Ok(ty) = FixedLenType::try_from(ty) {
             return Ok(TypeInfo::FixedLen(ty));
@@ -186,7 +186,7 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
             }
             Ok(ty) => {
                 let len = match ty.bytes_length() {
-                    1 => self.read_bytes(1).await?[0] as usize,
+                    1 => self.read_u8().await? as usize,
                     _ => unimplemented!(),
                 };
 
@@ -202,23 +202,13 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
     ) -> Result<ColumnData> {
         let ret = match ty {
             FixedLenType::Null => ColumnData::None,
-            FixedLenType::Bit => ColumnData::Bit(self.read_bytes(1).await?[0] != 0),
-            FixedLenType::Int1 => ColumnData::I8(self.read_bytes(1).await?.read_i8()?),
-            FixedLenType::Int2 => {
-                ColumnData::I16(self.read_bytes(2).await?.read_i16::<LittleEndian>()?)
-            }
-            FixedLenType::Int4 => {
-                ColumnData::I32(self.read_bytes(4).await?.read_i32::<LittleEndian>()?)
-            }
-            FixedLenType::Int8 => {
-                ColumnData::I64(self.read_bytes(8).await?.read_i64::<LittleEndian>()?)
-            }
-            FixedLenType::Float4 => {
-                ColumnData::F32(self.read_bytes(4).await?.read_f32::<LittleEndian>()?)
-            }
-            FixedLenType::Float8 => {
-                ColumnData::F64(self.read_bytes(8).await?.read_f64::<LittleEndian>()?)
-            }
+            FixedLenType::Bit => ColumnData::Bit(self.read_u8().await? != 0),
+            FixedLenType::Int1 => ColumnData::I8(self.read_i8().await?),
+            FixedLenType::Int2 => ColumnData::I16(self.read_i16::<LittleEndian>().await?),
+            FixedLenType::Int4 => ColumnData::I32(self.read_i32::<LittleEndian>().await?),
+            FixedLenType::Int8 => ColumnData::I64(self.read_i64::<LittleEndian>().await?),
+            FixedLenType::Float4 => ColumnData::F32(self.read_f32::<LittleEndian>().await?),
+            FixedLenType::Float8 => ColumnData::F64(self.read_f64::<LittleEndian>().await?),
             // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
             // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
             _ => {
@@ -240,7 +230,7 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
             TypeInfo::VarLenSized(ref ty, ref len, ref collation) => match *ty {
                 VarLenType::Intn => {
                     assert!(collation.is_none());
-                    let recv_len = self.read_bytes(1).await?[0] as usize;
+                    let recv_len = self.read_u8().await? as usize;
                     let translated_ty = match recv_len {
                         0 => FixedLenType::Null,
                         1 => FixedLenType::Int1,
