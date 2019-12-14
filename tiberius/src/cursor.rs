@@ -55,8 +55,8 @@ impl Connection {
 
         // Subscribe for results
         let (sender, mut receiver) = mpsc::unbounded_channel();
+        self_.register_callback(sender.clone())?;
         let result_callback_queue = self_.result_callback_queue.clone();
-        result_callback_queue.send(sender.clone()).expect("TODO");
 
         // Fire a query (TODO: use for simple_exec?)
         event!(Level::DEBUG, "WRITING simple QUERY (cursored)");
@@ -97,8 +97,7 @@ impl Connection {
             }
             .into_stream(),
             current_columns: None,
-            done: false,
-            has_next_resultset: false,
+            state: super::QueryStreamState::Initial,
         };
         Ok(qs)
     }
@@ -164,9 +163,7 @@ where
                             break;
                         }
                     }
-                    Some(x) => {
-                        panic!("TODO: {:?}", x)
-                    },
+                    Some(x) => yield x,
                     None => break,
                 }
             }

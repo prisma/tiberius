@@ -90,6 +90,7 @@ where
 
 #[derive(Debug)]
 enum ReceivedToken {
+    NewResultset(Arc<protocol::TokenColMetaData>),
     Row(protocol::TokenRow),
     Done(protocol::TokenDone),
     DoneProc(protocol::TokenDone),
@@ -156,9 +157,9 @@ impl Connection {
             }
             let recv_token = match ty {
                 protocol::TokenType::ColMetaData => {
-                    let meta = reader.read_colmetadata_token(&self.ctx).await?;
-                    self.ctx.set_last_meta(Arc::new(meta));
-                    continue;
+                    let meta = Arc::new(reader.read_colmetadata_token(&self.ctx).await?);
+                    self.ctx.set_last_meta(meta.clone());
+                    ReceivedToken::NewResultset(meta)
                 }
                 protocol::TokenType::Row => {
                     let row = reader.read_row_token(&self.ctx).await?;
@@ -268,8 +269,7 @@ impl Connection {
             conn_handler,
             results: receiver.map(Ok),
             current_columns: None,
-            done: false,
-            has_next_resultset: false,
+            state: QueryStreamState::Initial,
         };
         Ok(qs)
     }
@@ -328,8 +328,7 @@ impl Connection {
                 read_ahead: None,
             },
             current_columns: None,
-            done: false,
-            has_next_resultset: false,
+            state: QueryStreamState::Initial,
         };
         Ok(qs)
     }
@@ -520,13 +519,20 @@ pub trait ResultSet<I>: futures_util::stream::Stream<Item = I> {
     fn next_resultset(&mut self) -> bool;
 }
 
+#[derive(Copy, Clone)]
+enum QueryStreamState {
+    Initial,
+    HasPotentiallyNext,
+    HasNext,
+    Done,
+}
+
 struct QueryStream<S> {
     conn_handler: future::Shared<Pin<Box<dyn Future<Output = Result<()>>>>>,
-    current_columns: Option<(Arc<protocol::TokenColMetaData>, Arc<Vec<row::Column>>)>,
+    current_columns: Option<Arc<Vec<row::Column>>>,
     results: S,
 
-    done: bool,
-    has_next_resultset: bool,
+    state: QueryStreamState
 }
 
 impl<S> ResultSet<Result<row::Row>> for QueryStream<S>
@@ -535,8 +541,8 @@ where
 {
     /// Move to the next resultset and make `poll_next` return rows for it
     fn next_resultset(&mut self) -> bool {
-        if self.has_next_resultset {
-            self.has_next_resultset = false;
+        if let QueryStreamState::HasNext = self.state {
+            self.state = QueryStreamState::Initial;
             return true;
         }
         false
@@ -545,8 +551,11 @@ where
 
 impl<S> Drop for QueryStream<S> {
     fn drop(&mut self) {
-        if !thread::panicking() && self.has_next_resultset {
-            panic!("QueryStream dropped but not all resultsets were handled");
+        if !thread::panicking() {
+            match self.state {
+                QueryStreamState::Done => (),
+                _ => panic!("QueryStream dropped but not all resultsets were handled"),
+            }
         }
     }
 }
@@ -561,58 +570,58 @@ where
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context,
     ) -> std::task::Poll<Option<Self::Item>> {
-        if self.done || self.has_next_resultset {
-            return Poll::Ready(None);
-        }
-
-        // Handle incoming results and paralelly allow the connection
-        // to dispatch results to other streams (or us)
-        let self_ = &mut *self;
-        let mut motored = MotoredFuture {
-            motor: &mut self_.conn_handler,
-            future: &mut self_.results.next().map(Ok),
-        };
-
-        let token = match { ready!(motored.poll_unpin(cx))? } {
-            None => {
-                self.done = true;
-                return Poll::Ready(None);
+        loop {
+            match self.state {
+                QueryStreamState::Initial | QueryStreamState::HasPotentiallyNext => (),
+                _ => { return Poll::Ready(None) }
             }
-            Some(token) => token?,
-        };
-        match token {
-            ReceivedToken::Row(row) => {
-                let initial = match self.current_columns {
-                    None => true,
-                    Some((ref old, _)) if !Arc::ptr_eq(old, &row.meta) => true,
-                    _ => false,
-                };
-                if initial {
-                    let column_meta = row
-                        .meta
-                        .columns
-                        .iter()
-                        .map(|x| row::Column {
-                            name: x.col_name.clone(),
-                        })
-                        .collect::<Vec<_>>();
-                    self.current_columns = Some((row.meta.clone(), Arc::new(column_meta)));
+
+            // Handle incoming results and paralelly allow the connection
+            // to dispatch results to other streams (or us)
+            let self_ = &mut *self;
+            let mut motored = MotoredFuture {
+                motor: &mut self_.conn_handler,
+                future: &mut self_.results.next().map(Ok),
+            };
+
+            let token = match { ready!(motored.poll_unpin(cx))? } {
+                None => {
+                    self.state = QueryStreamState::Done;
+                    return Poll::Ready(None);
                 }
-
-                let columns = self.current_columns.as_ref().unwrap().1.clone();
-                Poll::Ready(Some(Ok(row::Row { columns, data: row })))
-            }
-            ReceivedToken::Done(ref done) => {
-                self.current_columns = None;
-                self.has_next_resultset = done.status.contains(protocol::DoneStatus::MORE);
-                if !self.has_next_resultset {
-                    self.done = true;
+                Some(token) => token?,
+            };
+            return match token {
+                ReceivedToken::NewResultset(ref meta) => {
+                    let column_meta = meta
+                            .columns
+                            .iter()
+                            .map(|x| row::Column {
+                                name: x.col_name.clone(),
+                            })
+                            .collect::<Vec<_>>();
+                    self.current_columns = Some(Arc::new(column_meta));
+                    self.state = match self.state {
+                        QueryStreamState::HasPotentiallyNext => QueryStreamState::HasNext,
+                        state => state
+                    };
+                    continue;
                 }
-                Poll::Ready(None)
-            }
-            ReceivedToken::DoneProc(_)
-            | ReceivedToken::ReturnStatus(_)
-            | ReceivedToken::ReturnValue(_) => unimplemented!(),
+                ReceivedToken::Row(row) => {
+                    let columns = self.current_columns.as_ref().unwrap().clone();
+                    Poll::Ready(Some(Ok(row::Row { columns, data: row })))
+                }
+                ReceivedToken::Done(ref done) | ReceivedToken::DoneProc(ref done) => {
+                    if !done.status.contains(protocol::DoneStatus::MORE) {
+                        self.state = QueryStreamState::Done;
+                    } else {
+                        self.state = QueryStreamState::HasPotentiallyNext;
+                    }
+                    continue;
+                }
+                ReceivedToken::ReturnStatus(_)
+                | ReceivedToken::ReturnValue(_) => continue,
+            };
         }
     }
 }
@@ -631,34 +640,26 @@ impl futures_util::stream::Stream for PreparedStream {
         cx: &mut std::task::Context,
     ) -> std::task::Poll<Option<Self::Item>> {
         loop {
-            if let Some(ReceivedToken::Row(_)) = self.read_ahead {
-                return Poll::Ready(self.read_ahead.take().map(Ok));
+            if let Some(ReceivedToken::NewResultset(_)) = self.read_ahead {
+                return Poll::Ready(Some(Ok(self.read_ahead.take().unwrap())));
             }
 
             let item = ready!(self.results.poll_next_unpin(cx));
-            let done_pending = match self.read_ahead {
-                Some(ReceivedToken::Done(_)) => true,
-                _ => false,
-            };
+
             return match item {
-                Some(row_token @ ReceivedToken::Row(_)) if done_pending => {
+                Some(token @ ReceivedToken::NewResultset(_)) => {
+                    // Make sure the held back DONEINPROC token finds its way to the querystream
                     if let Some(read_ahead) = self.read_ahead.take() {
-                        self.read_ahead = Some(row_token);
+                        self.read_ahead = Some(token);
                         return Poll::Ready(Some(Ok(read_ahead)));
                     }
-                    Poll::Ready(Some(Ok(row_token)))
+                    Poll::Ready(Some(Ok(token)))
                 }
                 Some(ReceivedToken::Done(done))
                     if done.status.contains(protocol::DoneStatus::MORE) =>
                 {
-                    let pending = self.read_ahead.take();
                     // we do not know yet, if what follows is the trailer of the stored procedure call or another resultset
                     self.read_ahead = Some(ReceivedToken::Done(done));
-
-                    // e.g. if empty resultset
-                    if let Some(read_ahead) = pending {
-                        return Poll::Ready(Some(read_ahead).map(Ok));
-                    }
                     continue;
                 }
                 Some(ReceivedToken::DoneProc(done)) => {
