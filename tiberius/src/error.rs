@@ -30,7 +30,7 @@ pub enum Error {
 }
 
 impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, _f: &mut std::fmt::Formatter) -> fmt::Result {
         unimplemented!() // TODO
     }
 }
@@ -72,7 +72,7 @@ impl From<std::str::Utf8Error> for Error {
 }
 
 impl From<std::string::FromUtf16Error> for Error {
-    fn from(err: std::string::FromUtf16Error) -> Error {
+    fn from(_err: std::string::FromUtf16Error) -> Error {
         Error::Utf16
     }
 }

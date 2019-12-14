@@ -9,7 +9,7 @@ use std::io;
 use std::mem;
 use std::pin::Pin;
 use std::result;
-use std::sync::{atomic, Arc, Mutex};
+use std::sync::{atomic, Arc};
 use std::task::{self, Poll};
 use std::thread;
 
@@ -17,6 +17,7 @@ use bitflags::bitflags;
 use futures_util::future::{self, FutureExt, TryFutureExt};
 use futures_util::ready;
 use futures_util::stream::StreamExt;
+use parking_lot::Mutex;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{self, mpsc};
 use tracing::{self, debug_span, event, trace_span, Level};
@@ -100,13 +101,14 @@ impl Connection {
     async fn check_pending_unprepares(&mut self) -> Result<()> {
         // Free some handles, if they exist. It's not critical if this fails for whatever reason.
         let mut free_handles: Vec<i32> = vec![];
-        if let Ok(ref mut guard) = self.close_handle_queue.lock() {
+        {
+            let mut guard = self.close_handle_queue.lock();
             // Ensure we save roundtrips
             if guard.len() > 10 {
-                mem::swap(&mut free_handles, &mut **guard);
+                mem::swap(&mut free_handles, &mut *guard);
             }
         }
-        let (result_callback_queue, _) = mpsc::unbounded_channel();
+        let (dummy_handler, _) = mpsc::unbounded_channel();
 
         for free_handle in free_handles {
             event!(Level::DEBUG, unprepare = free_handle);
@@ -123,9 +125,7 @@ impl Connection {
             };
             let writer = self.writer.clone();
             let mut writer = writer.lock().await;
-            self.result_callback_queue
-                .send(result_callback_queue.clone())
-                .expect("TODO");
+            self.register_callback(dummy_handler.clone())?;
             req.write_to(&self.ctx, &mut *writer).await?;
         }
 
@@ -220,6 +220,12 @@ pub struct Connection {
 }
 
 impl Connection {
+    fn register_callback(&self, sender: mpsc::UnboundedSender<ReceivedToken>) -> Result<()> {
+        self.result_callback_queue
+            .send(sender.clone())
+            .map_err(|_| Error::Canceled)
+    }
+
     /// Returns a connection object that provides cursored operations
     pub fn cursored(&self) -> cursor::Connection {
         cursor::Connection(self.clone())
@@ -238,9 +244,8 @@ impl Connection {
         let mut writer = writer_arc.lock().await;
 
         // Subscribe for results
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        let result_callback_queue = self.result_callback_queue.clone();
-        result_callback_queue.send(sender.clone()).expect("TODO");
+        let (sender, receiver) = mpsc::unbounded_channel();
+        self.register_callback(sender)?;
 
         // Fire a query (TODO: use for simple_exec?)
         event!(Level::DEBUG, "WRITING simple QUERY");
@@ -257,7 +262,7 @@ impl Connection {
         }
         wr.finish(&self.ctx).await?;
         ::std::mem::drop(writer);
-        let mut conn_handler = self.conn_handler.clone();
+        let conn_handler = self.conn_handler.clone();
 
         let qs = QueryStream {
             conn_handler,
@@ -307,10 +312,7 @@ impl Connection {
 
         // Subscribe for results
         let (sender, receiver) = mpsc::unbounded_channel();
-        self.result_callback_queue
-            .clone()
-            .send(sender)
-            .expect("TODO");
+        self.register_callback(sender)?;
 
         // Fire a query
         event!(Level::DEBUG, "QUERY ({:?})", proc_id);
@@ -337,7 +339,7 @@ impl Connection {
         query: &str,
         params: &[&dyn prepared::ToSql],
     ) -> Result<QueryStream<PreparedStream>> {
-        let mut rpc_params = vec![
+        let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
                 flags: RpcStatusFlags::empty(),
@@ -361,7 +363,7 @@ impl Connection {
         query: &str,
         params: &[&dyn prepared::ToSql],
     ) -> Result<QueryStream<PreparedStream>> {
-        let mut rpc_params = vec![
+        let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("handle"),
                 flags: RpcStatusFlags::PARAM_BY_REF_VALUE,
@@ -386,10 +388,9 @@ impl Connection {
     async fn sp_execute(
         &self,
         stmt_handle: Arc<atomic::AtomicI32>,
-        query: &str,
         params: &[&dyn prepared::ToSql],
     ) -> Result<QueryStream<PreparedStream>> {
-        let mut rpc_params = vec![RpcParam {
+        let rpc_params = vec![RpcParam {
             // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
             // not specifying the name is better anyways to reduce overhead on execute
             name: Cow::Borrowed(""),
@@ -430,10 +431,9 @@ impl Connection {
                 }
 
                 let mut inserted = true;
-                let mut stmt_handle = stmt
+                let stmt_handle = stmt
                     .handles
                     .lock()
-                    .expect("TODO")
                     .entry(query_signature)
                     .and_modify(|_| inserted = false)
                     .or_insert_with(|| Arc::new(atomic::AtomicI32::new(0)))
@@ -449,7 +449,7 @@ impl Connection {
                 }
 
                 // sp_execute
-                self.sp_execute(stmt_handle, query, params).await
+                self.sp_execute(stmt_handle, params).await
             }
         }
     }
@@ -480,15 +480,13 @@ pub struct Statement {
 impl Drop for Statement {
     fn drop(&mut self) {
         // Mark all handles for cleanup (unprepare)
-        if let Ok(handles) = self.handles.get_mut() {
-            if let Ok(mut close_queue) = self.close_handle_queue.lock() {
-                let cleanable_handles = handles
-                    .values()
-                    .map(|x| x.load(atomic::Ordering::SeqCst))
-                    .filter(|x| *x > 0);
-                close_queue.extend(cleanable_handles);
-            }
-        }
+        let handles = self.handles.get_mut();
+        let cleanable_handles = handles
+            .values()
+            .map(|x| x.load(atomic::Ordering::SeqCst))
+            .filter(|x| *x > 0);
+        let mut close_queue = self.close_handle_queue.lock();
+        close_queue.extend(cleanable_handles);
     }
 }
 

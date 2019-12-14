@@ -270,7 +270,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
                 TokenEnvChange::BeginTransaction(new_value)*/
                 unimplemented!()
             }
-            ty @ EnvChangeTy::RollbackTransaction | ty @ EnvChangeTy::CommitTransaction => {
+            EnvChangeTy::RollbackTransaction | EnvChangeTy::CommitTransaction => {
                 /*let new_value = trans.inner.read_u8()?;
                 assert_eq!(new_value, 0);
                 assert_eq!(trans.inner.read_u8()?, 8);
@@ -421,7 +421,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         Ok(meta)
     }
 
-    pub async fn read_colinfo_token(&mut self, ctx: &protocol::Context) -> Result<()> {
+    pub async fn read_colinfo_token(&mut self, _ctx: &protocol::Context) -> Result<()> {
         let byte_length = self.reader.read_u16::<LittleEndian>().await?;
         /*let mut col_names = vec![];
         while byte_length > 0 {
@@ -437,7 +437,6 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         let col_meta = ctx
             .last_meta
             .lock()
-            .unwrap()
             .clone()
             .ok_or(Error::Protocol("missing colmeta data".into()))?;
 
@@ -445,14 +444,14 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
             meta: col_meta.clone(),
             columns: Vec::with_capacity(col_meta.columns.len()),
         };
-        for (i, column) in col_meta.columns.iter().enumerate() {
+        for column in col_meta.columns.iter() {
             row.columns
                 .push(self.reader.read_column_data(ctx, &column.base).await?);
         }
         Ok(row)
     }
 
-    pub async fn read_return_status_token(&mut self, ctx: &protocol::Context) -> Result<u32> {
+    pub async fn read_return_status_token(&mut self, _ctx: &protocol::Context) -> Result<u32> {
         let status = self.reader.read_u32::<LittleEndian>().await?;
         Ok(status)
     }
@@ -515,7 +514,7 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
         Ok(token)
     }
 
-    pub async fn read_order_token(&mut self, ctx: &protocol::Context) -> Result<TokenOrder> {
+    pub async fn read_order_token(&mut self, _ctx: &protocol::Context) -> Result<TokenOrder> {
         let len = self.reader.read_u16::<LittleEndian>().await? / 2;
 
         let mut column_indexes = Vec::with_capacity(len as usize);

@@ -5,10 +5,11 @@ use std::net::SocketAddr;
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::future::{self, FutureExt};
+use parking_lot::Mutex;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::{self, mpsc};
@@ -145,8 +146,8 @@ where
 
     // Connection should be ready
     let mut ts = protocol::TokenStreamReader::new(protocol::PacketReader::new(&mut reader));
-    while let token = ts.read_token().await? {
-        match token {
+    loop {
+        match ts.read_token().await? {
             protocol::TokenType::EnvChange => {
                 let change = ts.read_env_change_token().await?;
                 match change {

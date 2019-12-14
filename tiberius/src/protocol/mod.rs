@@ -1,10 +1,11 @@
 use bitflags::bitflags;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+use parking_lot::Mutex;
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::io::{self, Cursor, Write};
 use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{event, Level};
 
@@ -108,7 +109,7 @@ impl Context {
     }
 
     pub fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
-        *self.last_meta.lock().unwrap() = Some(meta);
+        *self.last_meta.lock() = Some(meta);
     }
 }
 
@@ -332,7 +333,7 @@ impl<'a, C: AsyncWrite + Unpin> PacketWriter<'a, C> {
         Ok(())
     }
 
-    pub async fn flush_packet(&mut self, ctx: &Context) -> Result<()> {
+    pub async fn flush_packet(&mut self, _ctx: &Context) -> Result<()> {
         use tokio::io::AsyncWriteExt;
 
         self.header_template.length = self.buf.len() as u16;

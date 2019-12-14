@@ -119,7 +119,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsPreloginWrapper<S> {
         }
 
         let span = trace_span!("TlsNeg::poll_read");
-        let enter_ = span.enter();
+        let _enter = span.enter();
 
         let inner = self.get_mut();
         if !inner.header_buf[inner.header_pos..].is_empty() {
@@ -166,7 +166,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
         }
 
         let span = trace_span!("TlsNeg::poll_write");
-        let enter_ = span.enter();
+        let _enter = span.enter();
         event!(Level::TRACE, amount = buf.len());
 
         self.wr_buf.extend_from_slice(buf);
@@ -178,7 +178,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
 
         if inner.pending_handshake {
             let span = trace_span!("TlsNeg::poll_flush");
-            let enter_ = span.enter();
+            let _enter = span.enter();
 
             if !inner.header_written {
                 event!(Level::TRACE, "prepending header to buf");

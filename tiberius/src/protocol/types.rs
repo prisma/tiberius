@@ -172,7 +172,7 @@ impl ColumnData {
 }
 
 impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
-    pub async fn read_type_info(&mut self, ctx: &protocol::Context) -> Result<TypeInfo> {
+    pub async fn read_type_info(&mut self, _ctx: &protocol::Context) -> Result<TypeInfo> {
         let ty = self.read_u8().await?;
 
         if let Ok(ty) = FixedLenType::try_from(ty) {
@@ -197,7 +197,7 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
 
     pub async fn read_fixed_len_type(
         &mut self,
-        ctx: &protocol::Context,
+        _ctx: &protocol::Context,
         ty: FixedLenType,
     ) -> Result<ColumnData> {
         let ret = match ty {
@@ -227,7 +227,7 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
     ) -> Result<ColumnData> {
         let ret = match meta.ty {
             TypeInfo::FixedLen(ref fixed_ty) => self.read_fixed_len_type(&ctx, *fixed_ty).await?,
-            TypeInfo::VarLenSized(ref ty, ref len, ref collation) => match *ty {
+            TypeInfo::VarLenSized(ref ty, ref _len, ref collation) => match *ty {
                 VarLenType::Intn => {
                     assert!(collation.is_none());
                     let recv_len = self.read_u8().await? as usize;

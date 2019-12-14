@@ -240,7 +240,7 @@ impl<'a> LoginMessage<'a> {
         }
     }
 
-    pub fn serialize(&self, ctx: &protocol::Context) -> io::Result<Vec<u8>> {
+    pub fn serialize(&self, _ctx: &protocol::Context) -> io::Result<Vec<u8>> {
         let mut cursor = Cursor::new(Vec::with_capacity(1 << 9));
 
         cursor.set_position(protocol::HEADER_BYTES as u64 + 4);

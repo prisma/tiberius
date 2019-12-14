@@ -18,6 +18,7 @@ async fn connect() -> Result<tiberius::Connection> {
 }
 
 // encrypt=true
+#[cfg(feature = "tls")]
 #[tokio::test]
 async fn test_conn_full_encryption() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
