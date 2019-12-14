@@ -1,6 +1,6 @@
 use futures_util::{StreamExt, TryStreamExt};
 use std::env;
-use tiberius::{Error, Result};
+use tiberius::{Error, Result, ResultSet};
 
 use std::sync::Once;
 static LOGGER_SETUP: Once = Once::new();
@@ -119,5 +119,26 @@ async fn test_unprepare() -> Result<()> {
             assert_eq!(rows?, vec![42]);
         }
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_stored_procedure() -> Result<()> {
+    let conn = connect().await?;
+    let stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'", &[]).await?;
+    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![1; 3]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_stored_procedure_multiple() -> Result<()> {
+    let conn = connect().await?;
+    let mut stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'; EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1'", &[]).await?;
+    let rows: Result<Vec<i32>> = stream.by_ref().map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![1; 3]);
+    assert!(stream.next_resultset());
+    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![1; 2]);
     Ok(())
 }
