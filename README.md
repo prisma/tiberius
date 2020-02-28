@@ -4,11 +4,13 @@
 [![Documentation](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)  
 A native TDS (MSSQL) 7.4 driver for Rust
 
-**NOTE**: Supporting async/await and revising the API is currently pending. A very early preview state with current design considerations is available in the https://github.com/steffengy/tiberius/tree/async_await.
+**NOTE**: Supporting async/await and revising the API is currently pending. A very early preview state with current design considerations is available in the [async_await](https://github.com/steffengy/tiberius/tree/async_await) branch. **At this
+time I do not have the time to overhaul the library and do not intend to further maintain the 0.3 version relying on the
+old futures ecosystem.**
 
 [Documentation](https://docs.rs/tiberius) 
 
-This is the new async rewrite, please check the documentation above for any examples.
+Please check the documentation above for any examples.
 
 For installing please don't forget the following things:
 
