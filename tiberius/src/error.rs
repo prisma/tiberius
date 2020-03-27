@@ -1,38 +1,40 @@
-use std::borrow::Cow;
-use std::convert::Infallible;
-use std::fmt;
-use std::io;
-
 use crate::protocol;
+use std::{borrow::Cow, convert::Infallible, fmt, io};
+use thiserror::Error;
 
 // TODO: keep private
-#[derive(Debug)]
-pub struct ClonableIoError(io::Error);
-impl Clone for ClonableIoError {
-    fn clone(&self) -> ClonableIoError {
-        ClonableIoError(io::Error::new(self.0.kind(), ""))
+#[derive(Debug, Error)]
+#[error("{}", _0)]
+pub struct CloneableIoError(io::Error);
+
+impl Clone for CloneableIoError {
+    fn clone(&self) -> Self {
+        Self(io::Error::new(self.0.kind(), format!("{}", self)))
     }
-}
-/// A unified error enum that contains several errors that might occurr during the lifecycle of this driver
-#[derive(Debug, Clone)]
-pub enum Error {
-    /// An error occurred during the attempt of performing I/O
-    Io(ClonableIoError),
-    /// An error occurred on the protocol level
-    Protocol(Cow<'static, str>),
-    Encoding(Cow<'static, str>),
-    Conversion(Cow<'static, str>),
-    Utf8(std::str::Utf8Error),
-    Utf16,
-    ParseInt(std::num::ParseIntError),
-    Server(protocol::TokenError),
-    Canceled,
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, _f: &mut std::fmt::Formatter) -> fmt::Result {
-        unimplemented!() // TODO
-    }
+/// A unified error enum that contains several errors that might occurr during
+/// the lifecycle of this driver
+#[derive(Debug, Clone, Error)]
+pub enum Error {
+    #[error("An error occured during the attempt of performing I/O: {}", _0)]
+    Io(CloneableIoError),
+    #[error("Protocol error: {}", _0)]
+    Protocol(Cow<'static, str>),
+    #[error("Encoding error: {}", _0)]
+    Encoding(Cow<'static, str>),
+    #[error("Conversion error: {}", _0)]
+    Conversion(Cow<'static, str>),
+    #[error("UTF-8 error: {}", _0)]
+    Utf8(std::str::Utf8Error),
+    #[error("UTF-16 error")]
+    Utf16,
+    #[error("Error parsing an integer: {}", _0)]
+    ParseInt(std::num::ParseIntError),
+    #[error("Token error: {}", _0)]
+    Server(protocol::TokenError),
+    #[error("Operation cancelled")]
+    Canceled,
 }
 
 impl From<Infallible> for Error {
@@ -41,21 +43,9 @@ impl From<Infallible> for Error {
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match *self {
-            // TODO we only keep the kind around, due to shared
-            Error::Io(ref err) => Some(&err.0),
-            Error::Utf8(ref err) => Some(err),
-            Error::ParseInt(ref err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
-        Error::Io(ClonableIoError(err))
+        Error::Io(CloneableIoError(err))
     }
 }
 

@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 use std::io::Cursor;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use bitflags::bitflags;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
@@ -172,7 +172,7 @@ pub struct MetaDataColumn {
     pub col_name: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub struct TokenError {
     /// ErrorCode
     pub code: u32,
@@ -185,6 +185,16 @@ pub struct TokenError {
     server: String,
     procedure: String,
     line: u32,
+}
+
+impl fmt::Display for TokenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "'{}' on server {} executing {} on line {} (code: {}, state: {}, class: {})",
+            self.message, self.server, self.procedure, self.line, self.code, self.state, self.class
+        )
+    }
 }
 
 #[derive(Debug)]
