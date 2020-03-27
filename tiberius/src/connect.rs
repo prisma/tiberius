@@ -19,6 +19,7 @@ use winauth::NextBytes;
 use crate::protocol::{self, EncryptionLevel};
 use crate::tls::{MaybeTlsStream, TlsPreloginWrapper, TlsStream};
 use crate::{Connection, Error, Result};
+use protocol::LoginMessage;
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
 pub struct ConnectParams {
@@ -179,6 +180,7 @@ where
         Box::new(writer) as Box<dyn AsyncWrite + Unpin>
     ));
     let close_handle_queue = Arc::new(Mutex::new(vec![]));
+
     let mut conn = Connection {
         ctx,
         writer,
@@ -504,6 +506,33 @@ impl<T: TlsStream> Connecting<MaybeTlsStream<T>> {
                 self.login_start(Some(sspi_client)).await
             }
             AuthMethodInner::None => panic!("No authentication method specified"), // TODO?
+            AuthMethodInner::SqlServer { user, password } => {
+                let mut login_message = LoginMessage::new();
+
+                if let Some(ref db) = self.params.target_db {
+                    login_message.db_name = db.into();
+                }
+
+                login_message.username = user.into();
+                login_message.password = password.into();
+
+                let mut buf = login_message.serialize(&self.ctx)?;
+
+                let header = protocol::PacketHeader {
+                    ty: protocol::PacketType::TDSv7Login,
+                    status: protocol::PacketStatus::EndOfMessage,
+                    ..self.ctx.new_header(buf.len())
+                };
+
+                header.serialize(&mut buf)?;
+                event!(Level::TRACE, "Sending login");
+
+                self.stream.write_all(&buf).await?;
+                self.stream.flush().await?;
+                self.post_login_encryption();
+
+                Ok(())
+            }
             x => panic!("Auth method not supported {:?}", x),
         }
     }

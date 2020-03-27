@@ -27,11 +27,12 @@ winauth = { version = "0.0.4" }
 native-tls = { version = "0.2.1", optional = true }
 tokio = { version = "0.2", features = ["sync", "io-std", "stream", "time", "io-util", "tcp", "udp"] }
 tokio-tls = { version = "0.3", optional = true }
+thiserror = "1.0"
 
 [dev-dependencies]
 env_logger = "0.7"
 tokio = { version = "0.2", features = ["macros"] }
 
 [features]
-default = ["tls"] # "chrono"
+default = [] # "chrono"
 tls = ["native-tls", "tokio-tls"]
