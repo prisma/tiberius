@@ -4,15 +4,14 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::error::Error;
-use crate::Result;
 
 macro_rules! from_column_data {
     ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
         $(
-            impl<'a> TryFrom<&'a ColumnData> for $ty {
+            impl<'a> TryFrom<&'a ColumnData<'a>> for $ty {
                 type Error = Error;
 
-                fn try_from(data: &ColumnData) -> Result<Self> {
+                fn try_from(data: &ColumnData) -> crate::Result<Self> {
                     match *data {
                         $( $pat => Ok($val), )*
                         _ => Err(Error::Conversion(format!("cannot interpret {:?} as an {} value", data, stringify!($ty)).into()))
@@ -21,6 +20,24 @@ macro_rules! from_column_data {
             }
         )*
     };
+}
+
+impl<'a> TryFrom<&'a ColumnData<'a>> for String {
+    type Error = Error;
+
+    fn try_from(data: &ColumnData) -> crate::Result<Self> {
+        match data {
+            ColumnData::String(s) => Ok(s.to_string()),
+            _ => Err(Error::Conversion(
+                format!(
+                    "cannot interpret {:?} as an {} value",
+                    data,
+                    stringify!($ty)
+                )
+                .into(),
+            )),
+        }
+    }
 }
 
 #[derive(Debug)] // TODO
@@ -70,17 +87,17 @@ impl Row {
     pub fn get<'a, I, R>(&'a self, idx: I) -> R
     where
         I: QueryIdx,
-        R: TryFrom<&'a protocol::ColumnData, Error = Error>,
+        R: TryFrom<&'a protocol::ColumnData<'a>, Error = Error>,
     {
         self.try_get(idx)
             .expect("given index out of bounds")
             .unwrap()
     }
 
-    pub fn try_get<'a, I, R>(&'a self, idx: I) -> Result<Option<R>>
+    pub fn try_get<'a, I, R>(&'a self, idx: I) -> crate::Result<Option<R>>
     where
         I: QueryIdx,
-        R: TryFrom<&'a protocol::ColumnData, Error = Error>,
+        R: TryFrom<&'a protocol::ColumnData<'a>, Error = Error>,
     {
         let idx = match idx.idx(self) {
             Some(x) => x,

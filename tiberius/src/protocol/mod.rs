@@ -1,15 +1,20 @@
 use bitflags::bitflags;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use parking_lot::Mutex;
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::io::{self, Cursor, Write};
 use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    sync::Mutex,
+};
 use tracing::{event, Level};
 
-use crate::{Error, Result};
+use crate::{
+    plp::{ReadTyMode, ReadTyState},
+    Error, Result,
+};
 
 macro_rules! uint_enum {
     ($( #[$gattr:meta] )* pub enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
@@ -91,7 +96,7 @@ pub struct Context {
     pub version: FeatureLevel,
     pub packet_size: AtomicU32,
     pub packet_id: AtomicU8,
-    pub last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
+    pub last_meta: parking_lot::Mutex<Option<Arc<TokenColMetaData>>>,
 }
 
 impl Context {
@@ -100,7 +105,7 @@ impl Context {
             version: FeatureLevel::SqlServerN,
             packet_size: AtomicU32::new(4096),
             packet_id: AtomicU8::new(0),
-            last_meta: Mutex::new(None),
+            last_meta: parking_lot::Mutex::new(None),
         }
     }
 
@@ -209,12 +214,20 @@ impl PacketHeader {
     }
 }
 
+#[derive(Debug)]
+pub enum ReadState {
+    Generic(TokenType, Option<usize>),
+    Row(TokenType, Vec<ColumnData<'static>>, Option<ReadTyState>),
+    Type(ReadTyState),
+}
+
 pub struct PacketReader<'a, C: AsyncRead> {
     conn: &'a mut C,
     /// packet contents (without headers)
     buf: Vec<u8>,
     pos: usize,
     done: bool,
+    state_tracked: bool,
 }
 
 impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
@@ -224,6 +237,7 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
             buf: vec![],
             pos: 0,
             done: false,
+            state_tracked: false,
         }
     }
 
@@ -285,6 +299,58 @@ impl<'a, C: AsyncRead + Unpin> PacketReader<'a, C> {
     pub async fn read_i8(&mut self) -> Result<i8> {
         Ok(self.read_u8().await? as i8)
     }
+
+    /// read byte string with or without PLP
+    pub async fn read_plp_type(&mut self, mode: ReadTyMode) -> crate::Result<Option<Vec<u8>>> {
+        let mut read_state = ReadTyState::new(mode);
+
+        // If we did not read anything yet, initialize the reader.
+        if read_state.data.is_none() {
+            let size = match read_state.mode {
+                ReadTyMode::FixedSize(_) => self.read_u16::<LittleEndian>().await? as u64,
+                ReadTyMode::Plp => self.read_u64::<LittleEndian>().await?,
+            };
+
+            read_state.data = match (size, read_state.mode) {
+                (0xffff, ReadTyMode::FixedSize(_)) => None, // NULL value
+                (0xffffffffffffffff, ReadTyMode::Plp) => None, // NULL value
+                (0xfffffffffffffffe, ReadTyMode::Plp) => Some(Vec::new()), // unknown size
+                (len, _) => Some(Vec::with_capacity(len as usize)), // given size
+            };
+
+            // If this is not PLP, treat everything as a single chunk.
+            if let ReadTyMode::FixedSize(_) = read_state.mode {
+                read_state.chunk_data_left = size as usize;
+            }
+        }
+
+        // If there is a buffer, we have something to read.
+        if let Some(ref mut buf) = read_state.data {
+            loop {
+                if read_state.chunk_data_left == 0 {
+                    // We have no chunk. Start a new one.
+                    let chunk_size = match read_state.mode {
+                        ReadTyMode::FixedSize(_) => 0,
+                        ReadTyMode::Plp => self.read_u32::<LittleEndian>().await? as usize,
+                    };
+
+                    if chunk_size == 0 {
+                        break; // found a sentinel, we're done
+                    } else {
+                        read_state.chunk_data_left = chunk_size
+                    }
+                } else {
+                    // Just read a byte
+                    let byte = self.read_u8().await?;
+                    read_state.chunk_data_left -= 1;
+
+                    buf.push(byte);
+                }
+            }
+        }
+
+        Ok(read_state.data.take())
+    }
 }
 
 macro_rules! read_byteorder_impl {
@@ -300,7 +366,7 @@ macro_rules! read_byteorder_impl {
 }
 read_byteorder_impl!(
     read_u32, u32, read_i32, i32, read_u16, u16, read_i16, i16, read_f32, f32, read_f64, f64,
-    read_i64, i64
+    read_i64, i64, read_u64, u64
 );
 
 pub struct PacketWriter<'a, C: AsyncWrite> {
@@ -320,16 +386,20 @@ impl<'a, C: AsyncWrite + Unpin> PacketWriter<'a, C> {
 
     pub async fn write_bytes(&mut self, ctx: &Context, mut buf: &[u8]) -> Result<()> {
         let packet_size = ctx.packet_size.load(Ordering::SeqCst) as usize;
+
         while !buf.is_empty() {
             let free_buf_space = packet_size - self.buf.len();
             let writable = std::cmp::min(buf.len(), free_buf_space);
             self.buf.extend_from_slice(&buf[..writable]);
+
             buf = &buf[writable..];
+
             // If we overlap into a next packet, flush it out
             if !buf.is_empty() {
                 self.flush_packet(ctx).await?;
             }
         }
+
         Ok(())
     }
 

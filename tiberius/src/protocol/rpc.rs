@@ -54,7 +54,7 @@ bitflags! {
 pub struct RpcParam<'a> {
     pub name: Cow<'a, str>,
     pub flags: RpcStatusFlags,
-    pub value: ColumnData,
+    pub value: ColumnData<'a>,
 }
 
 #[derive(Debug)]

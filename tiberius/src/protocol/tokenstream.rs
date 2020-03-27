@@ -200,7 +200,7 @@ impl fmt::Display for TokenError {
 #[derive(Debug)]
 pub struct TokenRow {
     pub meta: Arc<TokenColMetaData>,
-    pub columns: Vec<ColumnData>,
+    pub columns: Vec<ColumnData<'static>>,
 }
 
 #[derive(Debug)]
@@ -210,7 +210,7 @@ pub struct TokenReturnValue {
     /// return value of user defined function
     pub udf: bool,
     pub meta: BaseMetaDataColumn,
-    pub value: ColumnData,
+    pub value: ColumnData<'static>,
 }
 
 #[derive(Debug)]
@@ -454,10 +454,12 @@ impl<'a, C: AsyncRead + Unpin> TokenStreamReader<'a, C> {
             meta: col_meta.clone(),
             columns: Vec::with_capacity(col_meta.columns.len()),
         };
+
         for column in col_meta.columns.iter() {
-            row.columns
-                .push(self.reader.read_column_data(ctx, &column.base).await?);
+            let data = self.reader.read_column_data(ctx, &column.base).await?;
+            row.columns.push(data);
         }
+
         Ok(row)
     }
 

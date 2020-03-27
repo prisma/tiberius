@@ -85,26 +85,26 @@ impl Connection {
             }
         }
 
-        let qs = QueryStream {
+        let s = Stream {
+            ctx: self.0.ctx.clone(),
+            cursor_id,
+            result_callback_queue,
+            sender,
+            receiver,
+            writer: writer_arc,
+        };
+
+        Ok(QueryStream {
             conn_handler,
-            results: Stream {
-                ctx: self.0.ctx.clone(),
-                cursor_id: cursor_id,
-                result_callback_queue,
-                sender,
-                receiver,
-                writer: writer_arc,
-            }
-            .into_stream(),
+            results: Box::new(s.into_stream()),
             current_columns: None,
             state: super::QueryStreamState::Initial,
-        };
-        Ok(qs)
+        })
     }
 }
 
 pub(crate) struct Stream<S> {
-    pub(crate) cursor_id: Option<ColumnData>,
+    pub(crate) cursor_id: Option<ColumnData<'static>>,
     pub(crate) result_callback_queue: mpsc::UnboundedSender<mpsc::UnboundedSender<ReceivedToken>>,
     pub(crate) sender: mpsc::UnboundedSender<ReceivedToken>,
     pub(crate) receiver: S,
@@ -171,7 +171,7 @@ where
     }
 }
 
-fn close_request(cursor_id: ColumnData) -> TokenRpcRequest<'static> {
+fn close_request(cursor_id: ColumnData<'static>) -> TokenRpcRequest<'static> {
     TokenRpcRequest {
         proc_id: RpcProcIdValue::Id(RpcProcId::SpCursorClose),
         flags: RpcOptionFlags::empty(),
@@ -183,7 +183,7 @@ fn close_request(cursor_id: ColumnData) -> TokenRpcRequest<'static> {
     }
 }
 
-fn fetch_req(cursor_id: ColumnData) -> TokenRpcRequest<'static> {
+fn fetch_req(cursor_id: ColumnData<'static>) -> TokenRpcRequest<'static> {
     let rpc_params = vec![
         RpcParam {
             name: Cow::Borrowed("cursor"),
@@ -223,7 +223,7 @@ pub(crate) fn open_req(query: &str) -> TokenRpcRequest<'static> {
         RpcParam {
             name: Cow::Borrowed("stmt"),
             flags: RpcStatusFlags::empty(),
-            value: ColumnData::String(query.to_owned()),
+            value: ColumnData::String(Cow::from(query.to_string())),
         },
         RpcParam {
             name: Cow::Borrowed("scrollopt"),

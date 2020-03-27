@@ -1,25 +1,22 @@
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::future::Future;
-use std::net::SocketAddr;
-use std::net::ToSocketAddrs;
-use std::pin::Pin;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::Duration;
-
+use crate::{
+    protocol::{self, EncryptionLevel},
+    tls::{MaybeTlsStream, TlsPreloginWrapper, TlsStream},
+    Connection, Error, Result,
+};
 use futures_util::future::{self, FutureExt};
 use parking_lot::Mutex;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::{self, mpsc};
+use protocol::LoginMessage;
+use std::{
+    collections::HashMap, convert::TryInto, future::Future, net::SocketAddr, net::ToSocketAddrs,
+    pin::Pin, sync::atomic::Ordering, sync::Arc, time::Duration,
+};
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::{TcpStream, UdpSocket},
+    sync::{self, mpsc},
+};
 use tracing::{self, debug_span, event, trace_span, Level};
 use winauth::NextBytes;
-
-use crate::protocol::{self, EncryptionLevel};
-use crate::tls::{MaybeTlsStream, TlsPreloginWrapper, TlsStream};
-use crate::{Connection, Error, Result};
-use protocol::LoginMessage;
 
 /// Settings for the connection, everything that isn't IO/transport specific (e.g. authentication)
 pub struct ConnectParams {
@@ -96,6 +93,7 @@ where
     } else {
         "[::]:0".parse().unwrap()
     };
+
     let msg = [&[4u8], instance_name.as_bytes()].concat();
     let mut socket = UdpSocket::bind(&local_bind).await?;
     socket.send_to(&msg, &addr).await?;
