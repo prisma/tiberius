@@ -2,44 +2,51 @@
 #![allow(unused_imports, dead_code)] // TODO
 #![recursion_limit = "512"]
 
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::future::Future;
-use std::io;
-use std::mem;
-use std::pin::Pin;
-use std::result;
-use std::sync::{atomic, Arc};
-use std::task::{self, Poll};
-use std::thread;
-
 use bitflags::bitflags;
-use futures_util::future::{self, FutureExt, TryFutureExt};
-use futures_util::ready;
-use futures_util::stream::StreamExt;
+use futures_util::{
+    future::{self, FutureExt, TryFutureExt},
+    ready,
+    stream::{Stream, StreamExt},
+};
 use parking_lot::Mutex;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{self, mpsc};
+use protocol::{
+    rpc::{RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags, TokenRpcRequest},
+    ColumnData,
+};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    future::Future,
+    io, mem,
+    pin::Pin,
+    result,
+    sync::{atomic, Arc},
+    task::{self, Context, Poll},
+    thread,
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    sync::{self, mpsc},
+};
 use tracing::{self, debug_span, event, trace_span, Level};
 
 mod collation;
 mod connect;
 mod cursor;
 mod error;
+mod plp;
 mod prepared;
 mod protocol;
-use protocol::rpc::{
-    RpcOptionFlags, RpcParam, RpcProcId, RpcProcIdValue, RpcStatusFlags, TokenRpcRequest,
-};
-use protocol::ColumnData;
-pub use protocol::EncryptionLevel;
 mod row;
 mod tls;
 
 pub use connect::{connect, connect_tcp, connect_tcp_sql_browser, ConnectParams};
 pub use error::Error;
+use future::Shared;
+pub use protocol::EncryptionLevel;
+pub use row::{Column, Row};
+
 pub type Result<T> = result::Result<T, Error>;
-pub use row::Row;
 
 pub(crate) fn get_driver_version() -> u64 {
     env!("CARGO_PKG_VERSION")
@@ -223,7 +230,7 @@ pub struct Connection {
 impl Connection {
     fn register_callback(&self, sender: mpsc::UnboundedSender<ReceivedToken>) -> Result<()> {
         self.result_callback_queue
-            .send(sender.clone())
+            .send(sender)
             .map_err(|_| Error::Canceled)
     }
 
@@ -237,7 +244,10 @@ impl Connection {
     /// # Warning
     /// Do not use this with any user specified input.  
     /// Please resort to prepared statements ([query](Client::query) or [prepare](Client::prepare)) in order to prevent SQL-Injections.  
-    pub async fn simple_query(&self, query: &str) -> Result<impl ResultSet<Result<row::Row>>> {
+    pub async fn simple_query<'a>(
+        &'a self,
+        query: &str,
+    ) -> Result<impl ResultSet<Result<row::Row>>> {
         let span = debug_span!("simple_query", query = query);
         let _enter = span.enter();
 
@@ -267,10 +277,11 @@ impl Connection {
 
         let qs = QueryStream {
             conn_handler,
-            results: receiver.map(Ok),
+            results: Box::new(receiver.map(Ok)),
             current_columns: None,
             state: QueryStreamState::Initial,
         };
+
         Ok(qs)
     }
 
@@ -278,9 +289,9 @@ impl Connection {
         &'a self,
         proc_id: RpcProcId,
         mut rpc_params: Vec<RpcParam<'static>>,
-        params: &'a [&dyn prepared::ToSql],
+        params: &'a [&'a dyn prepared::ToSql],
         stmt_handle: Arc<atomic::AtomicI32>,
-    ) -> Result<QueryStream<PreparedStream>> {
+    ) -> Result<QueryStream<'a>> {
         let mut param_str = String::new();
         for (i, param) in params.iter().enumerate() {
             if i > 0 {
@@ -322,27 +333,28 @@ impl Connection {
 
         let qs = QueryStream {
             conn_handler: self.conn_handler.clone(),
-            results: PreparedStream {
+            results: Box::new(PreparedStream {
                 results: receiver,
                 stmt_handle,
                 read_ahead: None,
-            },
+            }),
             current_columns: None,
             state: QueryStreamState::Initial,
         };
+
         Ok(qs)
     }
 
-    async fn sp_execute_sql(
-        &self,
-        query: &str,
-        params: &[&dyn prepared::ToSql],
-    ) -> Result<QueryStream<PreparedStream>> {
+    async fn sp_execute_sql<'a>(
+        &'a self,
+        query: &'a str,
+        params: &'a [&'a dyn prepared::ToSql],
+    ) -> Result<QueryStream<'a>> {
         let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
                 flags: RpcStatusFlags::empty(),
-                value: ColumnData::String(query.to_owned()),
+                value: ColumnData::String(query.to_string().into()),
             },
             RpcParam {
                 name: Cow::Borrowed("params"),
@@ -352,16 +364,20 @@ impl Connection {
         ];
 
         let dummy = Arc::new(atomic::AtomicI32::new(0));
-        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params, dummy)
-            .await
+
+        let res = self
+            .rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params, dummy)
+            .await?;
+
+        Ok(res)
     }
 
-    async fn sp_prep_exec(
-        &self,
+    async fn sp_prep_exec<'a>(
+        &'a self,
         ret_handle: Arc<atomic::AtomicI32>,
-        query: &str,
-        params: &[&dyn prepared::ToSql],
-    ) -> Result<QueryStream<PreparedStream>> {
+        query: &'a str,
+        params: &'a [&'a dyn prepared::ToSql],
+    ) -> Result<QueryStream<'a>> {
         let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("handle"),
@@ -376,7 +392,7 @@ impl Connection {
             RpcParam {
                 name: Cow::Borrowed("stmt"),
                 flags: RpcStatusFlags::empty(),
-                value: ColumnData::String(query.to_owned()),
+                value: ColumnData::String(query.to_string().into()),
             },
         ];
 
@@ -384,11 +400,11 @@ impl Connection {
             .await
     }
 
-    async fn sp_execute(
-        &self,
+    async fn sp_execute<'a>(
+        &'a self,
         stmt_handle: Arc<atomic::AtomicI32>,
-        params: &[&dyn prepared::ToSql],
-    ) -> Result<QueryStream<PreparedStream>> {
+        params: &'a [&'a dyn prepared::ToSql],
+    ) -> Result<QueryStream<'a>> {
         let rpc_params = vec![RpcParam {
             // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
             // not specifying the name is better anyways to reduce overhead on execute
@@ -406,17 +422,15 @@ impl Connection {
     /// You can access further resultsets using [ResultSet::next_resultset].
     /// # Panics
     /// Panics If you do not handle all resultsets.
-    pub async fn query<S>(
-        &self,
-        stmt: S,
-        params: &[&dyn prepared::ToSql],
-    ) -> Result<impl ResultSet<Result<row::Row>>>
+    pub async fn query<'a, T: ?Sized>(
+        &'a self,
+        stmt: &'a T,
+        params: &'a [&'a dyn prepared::ToSql],
+    ) -> Result<impl ResultSet<Result<row::Row>> + 'a>
     where
-        S: ToStatement,
+        T: ToStatement,
     {
-        let stmt = stmt.to_stmt();
-
-        match stmt {
+        match stmt.to_stmt() {
             private::StatementRepr::QueryString(ref query) => {
                 self.sp_execute_sql(query, params).await
             }
@@ -499,18 +513,18 @@ mod private {
 }
 
 pub trait ToStatement {
-    fn to_stmt(&self) -> private::StatementRepr<'_>;
+    fn to_stmt(&self) -> private::StatementRepr;
 }
 
-impl ToStatement for &str {
-    fn to_stmt(&self) -> private::StatementRepr<'_> {
-        private::StatementRepr::QueryString(*self)
+impl ToStatement for str {
+    fn to_stmt(&self) -> private::StatementRepr {
+        private::StatementRepr::QueryString(&self)
     }
 }
 
-impl ToStatement for &Statement {
-    fn to_stmt(&self) -> private::StatementRepr<'_> {
-        private::StatementRepr::Statement(self)
+impl ToStatement for Statement {
+    fn to_stmt(&self) -> private::StatementRepr {
+        private::StatementRepr::Statement(&self)
     }
 }
 
@@ -519,7 +533,7 @@ pub trait ResultSet<I>: futures_util::stream::Stream<Item = I> {
     fn next_resultset(&mut self) -> bool;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum QueryStreamState {
     Initial,
     HasPotentiallyNext,
@@ -527,18 +541,14 @@ enum QueryStreamState {
     Done,
 }
 
-struct QueryStream<S> {
-    conn_handler: future::Shared<Pin<Box<dyn Future<Output = Result<()>>>>>,
-    current_columns: Option<Arc<Vec<row::Column>>>,
-    results: S,
-
-    state: QueryStreamState
+struct QueryStream<'a> {
+    conn_handler: Shared<Pin<Box<dyn Future<Output = Result<()>>>>>,
+    current_columns: Option<Arc<Vec<Column>>>,
+    results: Box<dyn futures_util::stream::Stream<Item = Result<ReceivedToken>> + Unpin + 'a>,
+    state: QueryStreamState,
 }
 
-impl<S> ResultSet<Result<row::Row>> for QueryStream<S>
-where
-    S: futures_util::stream::Stream<Item = Result<ReceivedToken>> + Unpin,
-{
+impl<'a> ResultSet<Result<row::Row>> for QueryStream<'a> {
     /// Move to the next resultset and make `poll_next` return rows for it
     fn next_resultset(&mut self) -> bool {
         if let QueryStreamState::HasNext = self.state {
@@ -549,7 +559,7 @@ where
     }
 }
 
-impl<S> Drop for QueryStream<S> {
+impl<'a> Drop for QueryStream<'a> {
     fn drop(&mut self) {
         if !thread::panicking() {
             match self.state {
@@ -560,10 +570,7 @@ impl<S> Drop for QueryStream<S> {
     }
 }
 
-impl<S> futures_util::stream::Stream for QueryStream<S>
-where
-    S: futures_util::stream::Stream<Item = Result<ReceivedToken>> + Unpin,
-{
+impl<'a> futures_util::stream::Stream for QueryStream<'a> {
     type Item = Result<row::Row>;
 
     fn poll_next(
@@ -573,7 +580,7 @@ where
         loop {
             match self.state {
                 QueryStreamState::Initial | QueryStreamState::HasPotentiallyNext => (),
-                _ => { return Poll::Ready(None) }
+                _ => return Poll::Ready(None),
             }
 
             // Handle incoming results and paralelly allow the connection
@@ -594,16 +601,16 @@ where
             return match token {
                 ReceivedToken::NewResultset(ref meta) => {
                     let column_meta = meta
-                            .columns
-                            .iter()
-                            .map(|x| row::Column {
-                                name: x.col_name.clone(),
-                            })
-                            .collect::<Vec<_>>();
+                        .columns
+                        .iter()
+                        .map(|x| row::Column {
+                            name: x.col_name.clone(),
+                        })
+                        .collect::<Vec<_>>();
                     self.current_columns = Some(Arc::new(column_meta));
                     self.state = match self.state {
                         QueryStreamState::HasPotentiallyNext => QueryStreamState::HasNext,
-                        state => state
+                        state => state,
                     };
                     continue;
                 }
@@ -619,8 +626,7 @@ where
                     }
                     continue;
                 }
-                ReceivedToken::ReturnStatus(_)
-                | ReceivedToken::ReturnValue(_) => continue,
+                ReceivedToken::ReturnStatus(_) | ReceivedToken::ReturnValue(_) => continue,
             };
         }
     }
@@ -632,13 +638,10 @@ struct PreparedStream {
     stmt_handle: Arc<atomic::AtomicI32>,
 }
 
-impl futures_util::stream::Stream for PreparedStream {
+impl Stream for PreparedStream {
     type Item = Result<ReceivedToken>;
 
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context,
-    ) -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         loop {
             if let Some(ReceivedToken::NewResultset(_)) = self.read_ahead {
                 return Poll::Ready(Some(Ok(self.read_ahead.take().unwrap())));
