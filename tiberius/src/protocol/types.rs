@@ -166,8 +166,32 @@ impl<'a> ColumnData<'a> {
         C: AsyncWrite + Unpin,
     {
         match *self {
+            ColumnData::Bit(val) => {
+                let bytes = [&[VarLenType::Bitn as u8, 1, 1, val as u8][..]].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+            }
+            ColumnData::I8(val) => {
+                let bytes = [&[VarLenType::Intn as u8, 1, 1][..], &val.to_le_bytes()].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+            }
+            ColumnData::I16(val) => {
+                let bytes = [&[VarLenType::Intn as u8, 2, 2][..], &val.to_le_bytes()].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+            }
             ColumnData::I32(val) => {
                 let bytes = [&[VarLenType::Intn as u8, 4, 4][..], &val.to_le_bytes()].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+            }
+            ColumnData::I64(val) => {
+                let bytes = [&[VarLenType::Intn as u8, 8, 8][..], &val.to_le_bytes()].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+            }
+            ColumnData::F32(val) => {
+                let bytes = [&[VarLenType::Floatn as u8, 4, 4][..], &val.to_le_bytes()].concat();
+                writer.write_bytes(&ctx, &bytes).await?;
+            }
+            ColumnData::F64(val) => {
+                let bytes = [&[VarLenType::Floatn as u8, 8, 8][..], &val.to_le_bytes()].concat();
                 writer.write_bytes(&ctx, &bytes).await?;
             }
             ColumnData::String(ref str_) if str_.len() <= 4000 => {

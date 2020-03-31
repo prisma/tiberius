@@ -1,38 +1,53 @@
 [package]
-name = "tiberius"
-description = "A TDS (MSSQL) driver"
-version = "0.4.0"
-edition = "2018"
-readme = "../README.md"
-repository = "https://github.com/steffengy/tiberius"
 authors = ["Steffen Butzer <steffen.butzer@outlook.com>"]
+description = "A TDS (MSSQL) driver"
 documentation = "https://docs.rs/tiberius/"
+edition = "2018"
 keywords = ["tds", "mssql", "sql"]
 license = "MIT/Apache-2.0"
+name = "tiberius"
+readme = "../README.md"
+repository = "https://github.com/steffengy/tiberius"
+version = "0.4.0"
 
 [dependencies]
 async-stream = "0.2"
 bitflags = "1.0"
 byteorder = "1.0"
-# bytes = "0.4.3"
 encoding = "0.2"
-# log = "0.4.7"
-#fnv = "1.0"
-#futures-preview = "0.3.0-alpha.17"
-futures-util = { version = "0.3.0" }
+once_cell = "1.3"
 parking_lot = "0.10"
-tracing = { version = "0.1", features = ["log"] }
-#chrono = { version = "0.4.0", optional = true }
-winauth = { version = "0.0.4" }
-native-tls = { version = "0.2.1", optional = true }
-tokio = { version = "0.2", features = ["sync", "io-std", "stream", "time", "io-util", "tcp", "udp"] }
-tokio-tls = { version = "0.3", optional = true }
 thiserror = "1.0"
+
+[dependencies.futures-util]
+version = "0.3.0"
+
+[dependencies.native-tls]
+optional = true
+version = "0.2.1"
+
+[dependencies.tokio]
+features = ["sync", "io-std", "stream", "time", "io-util", "tcp", "udp"]
+version = "0.2"
+
+[dependencies.tokio-tls]
+optional = true
+version = "0.3"
+
+[dependencies.tracing]
+features = ["log"]
+version = "0.1"
+
+[dependencies.winauth]
+version = "0.0.4"
 
 [dev-dependencies]
 env_logger = "0.7"
-tokio = { version = "0.2", features = ["macros"] }
+
+[dev-dependencies.tokio]
+features = ["macros"]
+version = "0.2"
 
 [features]
-default = [] # "chrono"
+default = []
 tls = ["native-tls", "tokio-tls"]
