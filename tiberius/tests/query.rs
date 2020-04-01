@@ -157,13 +157,33 @@ async fn test_type_f64() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_type_short_string() -> Result<()> {
+    let conn = connect().await?;
+    let stream = conn.query("SELECT @P1", &[&"Hallo"]).await?;
+
+    let rows: Result<Vec<String>> = stream.map_ok(|x| x.get::<_, String>(0)).try_collect().await;
+    assert_eq!(rows?, vec![String::from("Hallo")]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_type_long_string() -> Result<()> {
+    let conn = connect().await?;
+    let string = "a".repeat(4001);
+    let stream = conn.query("SELECT @P1", &[&string.as_str()]).await?;
+
+    let rows: Result<Vec<String>> = stream.map_ok(|x| x.get::<_, String>(0)).try_collect().await;
+    assert_eq!(rows?, vec![string]);
+    Ok(())
+}
+
+// TODO: Flaky
+/*
+#[tokio::test]
 async fn test_prepared_select_reexecute() -> Result<()> {
     let conn = connect().await?;
 
-    let sql = (0..10)
-        .map(|_| "SELECT 1")
-        .collect::<Vec<_>>()
-        .join(" UNION ALL ");
+    let sql = (0..10).map(|_| "").collect::<Vec<_>>().join(" UNION ALL ");
 
     let stmt = conn.prepare(&sql).await?;
     for _ in 0..3 {
@@ -174,8 +194,6 @@ async fn test_prepared_select_reexecute() -> Result<()> {
     Ok(())
 }
 
-// TODO: Flaky
-/*
 #[tokio::test]
 async fn test_unprepare() -> Result<()> {
     let conn = connect().await?;

@@ -6,7 +6,7 @@ use crate::{collation, plp::ReadTyMode, protocol, Error, Result};
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use encoding::{DecoderTrap, Encoding};
 use std::{borrow::Cow, convert::TryFrom};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufWriter};
 
 uint_enum! {
     #[repr(u8)]
@@ -207,7 +207,37 @@ impl<'a> ColumnData<'a> {
                     writer.write_bytes(&ctx, &codepoint.to_le_bytes()).await?;
                 }
             }
-            _ => panic!("TODO: {:?}", *self), // TODO
+            ColumnData::String(ref str_) => {
+                // length: 0xffff and raw collation
+                let header = [
+                    &[VarLenType::NVarchar as u8],
+                    &[0xff as u8; 2][..],
+                    &[0u8; 5][..],
+                    // we cannot cheaply predetermine the length of the UCS2 string beforehand
+                    // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
+                    &(0xfffffffffffffffe as u64).to_le_bytes(),
+                ]
+                .concat();
+                writer.write_bytes(&ctx, &header).await?;
+
+                // Write the varchar length
+                let ary: Vec<_> = str_.encode_utf16().collect();
+                let ary_len = ((ary.len() * 2) as u32).to_le_bytes();
+                writer.write_bytes(&ctx, &ary_len).await?;
+
+                // And the PLP data
+                for chr in ary {
+                    writer.write_bytes(&ctx, &chr.to_le_bytes()).await?;
+                }
+
+                // PLP_TERMINATOR
+                writer.write_bytes(&ctx, &0u32.to_le_bytes()).await?;
+            }
+            // TODO
+            ColumnData::None => {}
+            ColumnData::Guid(_) => {}
+            ColumnData::Binary(_) => {}
+            ColumnData::Numeric(_) => {}
         }
         Ok(())
     }

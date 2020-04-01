@@ -370,7 +370,7 @@ read_byteorder_impl!(
 );
 
 pub struct PacketWriter<'a, C: AsyncWrite> {
-    conn: &'a mut C,
+    pub(crate) conn: &'a mut C,
     header_template: PacketHeader,
     buf: Vec<u8>,
 }
