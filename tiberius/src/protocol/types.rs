@@ -79,7 +79,7 @@ impl VarLenType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Collation {
     /// LCID ColFlags Version
     info: u32,
@@ -250,6 +250,7 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
         if let Ok(ty) = FixedLenType::try_from(ty) {
             return Ok(TypeInfo::FixedLen(ty));
         }
+
         match VarLenType::try_from(ty) {
             Err(()) => {
                 return Err(Error::Protocol(
@@ -301,31 +302,6 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
         }
     }
 
-    pub async fn read_fixed_len_type(
-        &mut self,
-        _ctx: &protocol::Context,
-        ty: FixedLenType,
-    ) -> Result<ColumnData<'static>> {
-        let ret = match ty {
-            FixedLenType::Null => ColumnData::None,
-            FixedLenType::Bit => ColumnData::Bit(self.read_u8().await? != 0),
-            FixedLenType::Int1 => ColumnData::I8(self.read_i8().await?),
-            FixedLenType::Int2 => ColumnData::I16(self.read_i16::<LittleEndian>().await?),
-            FixedLenType::Int4 => ColumnData::I32(self.read_i32::<LittleEndian>().await?),
-            FixedLenType::Int8 => ColumnData::I64(self.read_i64::<LittleEndian>().await?),
-            FixedLenType::Float4 => ColumnData::F32(self.read_f32::<LittleEndian>().await?),
-            FixedLenType::Float8 => ColumnData::F64(self.read_f64::<LittleEndian>().await?),
-            // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
-            // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
-            _ => {
-                return Err(Error::Protocol(
-                    format!("unsupported fixed type decoding: {:?}", ty).into(),
-                ))
-            }
-        };
-        Ok(ret)
-    }
-
     pub async fn read_column_data(
         &mut self,
         ctx: &protocol::Context,
@@ -333,196 +309,8 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
     ) -> Result<ColumnData<'static>> {
         let ret = match meta.ty {
             TypeInfo::FixedLen(ref fixed_ty) => self.read_fixed_len_type(&ctx, *fixed_ty).await?,
-            TypeInfo::VarLenSized(ref ty, ref len, ref collation) => {
-                match *ty {
-                    VarLenType::Bitn => {
-                        let recv_len = self.read_u8().await? as usize;
-                        match recv_len {
-                            0 => ColumnData::None,
-                            1 => ColumnData::Bit(self.read_u8().await? > 0),
-                            v => {
-                                return Err(Error::Protocol(
-                                    format!("bitn: length of {} is invalid", v).into(),
-                                ))
-                            }
-                        }
-                    }
-                    VarLenType::Intn => {
-                        assert!(collation.is_none());
-                        let recv_len = self.read_u8().await? as usize;
-                        match recv_len {
-                            0 => ColumnData::None,
-                            1 => ColumnData::I8(self.read_i8().await?),
-                            2 => ColumnData::I16(self.read_i16::<LittleEndian>().await?),
-                            4 => ColumnData::I32(self.read_i32::<LittleEndian>().await?),
-                            8 => ColumnData::I64(self.read_i64::<LittleEndian>().await?),
-                            _ => unimplemented!(),
-                        }
-                    }
-                    // 2.2.5.5.1.5 IEEE754
-                    VarLenType::Floatn => {
-                        let len = self.read_u8().await?;
-                        match len {
-                            0 => ColumnData::None,
-                            4 => ColumnData::F32(self.read_f32::<LittleEndian>().await?),
-                            8 => ColumnData::F64(self.read_f64::<LittleEndian>().await?),
-                            _ => {
-                                return Err(Error::Protocol(
-                                    format!("floatn: length of {} is invalid", len).into(),
-                                ))
-                            }
-                        }
-                    }
-                    VarLenType::Guid => {
-                        let len = self.read_u8().await?;
-                        match len {
-                            0 => ColumnData::None,
-                            16 => {
-                                let mut data = [0u8; 16];
-                                data.clone_from_slice(self.read_bytes(16).await?);
-                                ColumnData::Guid(Cow::Owned(Guid(data)))
-                            }
-                            _ => {
-                                return Err(Error::Protocol(
-                                    format!("guid: length of {} is invalid", len).into(),
-                                ))
-                            }
-                        }
-                    }
-                    VarLenType::NChar | VarLenType::NVarchar => {
-                        self.state_tracked = true;
-
-                        let mode = if *ty == VarLenType::NChar {
-                            ReadTyMode::FixedSize(*len)
-                        } else {
-                            ReadTyMode::auto(*len)
-                        };
-
-                        let data = self.read_plp_type(mode).await?;
-
-                        let ret = if let Some(buf) = data {
-                            if buf.len() % 2 != 0 {
-                                return Err(Error::Protocol("nvarchar: invalid plp length".into()));
-                            }
-
-                            let buf: Vec<_> = buf.chunks(2).map(LittleEndian::read_u16).collect();
-                            let s = String::from_utf16(&buf)?;
-
-                            ColumnData::String(s.into())
-                        } else {
-                            ColumnData::None
-                        };
-
-                        self.state_tracked = false;
-
-                        ret
-                    }
-                    VarLenType::BigVarChar => {
-                        self.state_tracked = true;
-
-                        let mode = ReadTyMode::auto(*len);
-                        let data = self.read_plp_type(mode).await?;
-
-                        let ret =
-                            if let Some(bytes) = data {
-                                let encoder = collation.as_ref().unwrap().encoding().ok_or(
-                                    Error::Encoding("encoding: unspported encoding".into()),
-                                )?;
-
-                                let s: String = encoder
-                                    .decode(bytes.as_ref(), DecoderTrap::Strict)
-                                    .map_err(Error::Encoding)?;
-
-                                ColumnData::String(s.into())
-                            } else {
-                                ColumnData::None
-                            };
-
-                        self.state_tracked = false;
-                        ret
-                    }
-                    VarLenType::Money => {
-                        let len = self.read_u8().await?;
-
-                        match len {
-                            0 => ColumnData::None,
-                            4 => {
-                                ColumnData::F64(self.read_i32::<LittleEndian>().await? as f64 / 1e4)
-                            }
-                            8 => ColumnData::F64({
-                                let high = self.read_i32::<LittleEndian>().await? as i64;
-                                let low = self.read_u32::<LittleEndian>().await? as f64;
-                                ((high << 32) as f64 + low) / 1e4
-                            }),
-                            _ => {
-                                return Err(Error::Protocol(
-                                    format!("money: length of {} is invalid", len).into(),
-                                ))
-                            }
-                        }
-                    }
-                    VarLenType::Datetimen => {
-                        /*
-                        let len = self.read_u8().await?;
-                        parse_datetimen(trans, len)?
-                        */
-                        todo!()
-                    }
-                    VarLenType::Daten => {
-                        /*
-                        let len = trans.inner.read_u8()?;
-                        match len {
-                            0 => ColumnData::None,
-                            3 => {
-                                let mut bytes = [0u8; 4];
-                                try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
-                                ColumnData::Date(time::Date::new(LittleEndian::read_u32(&bytes)))
-                            }
-                            _ => {
-                                return Err(Error::Protocol(
-                                    format!("daten: length of {} is invalid", len).into(),
-                                ))
-                            }
-                        }
-                        */
-                        todo!()
-                    }
-                    VarLenType::Timen => {
-                        /*
-                        let rlen = trans.inner.read_u8()?;
-                        ColumnData::Time(time::Time::decode(&mut *trans.inner, *len, rlen)?)
-                        */
-                        todo!()
-                    }
-                    VarLenType::Datetime2 => {
-                        /*
-                        let rlen = trans.inner.read_u8()? - 3;
-                        let time = time::Time::decode(&mut *trans.inner, *len, rlen)?;
-                        let mut bytes = [0u8; 4];
-                        try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
-                        let date = time::Date::new(LittleEndian::read_u32(&bytes));
-                        ColumnData::DateTime2(time::DateTime2(date, time))
-                        */
-                        todo!()
-                    }
-                    VarLenType::BigBinary => {
-                        self.state_tracked = true;
-
-                        let mode = ReadTyMode::auto(*len);
-                        let data = self.read_plp_type(mode).await?;
-
-                        let ret = if let Some(buf) = data {
-                            ColumnData::Binary(buf.into())
-                        } else {
-                            ColumnData::None
-                        };
-
-                        self.state_tracked = false;
-
-                        ret
-                    }
-                    _ => unimplemented!(),
-                }
+            TypeInfo::VarLenSized(ty, len, collation) => {
+                self.read_var_len_sized(&ctx, ty, len, collation).await?
             }
             TypeInfo::VarLenSizedPrecision {
                 ref ty, ref scale, ..
@@ -596,6 +384,270 @@ impl<'a, C: AsyncRead + Unpin> protocol::PacketReader<'a, C> {
             }
         };
         Ok(ret)
+    }
+
+    async fn read_fixed_len_type(
+        &mut self,
+        _ctx: &protocol::Context,
+        ty: FixedLenType,
+    ) -> Result<ColumnData<'static>> {
+        let ret = match ty {
+            FixedLenType::Null => ColumnData::None,
+            FixedLenType::Bit => ColumnData::Bit(self.read_u8().await? != 0),
+            FixedLenType::Int1 => ColumnData::I8(self.read_i8().await?),
+            FixedLenType::Int2 => ColumnData::I16(self.read_i16::<LittleEndian>().await?),
+            FixedLenType::Int4 => ColumnData::I32(self.read_i32::<LittleEndian>().await?),
+            FixedLenType::Int8 => ColumnData::I64(self.read_i64::<LittleEndian>().await?),
+            FixedLenType::Float4 => ColumnData::F32(self.read_f32::<LittleEndian>().await?),
+            FixedLenType::Float8 => ColumnData::F64(self.read_f64::<LittleEndian>().await?),
+            // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
+            // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
+            _ => {
+                return Err(Error::Protocol(
+                    format!("unsupported fixed type decoding: {:?}", ty).into(),
+                ))
+            }
+        };
+        Ok(ret)
+    }
+
+    async fn read_var_len_sized(
+        &mut self,
+        _ctx: &protocol::Context,
+        ty: VarLenType,
+        len: usize,
+        collation: Option<Collation>,
+    ) -> Result<ColumnData<'static>> {
+        let res = match ty {
+            VarLenType::Bitn => self.read_bit().await?,
+            VarLenType::Intn => self.read_int().await?,
+            // 2.2.5.5.1.5 IEEE754
+            VarLenType::Floatn => self.read_float().await?,
+            VarLenType::Guid => self.read_guid().await?,
+            VarLenType::NChar | VarLenType::NVarchar => {
+                self.state_tracked = true;
+                let res = self.read_varchar(ty, len).await?;
+                self.state_tracked = false;
+
+                res
+            }
+            VarLenType::BigVarChar => {
+                self.state_tracked = true;
+                let res = self.read_big_varchar(len, collation).await?;
+                self.state_tracked = false;
+
+                res
+            }
+            VarLenType::Money => self.read_money().await?,
+            VarLenType::Datetimen => {
+                /*
+                let len = self.read_u8().await?;
+                parse_datetimen(trans, len)?
+                 */
+                todo!()
+            }
+            VarLenType::Daten => {
+                /*
+                    let len = trans.inner.read_u8()?;
+                    match len {
+                    0 => ColumnData::None,
+                    3 => {
+                    let mut bytes = [0u8; 4];
+                    try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
+                    ColumnData::Date(time::Date::new(LittleEndian::read_u32(&bytes)))
+                }
+                    _ => {
+                    return Err(Error::Protocol(
+                    format!("daten: length of {} is invalid", len).into(),
+                ))
+                }
+                }
+                     */
+                todo!()
+            }
+            VarLenType::Timen => {
+                /*
+                let rlen = trans.inner.read_u8()?;
+                ColumnData::Time(time::Time::decode(&mut *trans.inner, *len, rlen)?)
+                 */
+                todo!()
+            }
+            VarLenType::Datetime2 => {
+                /*
+                let rlen = trans.inner.read_u8()? - 3;
+                let time = time::Time::decode(&mut *trans.inner, *len, rlen)?;
+                let mut bytes = [0u8; 4];
+                try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
+                let date = time::Date::new(LittleEndian::read_u32(&bytes));
+                ColumnData::DateTime2(time::DateTime2(date, time))
+                 */
+                todo!()
+            }
+            VarLenType::BigBinary => {
+                self.state_tracked = true;
+                let res = self.read_binary(len).await?;
+                self.state_tracked = false;
+
+                res
+            }
+            _ => unimplemented!(),
+        };
+
+        Ok(res)
+    }
+
+    async fn read_bit(&mut self) -> Result<ColumnData<'static>> {
+        let recv_len = self.read_u8().await? as usize;
+
+        let res = match recv_len {
+            0 => ColumnData::None,
+            1 => ColumnData::Bit(self.read_u8().await? > 0),
+            v => {
+                return Err(Error::Protocol(
+                    format!("bitn: length of {} is invalid", v).into(),
+                ))
+            }
+        };
+
+        Ok(res)
+    }
+
+    async fn read_int(&mut self) -> Result<ColumnData<'static>> {
+        let recv_len = self.read_u8().await? as usize;
+
+        let res = match recv_len {
+            0 => ColumnData::None,
+            1 => ColumnData::I8(self.read_i8().await?),
+            2 => ColumnData::I16(self.read_i16::<LittleEndian>().await?),
+            4 => ColumnData::I32(self.read_i32::<LittleEndian>().await?),
+            8 => ColumnData::I64(self.read_i64::<LittleEndian>().await?),
+            _ => unimplemented!(),
+        };
+
+        Ok(res)
+    }
+
+    async fn read_float(&mut self) -> Result<ColumnData<'static>> {
+        let len = self.read_u8().await?;
+
+        let res = match len {
+            0 => ColumnData::None,
+            4 => ColumnData::F32(self.read_f32::<LittleEndian>().await?),
+            8 => ColumnData::F64(self.read_f64::<LittleEndian>().await?),
+            _ => {
+                return Err(Error::Protocol(
+                    format!("floatn: length of {} is invalid", len).into(),
+                ))
+            }
+        };
+
+        Ok(res)
+    }
+
+    async fn read_guid(&mut self) -> Result<ColumnData<'static>> {
+        let len = self.read_u8().await?;
+
+        let res = match len {
+            0 => ColumnData::None,
+            16 => {
+                let mut data = [0u8; 16];
+                data.clone_from_slice(self.read_bytes(16).await?);
+                ColumnData::Guid(Cow::Owned(Guid(data)))
+            }
+            _ => {
+                return Err(Error::Protocol(
+                    format!("guid: length of {} is invalid", len).into(),
+                ))
+            }
+        };
+
+        Ok(res)
+    }
+
+    async fn read_varchar(&mut self, ty: VarLenType, len: usize) -> Result<ColumnData<'static>> {
+        let mode = if ty == VarLenType::NChar {
+            ReadTyMode::FixedSize(len)
+        } else {
+            ReadTyMode::auto(len)
+        };
+
+        let data = self.read_plp_type(mode).await?;
+
+        let res = if let Some(buf) = data {
+            if buf.len() % 2 != 0 {
+                return Err(Error::Protocol("nvarchar: invalid plp length".into()));
+            }
+
+            let buf: Vec<_> = buf.chunks(2).map(LittleEndian::read_u16).collect();
+            let s = String::from_utf16(&buf)?;
+
+            ColumnData::String(s.into())
+        } else {
+            ColumnData::None
+        };
+
+        Ok(res)
+    }
+
+    async fn read_big_varchar(
+        &mut self,
+        len: usize,
+        collation: Option<Collation>,
+    ) -> Result<ColumnData<'static>> {
+        let mode = ReadTyMode::auto(len);
+        let data = self.read_plp_type(mode).await?;
+
+        let res = if let Some(bytes) = data {
+            let encoder = collation
+                .as_ref()
+                .unwrap()
+                .encoding()
+                .ok_or(Error::Encoding("encoding: unspported encoding".into()))?;
+
+            let s: String = encoder
+                .decode(bytes.as_ref(), DecoderTrap::Strict)
+                .map_err(Error::Encoding)?;
+
+            ColumnData::String(s.into())
+        } else {
+            ColumnData::None
+        };
+
+        Ok(res)
+    }
+
+    async fn read_money(&mut self) -> Result<ColumnData<'static>> {
+        let len = self.read_u8().await?;
+
+        let res = match len {
+            0 => ColumnData::None,
+            4 => ColumnData::F64(self.read_i32::<LittleEndian>().await? as f64 / 1e4),
+            8 => ColumnData::F64({
+                let high = self.read_i32::<LittleEndian>().await? as i64;
+                let low = self.read_u32::<LittleEndian>().await? as f64;
+                ((high << 32) as f64 + low) / 1e4
+            }),
+            _ => {
+                return Err(Error::Protocol(
+                    format!("money: length of {} is invalid", len).into(),
+                ))
+            }
+        };
+
+        Ok(res)
+    }
+
+    async fn read_binary(&mut self, len: usize) -> Result<ColumnData<'static>> {
+        let mode = ReadTyMode::auto(len);
+        let data = self.read_plp_type(mode).await?;
+
+        let res = if let Some(buf) = data {
+            ColumnData::Binary(buf.into())
+        } else {
+            ColumnData::None
+        };
+
+        Ok(res)
     }
 }
 
