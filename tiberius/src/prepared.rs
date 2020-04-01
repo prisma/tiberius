@@ -1,7 +1,46 @@
 use crate::protocol::ColumnData;
+use std::borrow::Cow;
+
+const MAX_NVARCHAR_SIZE: usize = 1 << 30;
 
 pub trait ToSql {
     fn to_sql(&self) -> (&'static str, ColumnData);
+}
+
+impl ToSql for str {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        let sql_type = match self.len() {
+            0..=4000 => "NVARCHAR(4000)",
+            4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
+            _ => "NTEXT",
+        };
+
+        (sql_type, ColumnData::String(Cow::from(self)))
+    }
+}
+
+impl ToSql for &str {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        let sql_type = match self.len() {
+            0..=4000 => "NVARCHAR(4000)",
+            4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
+            _ => "NTEXT",
+        };
+
+        (sql_type, ColumnData::String(Cow::from(*self)))
+    }
+}
+
+impl<'a> ToSql for String {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        let sql_type = match self.len() {
+            0..=4000 => "NVARCHAR(4000)",
+            4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
+            _ => "NTEXT",
+        };
+
+        (sql_type, ColumnData::String(Cow::from(self)))
+    }
 }
 
 macro_rules! to_sql {
