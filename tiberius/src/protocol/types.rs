@@ -195,16 +195,18 @@ impl<'a> ColumnData<'a> {
                 writer.write_bytes(&ctx, &bytes).await?;
             }
             ColumnData::String(ref str_) if str_.len() <= 4000 => {
-                let bytes = [
+                let header = [
                     &[VarLenType::NVarchar as u8],
                     &8000u16.to_le_bytes()[..],
                     &[0u8; 5][..],
                     &(2 * str_.len() as u16).to_le_bytes(),
                 ]
                 .concat();
-                writer.write_bytes(&ctx, &bytes).await?;
-                for codepoint in str_.encode_utf16() {
-                    writer.write_bytes(&ctx, &codepoint.to_le_bytes()).await?;
+
+                writer.write_bytes(&ctx, &header).await?;
+
+                for chr in str_.encode_utf16() {
+                    writer.write_bytes(&ctx, &chr.to_le_bytes()).await?;
                 }
             }
             ColumnData::String(ref str_) => {
@@ -218,6 +220,7 @@ impl<'a> ColumnData<'a> {
                     &(0xfffffffffffffffe as u64).to_le_bytes(),
                 ]
                 .concat();
+
                 writer.write_bytes(&ctx, &header).await?;
 
                 // Write the varchar length
