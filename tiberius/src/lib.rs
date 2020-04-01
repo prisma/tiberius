@@ -35,7 +35,7 @@ mod connect;
 mod cursor;
 mod error;
 mod plp;
-mod prepared;
+pub mod prepared;
 mod protocol;
 mod row;
 mod tls;
@@ -242,8 +242,8 @@ impl Connection {
     /// Execute a simple query and return multiple resultsets which consist of multiple rows.
     ///
     /// # Warning
-    /// Do not use this with any user specified input.  
-    /// Please resort to prepared statements ([query](Client::query) or [prepare](Client::prepare)) in order to prevent SQL-Injections.  
+    /// Do not use this with any user specified input.
+    /// Please resort to prepared statements ([query](Client::query) or [prepare](Client::prepare)) in order to prevent SQL-Injections.
     pub async fn simple_query<'a>(
         &'a self,
         query: &str,
@@ -285,13 +285,15 @@ impl Connection {
         Ok(qs)
     }
 
-    async fn rpc_perform_query<'a>(
+    async fn rpc_perform_query<'a, 'b>(
         &'a self,
         proc_id: RpcProcId,
         mut rpc_params: Vec<RpcParam<'static>>,
-        params: &'a [&'a dyn prepared::ToSql],
+        params: &'b [&'b dyn prepared::ToSql],
         stmt_handle: Arc<atomic::AtomicI32>,
-    ) -> Result<QueryStream<'a>> {
+    ) -> Result<QueryStream<'a>>
+    where 'a: 'b
+    {
         let mut param_str = String::new();
         for (i, param) in params.iter().enumerate() {
             if i > 0 {
@@ -345,11 +347,11 @@ impl Connection {
         Ok(qs)
     }
 
-    async fn sp_execute_sql<'a>(
+    async fn sp_execute_sql<'a, 'b>(
         &'a self,
         query: &'a str,
-        params: &'a [&dyn prepared::ToSql],
-    ) -> Result<QueryStream<'a>> {
+        params: &'b [&'b dyn prepared::ToSql],
+    ) -> Result<QueryStream<'a>> where 'a: 'b {
         let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
@@ -372,12 +374,12 @@ impl Connection {
         Ok(res)
     }
 
-    async fn sp_prep_exec<'a>(
+    async fn sp_prep_exec<'a, 'b>(
         &'a self,
         ret_handle: Arc<atomic::AtomicI32>,
         query: &'a str,
-        params: &'a [&dyn prepared::ToSql],
-    ) -> Result<QueryStream<'a>> {
+        params: &'b [&'b dyn prepared::ToSql],
+    ) -> Result<QueryStream<'a>>  where 'a: 'b {
         let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("handle"),
@@ -400,11 +402,11 @@ impl Connection {
             .await
     }
 
-    async fn sp_execute<'a>(
+    async fn sp_execute<'a, 'b>(
         &'a self,
         stmt_handle: Arc<atomic::AtomicI32>,
-        params: &'a [&dyn prepared::ToSql],
-    ) -> Result<QueryStream<'a>> {
+        params: &'b [&'b dyn prepared::ToSql],
+    ) -> Result<QueryStream<'a>> where 'a: 'b {
         let rpc_params = vec![RpcParam {
             // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
             // not specifying the name is better anyways to reduce overhead on execute
@@ -422,13 +424,14 @@ impl Connection {
     /// You can access further resultsets using [ResultSet::next_resultset].
     /// # Panics
     /// Panics If you do not handle all resultsets.
-    pub async fn query<'a, T: ?Sized>(
+    pub async fn query<'a, 'b, T: ?Sized>(
         &'a self,
         stmt: &'a T,
-        params: &'a [&dyn prepared::ToSql],
+        params: &'b [&'b dyn prepared::ToSql],
     ) -> Result<impl ResultSet<Result<row::Row>> + 'a>
     where
-        T: ToStatement,
+        'a: 'b,
+        T: ToStatement + 'a,
     {
         match stmt.to_stmt() {
             private::StatementRepr::QueryString(ref query) => {

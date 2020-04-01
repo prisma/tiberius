@@ -170,7 +170,8 @@ async fn test_type_short_string() -> Result<()> {
 async fn test_type_long_string() -> Result<()> {
     let conn = connect().await?;
     let string = "a".repeat(4001);
-    let stream = conn.query("SELECT @P1", &[&string.as_str()]).await?;
+    let s_param: &dyn tiberius::prepared::ToSql = &string.as_str();
+    let stream = conn.query("SELECT @P1", &[s_param]).await?;
 
     let rows: Result<Vec<String>> = stream.map_ok(|x| x.get::<_, String>(0)).try_collect().await;
     assert_eq!(rows?, vec![string]);
