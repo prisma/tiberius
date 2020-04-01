@@ -348,7 +348,7 @@ impl Connection {
     async fn sp_execute_sql<'a>(
         &'a self,
         query: &'a str,
-        params: &'a [&'a dyn prepared::ToSql],
+        params: &'a [&dyn prepared::ToSql],
     ) -> Result<QueryStream<'a>> {
         let rpc_params = vec![
             RpcParam {
@@ -376,7 +376,7 @@ impl Connection {
         &'a self,
         ret_handle: Arc<atomic::AtomicI32>,
         query: &'a str,
-        params: &'a [&'a dyn prepared::ToSql],
+        params: &'a [&dyn prepared::ToSql],
     ) -> Result<QueryStream<'a>> {
         let rpc_params = vec![
             RpcParam {
@@ -403,7 +403,7 @@ impl Connection {
     async fn sp_execute<'a>(
         &'a self,
         stmt_handle: Arc<atomic::AtomicI32>,
-        params: &'a [&'a dyn prepared::ToSql],
+        params: &'a [&dyn prepared::ToSql],
     ) -> Result<QueryStream<'a>> {
         let rpc_params = vec![RpcParam {
             // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
@@ -425,7 +425,7 @@ impl Connection {
     pub async fn query<'a, T: ?Sized>(
         &'a self,
         stmt: &'a T,
-        params: &'a [&'a dyn prepared::ToSql],
+        params: &'a [&dyn prepared::ToSql],
     ) -> Result<impl ResultSet<Result<row::Row>> + 'a>
     where
         T: ToStatement,
