@@ -4,30 +4,6 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 use {Error, Result};
 
-/// prepares a statement which selects a passed value
-/// this tests serialization of a parameter and deserialization
-/// atlast it checks if the received value is the same as the sent value
-/// it also checks if the time formatted is correct
-#[cfg(test)]
-macro_rules! test_timedatatype {
-    ( $($name:ident: $ty:ty = $val:expr => $str_val:expr),* ) => {
-        $(
-            #[test]
-            fn $name() {
-                let future = SqlConnection::connect(connection_string().as_ref())
-                    .and_then(|conn| {
-                        conn.query("SELECT @P1, convert(varchar, @P1, 121)", &[&$val]).for_each(|row| {
-                            assert_eq!(row.get::<_, $ty>(0), $val);
-                            assert_eq!(row.get::<_, &str>(1), $str_val);
-                            Ok(())
-                        })
-                    });
-                current_thread::block_on_all(future).unwrap();
-            }
-        )*
-    }
-}
-
 /// # Warning
 /// It isn't recommended to use this
 /// If you want to deal with date types, use the chrono feature of this crate instead!

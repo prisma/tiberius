@@ -1,5 +1,6 @@
 use crate::protocol;
-use std::{borrow::Cow, convert::Infallible, fmt, io};
+use protocol::codec::TokenError;
+use std::{borrow::Cow, convert::Infallible, io};
 use thiserror::Error;
 
 // TODO: keep private
@@ -32,7 +33,7 @@ pub enum Error {
     #[error("Error parsing an integer: {}", _0)]
     ParseInt(std::num::ParseIntError),
     #[error("Token error: {}", _0)]
-    Server(protocol::TokenError),
+    Server(TokenError),
     #[error("Operation cancelled")]
     Canceled,
 }

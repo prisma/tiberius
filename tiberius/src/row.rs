@@ -1,9 +1,10 @@
 use crate::protocol;
-use crate::protocol::ColumnData;
+use crate::protocol::codec::ColumnData;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
 use crate::error::Error;
+use protocol::codec::TokenRow;
 
 macro_rules! from_column_data {
     ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
@@ -54,7 +55,7 @@ impl Column {
 #[derive(Debug)] // TODO
 pub struct Row {
     pub(crate) columns: Arc<Vec<Column>>,
-    pub(crate) data: protocol::TokenRow,
+    pub(crate) data: TokenRow,
 }
 
 pub trait QueryIdx {
@@ -87,7 +88,7 @@ impl Row {
     pub fn get<'a, I, R>(&'a self, idx: I) -> R
     where
         I: QueryIdx,
-        R: TryFrom<&'a protocol::ColumnData<'a>, Error = Error>,
+        R: TryFrom<&'a ColumnData<'a>, Error = Error>,
     {
         self.try_get(idx)
             .expect("given index out of bounds")
@@ -97,7 +98,7 @@ impl Row {
     pub fn try_get<'a, I, R>(&'a self, idx: I) -> crate::Result<Option<R>>
     where
         I: QueryIdx,
-        R: TryFrom<&'a protocol::ColumnData<'a>, Error = Error>,
+        R: TryFrom<&'a ColumnData<'a>, Error = Error>,
     {
         let idx = match idx.idx(self) {
             Some(x) => x,
