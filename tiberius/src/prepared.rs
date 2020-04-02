@@ -1,4 +1,4 @@
-use crate::protocol::ColumnData;
+use crate::protocol::codec::ColumnData;
 use std::borrow::Cow;
 
 const MAX_NVARCHAR_SIZE: usize = 1 << 30;

@@ -1,122 +1,23 @@
-use crate::{protocol, Error, Result};
+use super::Encode;
+use crate::uint_enum;
 use bitflags::bitflags;
-use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use std::borrow::Cow;
-use std::convert::TryFrom;
-use std::io::{self, Cursor, Write};
-use tokio::io::{AsyncRead, AsyncWrite};
+use byteorder::{LittleEndian, WriteBytesExt};
+use bytes::BytesMut;
+use io::{Cursor, Write};
+use std::{borrow::Cow, io};
 
-/// The prelogin packet used to initialize a connection
-#[derive(Debug)]
-pub struct PreloginMessage {
-    /// [BE] token=0x00
-    /// Either the driver version or the version of the SQL server
-    pub version: u32,
-    pub sub_build: u16,
-    /// token=0x01
-    pub encryption: protocol::EncryptionLevel,
-    /// [client] threadid for debugging purposes, token=0x03
-    pub thread_id: u32,
-    /// token=0x04
-    pub mars: bool,
-}
-
-impl PreloginMessage {
-    pub fn new() -> PreloginMessage {
-        let driver_version = crate::get_driver_version();
-        PreloginMessage {
-            version: driver_version as u32,
-            sub_build: (driver_version >> 32) as u16,
-            encryption: protocol::EncryptionLevel::NotSupported,
-            thread_id: 0,
-            mars: false,
-        }
-    }
-
-    pub async fn unserialize<'a, C: AsyncRead + Unpin>(
-        r: &mut protocol::PacketReader<'a, C>,
-    ) -> Result<PreloginMessage> {
-        let header = r.read_packet().await?;
-        if header.ty != protocol::PacketType::TabularResult {
-            return Err(Error::Protocol(
-                "expected tabular result in response to prelogin message".into(),
-            ));
-        }
-
-        let mut cursor = Cursor::new(&r.buf);
-        let mut ret = PreloginMessage::new();
-
-        // read all options
-        loop {
-            let token = cursor.read_u8()?;
-            // read until terminator
-            if token == 0xff {
-                break;
-            }
-            let offset = cursor.read_u16::<BigEndian>()?;
-            let length = cursor.read_u16::<BigEndian>()?;
-            let old_pos = cursor.position();
-            cursor.set_position(offset as u64);
-            // verify whether the server acts in accordance to what we requested
-            // and if we can handle on what we seemingly agreed to
-            // TODO: support parsing more
-            match token {
-                // version
-                0 => {
-                    ret.version = cursor.read_u32::<BigEndian>()?;
-                    ret.sub_build = cursor.read_u16::<BigEndian>()?;
-                }
-                // encryption
-                1 => {
-                    let encrypt = cursor.read_u8()?;
-                    ret.encryption =
-                        protocol::EncryptionLevel::try_from(encrypt).map_err(|_| {
-                            Error::Protocol(format!("invalid encryption value: {}", encrypt).into())
-                        })?;
-                }
-                3 => debug_assert_eq!(length, 0), // threadid
-                4 => debug_assert_eq!(length, 1), // mars
-                _ => panic!("unsupported prelogin token: {}", token),
-            }
-            cursor.set_position(old_pos);
-        }
-
-        Ok(ret)
-    }
-
-    /// Serialize the prelogin message, leaving the header zeroed and for the caller to set
-    pub fn serialize(&self) -> io::Result<Vec<u8>> {
-        let mut cursor = Cursor::new(vec![0; protocol::HEADER_BYTES + 21]);
-        cursor.set_position(protocol::HEADER_BYTES as u64);
-
-        // build the packet-body
-        // offset = PL_OPTION_TOKEN + PL_OFFSET + PL_OPTION_LENGTH = 5 bytes + the terminator (0xFF)
-        let mut data_offset = 4 * 5 + 1;
-
-        // write the offsets
-        {
-            let mut write_option = |token: u8, length: u16| -> io::Result<()> {
-                cursor.write_u8(token)?;
-                cursor.write_u16::<BigEndian>(data_offset)?;
-                cursor.write_u16::<BigEndian>(length)?;
-                data_offset += length;
-                Ok(())
-            };
-
-            write_option(0x00, 0x04 + 0x02)?; // version + subbuild
-            write_option(0x01, 0x01)?; // encryption
-            write_option(0x03, 0x04)?; // threadid
-            write_option(0x04, 0x01)?; // MARS
-        }
-        cursor.write_u8(0xff)?;
-
-        // write the data (body of the options)
-        cursor.write_u32::<BigEndian>(self.version as u32)?;
-        cursor.write_u16::<BigEndian>(self.sub_build as u16)?;
-        cursor.write_u8(self.encryption as u8)?;
-        cursor.write_u32::<BigEndian>(self.thread_id)?;
-        cursor.write_u8(self.mars as u8)?;
-        Ok(cursor.into_inner())
+uint_enum! {
+    #[repr(u32)]
+    #[derive(PartialOrd)]
+    pub enum FeatureLevel {
+        SqlServerV7 = 0x70000000,
+        SqlServer2000 = 0x71000000,
+        SqlServer2000Sp1 = 0x71000001,
+        SqlServer2005 = 0x72090002,
+        SqlServer2008 = 0x730A0003,
+        SqlServer2008R2 = 0x730B0003,
+        /// 2012, 2014, 2016
+        SqlServerN = 0x74000004,
     }
 }
 
@@ -182,10 +83,20 @@ bitflags! {
     }
 }
 
+impl FeatureLevel {
+    pub fn done_row_count_bytes(self) -> u8 {
+        if self as u8 >= FeatureLevel::SqlServer2005 as u8 {
+            8
+        } else {
+            4
+        }
+    }
+}
+
 /// the login packet
 pub struct LoginMessage<'a> {
     /// the highest TDS version the client supports
-    pub tds_version: protocol::FeatureLevel,
+    pub tds_version: FeatureLevel,
     /// the requested packet size
     pub packet_size: u32,
     /// the version of the interface library
@@ -219,7 +130,7 @@ pub struct LoginMessage<'a> {
 impl<'a> LoginMessage<'a> {
     pub fn new() -> LoginMessage<'a> {
         LoginMessage {
-            tds_version: protocol::FeatureLevel::SqlServerN,
+            tds_version: FeatureLevel::SqlServerN,
             packet_size: 4096,
             client_prog_ver: 0,
             client_pid: 0,
@@ -239,11 +150,14 @@ impl<'a> LoginMessage<'a> {
             db_name: "".into(),
         }
     }
+}
 
-    pub fn serialize(&self, _ctx: &protocol::Context) -> io::Result<Vec<u8>> {
-        let mut cursor = Cursor::new(Vec::with_capacity(1 << 9));
+impl<'a> Encode<BytesMut> for LoginMessage<'a> {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        let mut cursor = Cursor::new(Vec::with_capacity(512));
 
-        cursor.set_position(protocol::HEADER_BYTES as u64 + 4);
+        // Space for the length
+        cursor.write_u32::<LittleEndian>(0)?;
 
         // ignore the specified value for integrated security since we determine that by the struct field
         let option_flags2 = if self.integrated_security.is_some() {
@@ -251,27 +165,20 @@ impl<'a> LoginMessage<'a> {
         } else {
             self.option_flags_2 & !LoginOptionFlags2::INTEGRATED_SECURITY
         };
-        // write..
-        for val in &[
-            self.tds_version as u32,
-            self.packet_size,
-            self.client_prog_ver,
-            self.client_pid,
-            self.connection_id,
-        ] {
-            cursor.write_u32::<LittleEndian>(*val)?;
-        }
-        for val in &[
-            self.option_flags_1.bits(),
-            option_flags2.bits(),
-            self.type_flags.bits(),
-            self.option_flags_3.bits(),
-        ] {
-            cursor.write_u8(*val)?;
-        }
-        for val in &[self.client_timezone as u32, self.client_lcid] {
-            cursor.write_u32::<LittleEndian>(*val)?;
-        }
+
+        cursor.write_u32::<LittleEndian>(self.tds_version as u32)?;
+        cursor.write_u32::<LittleEndian>(self.packet_size)?;
+        cursor.write_u32::<LittleEndian>(self.client_prog_ver)?;
+        cursor.write_u32::<LittleEndian>(self.client_pid)?;
+        cursor.write_u32::<LittleEndian>(self.connection_id)?;
+
+        cursor.write_u8(self.option_flags_1.bits())?;
+        cursor.write_u8(option_flags2.bits())?;
+        cursor.write_u8(self.type_flags.bits())?;
+        cursor.write_u8(self.option_flags_3.bits())?;
+
+        cursor.write_u32::<LittleEndian>(self.client_timezone as u32)?;
+        cursor.write_u32::<LittleEndian>(self.client_lcid)?;
 
         // variable length data (OffsetLength)
         let var_data = [
@@ -299,29 +206,40 @@ impl<'a> LoginMessage<'a> {
                 cursor.write_u16::<LittleEndian>(42)?; //TODO: generate real client id
                 continue;
             }
-            cursor.write_u16::<LittleEndian>((data_offset - protocol::HEADER_BYTES) as u16)?;
+
+            cursor.write_u16::<LittleEndian>(data_offset as u16)?;
+
+            // ibSSPI
             if i == 10 {
                 let length = if let Some(ref bytes) = self.integrated_security {
                     let bak = cursor.position();
+
                     cursor.set_position(data_offset as u64);
                     cursor.write_all(bytes)?;
+
                     data_offset += bytes.len();
                     cursor.set_position(bak);
+
                     bytes.len()
                 } else {
                     0
                 };
+
                 cursor.write_u16::<LittleEndian>(length as u16)?;
+
                 continue;
             }
 
             // jump into the data portion of the output
             let bak = cursor.position();
             cursor.set_position(data_offset as u64);
+
             for codepoint in value.encode_utf16() {
                 cursor.write_u16::<LittleEndian>(codepoint)?;
             }
+
             let new_position = cursor.position() as usize;
+
             // prepare the password in MS-fashion
             if i == 2 {
                 let buffer = cursor.get_mut();
@@ -330,6 +248,7 @@ impl<'a> LoginMessage<'a> {
                     buffer[idx] = ((byte << 4) & 0xf0 | (byte >> 4) & 0x0f) ^ 0xA5;
                 }
             }
+
             let length = new_position - data_offset;
             cursor.set_position(bak);
             data_offset += length;
@@ -338,17 +257,20 @@ impl<'a> LoginMessage<'a> {
             // sounds like premature optimization
             cursor.write_u16::<LittleEndian>(length as u16 / 2)?;
         }
+
         // cbSSPILong
         cursor.write_u32::<LittleEndian>(0)?;
 
         cursor.set_position(data_offset as u64);
+
         // FeatureExt: unsupported for now, simply write a terminator
         cursor.write_u8(0xFF)?;
 
-        cursor.set_position(protocol::HEADER_BYTES as u64);
-        cursor.write_u32::<LittleEndian>(
-            cursor.get_ref().len() as u32 - protocol::HEADER_BYTES as u32,
-        )?;
-        Ok(cursor.into_inner())
+        cursor.set_position(0);
+        cursor.write_u32::<LittleEndian>(cursor.get_ref().len() as u32)?;
+
+        dst.extend(cursor.into_inner());
+
+        Ok(())
     }
 }
