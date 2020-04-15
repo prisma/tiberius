@@ -91,7 +91,8 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
 
 impl<'a> Encode<BytesMut> for RpcParam<'a> {
     fn encode(self, dst: &mut BytesMut) -> Result<()> {
-        dst.put_u8(self.name.chars().count() as u8);
+        let len = self.name.chars().fold(0, |acc, c| acc + c.len_utf8());
+        dst.put_u8(len as u8);
 
         for codepoint in self.name.encode_utf16() {
             dst.put_u16_le(codepoint);
