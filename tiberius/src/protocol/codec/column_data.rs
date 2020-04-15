@@ -347,7 +347,7 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u8(VarLenType::NVarchar as u8);
                 dst.put_u16_le(8000);
                 dst.extend_from_slice(&[0u8; 5][..]);
-                dst.put_u16_le(2 * s.len() as u16);
+                dst.put_u16_le(2 * s.chars().count() as u16);
 
                 for chr in s.encode_utf16() {
                     dst.put_u16_le(chr);
