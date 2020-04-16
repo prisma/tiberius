@@ -89,8 +89,6 @@ uint_enum! {
     }
 }
 
-impl TokenType {}
-
 impl Decode<BytesMut> for TokenType {
     fn decode(src: &mut BytesMut) -> crate::Result<Self>
     where

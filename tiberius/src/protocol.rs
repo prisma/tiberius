@@ -50,10 +50,6 @@ impl Context {
     pub fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
         *self.last_meta.lock() = Some(meta);
     }
-
-    pub fn row_size(&self) -> Option<usize> {
-        self.last_meta.lock().as_ref().map(|meta| meta.row_size())
-    }
 }
 
 /// The amount of bytes a packet header consists of

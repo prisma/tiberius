@@ -1,51 +1,16 @@
-use super::{read_varchar, Decode, FixedLenType, TypeInfo, VarLenType};
+use super::{read_varchar, Decode, TypeInfo, VarLenType};
 use bitflags::bitflags;
 use bytes::{Buf, BytesMut};
-use pretty_hex::*;
 
 #[derive(Debug)]
 pub struct TokenColMetaData {
     pub columns: Vec<MetaDataColumn>,
 }
 
-impl TokenColMetaData {
-    pub fn row_size(&self) -> usize {
-        self.columns.iter().fold(0, |acc, col| acc + col.size())
-    }
-}
-
 #[derive(Debug)]
 pub struct MetaDataColumn {
     pub base: BaseMetaDataColumn,
     pub col_name: String,
-}
-
-impl MetaDataColumn {
-    pub fn size(&self) -> usize {
-        match self.base.ty {
-            TypeInfo::FixedLen(fixed_len_type) => match fixed_len_type {
-                FixedLenType::Null => 0,
-                FixedLenType::Int1 => 1,
-                FixedLenType::Bit => 1,
-                FixedLenType::Int2 => 2,
-                FixedLenType::Int4 => 4,
-                FixedLenType::Datetime4 => 4,
-                FixedLenType::Float4 => 4,
-                FixedLenType::Money => 8,
-                FixedLenType::Datetime => 8,
-                FixedLenType::Float8 => 8,
-                FixedLenType::Money4 => 4,
-                FixedLenType::Int8 => 8,
-            },
-            TypeInfo::VarLenSized(_, size, _) => size,
-            TypeInfo::VarLenSizedPrecision {
-                ty: _,
-                size,
-                precision: _,
-                scale: _,
-            } => size,
-        }
-    }
 }
 
 #[derive(Debug)]

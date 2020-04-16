@@ -1,7 +1,6 @@
-use super::Decode;
+use super::{Decode, ReadTyMode};
 use crate::{protocol::types::Collation, uint_enum, Error};
 use bytes::{Buf, BytesMut};
-use pretty_hex::*;
 use std::convert::TryFrom;
 
 #[derive(Debug)]
@@ -31,6 +30,25 @@ uint_enum! {
         Float8 = 0x3E,
         Money4 = 0x7A,
         Int8 = 0x7F,
+    }
+}
+
+impl FixedLenType {
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Null => 0,
+            Self::Int1 => 1,
+            Self::Bit => 1,
+            Self::Int2 => 2,
+            Self::Int4 => 4,
+            Self::Datetime4 => 4,
+            Self::Float4 => 4,
+            Self::Money => 8,
+            Self::Datetime => 8,
+            Self::Float8 => 8,
+            Self::Money4 => 4,
+            Self::Int8 => 8,
+        }
     }
 }
 
@@ -75,6 +93,34 @@ uint_enum! {
                         // VarBinary = 0x25,
                         // Numeric = 0x3F,
                         // Decimal = 0x37
+    }
+}
+
+impl VarLenType {
+    pub fn get_size(&self, max_len: usize, mut buf: &[u8]) -> usize {
+        use VarLenType::*;
+        buf.get_u8(); // ty
+
+        match self {
+            Bitn | Intn | Floatn | Guid | Money => buf.get_u8() as usize + 1, // including size
+            NVarchar | BigVarChar | BigBinary => match ReadTyMode::auto(max_len) {
+                ReadTyMode::FixedSize(_) => buf.get_u16_le() as usize + 2, // + size
+                ReadTyMode::Plp => buf.get_u64_le() as usize + 8,          // + size
+            },
+            NChar => buf.get_u16_le() as usize + 2, // + size
+            VarLenType::Text => {
+                buf.advance(17); // skip pointers
+
+                buf.get_i32_le(); // days (+ 4)
+                buf.get_u32_le(); // second fractions (+ 4)
+
+                let text_len = buf.get_u32_le() as usize;
+
+                // ptr len byte, ptr len, days, seconds, text_length
+                18 + 4 + 4 + text_len
+            }
+            _ => todo!("{:?}", self),
+        }
     }
 }
 

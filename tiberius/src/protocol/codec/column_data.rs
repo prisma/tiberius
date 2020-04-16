@@ -6,7 +6,6 @@ use crate::{
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{Buf, BufMut, BytesMut};
 use encoding::DecoderTrap;
-use pretty_hex::*;
 use protocol::types::{Collation, Guid};
 use std::borrow::Cow;
 
@@ -83,7 +82,7 @@ pub struct VariableLengthContext {
 
 #[derive(Clone, Debug, Copy)]
 pub struct VariableLengthPrecisionContext {
-    scale: u8,
+    pub scale: u8,
 }
 
 impl VariableLengthContext {

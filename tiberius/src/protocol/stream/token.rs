@@ -4,8 +4,9 @@ use super::codec::TokenSSPI;
 use crate::{
     protocol::{
         codec::{
-            BytesData, Decode, Packet, TokenColMetaData, TokenDone, TokenEnvChange, TokenError,
-            TokenInfo, TokenLoginAck, TokenOrder, TokenReturnValue, TokenRow,
+            BytesData, ColumnData, Decode, FixedLenType, Packet, TokenColMetaData, TokenDone,
+            TokenEnvChange, TokenError, TokenInfo, TokenLoginAck, TokenOrder, TokenReturnValue,
+            TokenRow, TypeInfo, VarLenType, VariableLengthContext, VariableLengthPrecisionContext,
         },
         Context,
     },
@@ -13,7 +14,6 @@ use crate::{
 };
 use bytes::{Buf, BytesMut};
 use futures::{ready, Stream, TryStream, TryStreamExt};
-use pretty_hex::*;
 use std::{
     convert::TryFrom,
     pin::Pin,
@@ -45,6 +45,7 @@ pub(crate) struct TokenStream<'a, S> {
     context: &'a Context,
     buf: BytesMut,
     has_more_data: bool,
+    row_cache: Vec<ColumnData<'static>>,
 }
 
 impl<'a, S> TokenStream<'a, S>
@@ -57,6 +58,7 @@ where
             context,
             buf: BytesMut::new(),
             has_more_data: true,
+            row_cache: Vec::new(),
         }
     }
 
@@ -82,31 +84,103 @@ where
     }
 
     fn get_col_metadata(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let meta = Arc::new(TokenColMetaData::decode(&mut self.buf)?);
+        self.row_cache.reserve(meta.columns.len());
         self.context.set_last_meta(meta.clone());
+
         event!(Level::TRACE, ?meta);
+
         Ok(ReceivedToken::NewResultset(meta))
     }
 
-    fn get_row(&mut self) -> crate::Result<ReceivedToken> {
-        let mut src = BytesData::new(&mut self.buf, self.context);
-        let row = TokenRow::decode(&mut src)?;
-        event!(Level::TRACE, message = ?row);
-        Ok(ReceivedToken::Row(row))
+    fn try_fill_buffer(
+        &mut self,
+        expected_size: usize,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<crate::Result<()>> {
+        if self.has_more_data && self.buf.len() < expected_size {
+            if let Poll::Pending = self.fetch_packet(cx) {
+                return Poll::Pending;
+            }
+        }
+
+        if self.buf.len() < expected_size {
+            return Poll::Pending;
+        }
+
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_row(&mut self, cx: &mut task::Context<'_>) -> Poll<crate::Result<TokenRow>> {
+        let col_meta = self.context.last_meta.lock().clone().unwrap();
+        let handled_columns = self.row_cache.len();
+
+        for column in col_meta.columns.iter().skip(handled_columns) {
+            let data = match column.base.ty {
+                TypeInfo::FixedLen(fixed_ty) => {
+                    ready!(self.try_fill_buffer(fixed_ty.len(), cx))?;
+                    self.buf.get_u8(); // ty
+                    let mut src: BytesData<FixedLenType> = BytesData::new(&mut self.buf, &fixed_ty);
+                    ColumnData::decode(&mut src)?
+                }
+                TypeInfo::VarLenSized(ty, max_len, collation) => {
+                    let size = ty.get_size(max_len, &self.buf.bytes());
+                    ready!(self.try_fill_buffer(size, cx))?;
+                    self.buf.get_u8(); // ty
+
+                    let context = VariableLengthContext::new(ty, max_len, collation);
+
+                    let mut src: BytesData<VariableLengthContext> =
+                        BytesData::new(&mut self.buf, &context);
+
+                    ColumnData::decode(&mut src)?
+                }
+                TypeInfo::VarLenSizedPrecision { ty, scale, .. } => match ty {
+                    VarLenType::Decimaln | VarLenType::Numericn => {
+                        let size = self.buf.bytes().get_u8() as usize;
+                        ready!(self.try_fill_buffer(size, cx))?;
+                        self.buf.get_u8(); // ty
+
+                        let context = VariableLengthPrecisionContext { scale };
+                        let mut src = BytesData::new(&mut self.buf, &context);
+
+                        ColumnData::decode(&mut src)?
+                    }
+                    _ => todo!(),
+                },
+            };
+
+            self.row_cache.push(data);
+        }
+
+        if col_meta.columns.len() == self.row_cache.len() {
+            let row = TokenRow {
+                meta: col_meta,
+                columns: self.row_cache.drain(..).collect(),
+            };
+
+            Poll::Ready(Ok(row))
+        } else {
+            Poll::Pending
+        }
     }
 
     fn get_return_value(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let return_value = TokenReturnValue::decode(&mut self.buf)?;
         event!(Level::TRACE, message = ?return_value);
         Ok(ReceivedToken::ReturnValue(return_value))
     }
 
     fn get_return_status(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let status = self.buf.get_u32_le();
         Ok(ReceivedToken::ReturnStatus(status))
     }
 
     fn get_error(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let err = TokenError::decode(&mut src)?;
         event!(Level::ERROR, message = %err.message, code = err.code);
@@ -114,12 +188,14 @@ where
     }
 
     fn get_order(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let order = TokenOrder::decode(&mut self.buf)?;
         event!(Level::TRACE, message = ?order);
         Ok(ReceivedToken::Order(order))
     }
 
     fn get_done_value(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
@@ -127,6 +203,7 @@ where
     }
 
     fn get_done_proc_value(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
@@ -134,6 +211,7 @@ where
     }
 
     fn get_done_in_proc_value(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
@@ -141,6 +219,7 @@ where
     }
 
     fn get_env_change(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let change = TokenEnvChange::decode(&mut self.buf)?;
 
         if let TokenEnvChange::PacketSize(new_size, _) = change {
@@ -153,12 +232,14 @@ where
     }
 
     fn get_info(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let info = TokenInfo::decode(&mut self.buf)?;
         event!(Level::INFO, "{}", info.message);
         Ok(ReceivedToken::Info(info))
     }
 
     fn get_login_ack(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let ack = TokenLoginAck::decode(&mut self.buf)?;
         event!(Level::INFO, "{} version {}", ack.prog_name, ack.version);
         Ok(ReceivedToken::LoginAck(ack))
@@ -166,6 +247,7 @@ where
 
     #[cfg(windows)]
     fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
+        self.buf.get_u8(); // ty
         let sspi = TokenSSPI::decode(&mut self.buf)?;
         event!(Level::INFO, "SSPI response");
         Ok(ReceivedToken::SSPI(sspi))
@@ -199,8 +281,7 @@ where
                 self.buf.len() >= len
             }
             Row => {
-                let len = self.context.row_size().unwrap();
-                self.buf.len() >= len
+                true // we handle the size checks per column
             }
             Done | DoneProc | DoneInProc => {
                 let len = self.context.version.done_row_count_bytes() as usize + 4;
@@ -228,7 +309,7 @@ where
             ready!(this.fetch_packet(cx));
         }
 
-        let ty_byte = this.buf.get_u8();
+        let ty_byte = this.buf.bytes().get_u8();
         let ty = TokenType::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;
 
@@ -239,7 +320,10 @@ where
         match ty {
             TokenType::ReturnStatus => Poll::Ready(Some(this.get_return_status())),
             TokenType::ColMetaData => Poll::Ready(Some(this.get_col_metadata())),
-            TokenType::Row => Poll::Ready(Some(this.get_row())),
+            TokenType::Row => {
+                let row = ready!(this.poll_row(cx))?;
+                Poll::Ready(Some(Ok(ReceivedToken::Row(row))))
+            }
             TokenType::Done => Poll::Ready(Some(this.get_done_value())),
             TokenType::DoneProc => Poll::Ready(Some(this.get_done_proc_value())),
             TokenType::DoneInProc => Poll::Ready(Some(this.get_done_in_proc_value())),
