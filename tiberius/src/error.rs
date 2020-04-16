@@ -26,8 +26,8 @@ pub enum Error {
     Encoding(Cow<'static, str>),
     #[error("Conversion error: {}", _0)]
     Conversion(Cow<'static, str>),
-    #[error("UTF-8 error: {}", _0)]
-    Utf8(std::str::Utf8Error),
+    #[error("UTF-8 error")]
+    Utf8,
     #[error("UTF-16 error")]
     Utf16,
     #[error("Error parsing an integer: {}", _0)]
@@ -57,8 +57,14 @@ impl From<std::num::ParseIntError> for Error {
 }
 
 impl From<std::str::Utf8Error> for Error {
-    fn from(err: std::str::Utf8Error) -> Error {
-        Error::Utf8(err)
+    fn from(_: std::str::Utf8Error) -> Error {
+        Error::Utf8
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(_err: std::string::FromUtf8Error) -> Error {
+        Error::Utf8
     }
 }
 

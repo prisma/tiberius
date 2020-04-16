@@ -1,6 +1,7 @@
 use super::Decode;
 use crate::{protocol::types::Collation, uint_enum, Error};
 use bytes::{Buf, BytesMut};
+use pretty_hex::*;
 use std::convert::TryFrom;
 
 #[derive(Debug)]
@@ -111,6 +112,7 @@ impl Decode<BytesMut> for TypeInfo {
                     | VarLenType::BigVarChar
                     | VarLenType::BigBinary => src.get_u16_le() as usize,
                     VarLenType::Daten => 3,
+                    VarLenType::Text => src.get_u32_le() as usize,
                     _ => unimplemented!(),
                 };
 

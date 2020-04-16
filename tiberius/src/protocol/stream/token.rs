@@ -13,6 +13,7 @@ use crate::{
 };
 use bytes::{Buf, BytesMut};
 use futures::{ready, Stream, TryStream, TryStreamExt};
+use pretty_hex::*;
 use std::{
     convert::TryFrom,
     pin::Pin,
@@ -228,7 +229,6 @@ where
         }
 
         let ty_byte = this.buf.get_u8();
-
         let ty = TokenType::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;
 

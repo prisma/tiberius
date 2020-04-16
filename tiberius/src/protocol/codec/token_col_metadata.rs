@@ -1,6 +1,7 @@
-use super::{read_varchar, Decode, FixedLenType, TypeInfo};
+use super::{read_varchar, Decode, FixedLenType, TypeInfo, VarLenType};
 use bitflags::bitflags;
 use bytes::{Buf, BytesMut};
+use pretty_hex::*;
 
 #[derive(Debug)]
 pub struct TokenColMetaData {
@@ -111,6 +112,19 @@ impl Decode<BytesMut> for BaseMetaDataColumn {
         let raw_flags = src.get_u16_le();
         let flags = ColmetaDataFlags::from_bits(raw_flags).unwrap();
         let ty = TypeInfo::decode(src)?;
+
+        match ty {
+            TypeInfo::VarLenSized(VarLenType::Text, _, _) => {
+                src.get_u16_le();
+                src.get_u16_le();
+                src.get_u16_le();
+
+                // table name (wtf)
+                let len = src.get_u16_le();
+                read_varchar(src, len)?;
+            }
+            _ => (),
+        }
 
         // TODO: for type={text, ntext, and image} TABLENAME
 

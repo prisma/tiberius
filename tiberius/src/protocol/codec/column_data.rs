@@ -6,6 +6,7 @@ use crate::{
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{Buf, BufMut, BytesMut};
 use encoding::DecoderTrap;
+use pretty_hex::*;
 use protocol::types::{Collation, Guid};
 use std::borrow::Cow;
 
@@ -194,8 +195,19 @@ impl<'a> Decode<BytesData<'a, VariableLengthContext>> for ColumnData<'static> {
                 todo!()
             }
             VarLenType::BigBinary => Self::decode_binary(len, src)?,
+            VarLenType::Text => {
+                let ptr_len = src.get_u8() as usize;
+                let _ = src.split_to(ptr_len); // text ptr
 
-            _ => unimplemented!(),
+                src.get_i32_le(); // days
+                src.get_u32_le(); // second fractions
+
+                let text_len = src.get_u32_le() as usize;
+                let text = String::from_utf8(src.split_to(text_len).to_vec())?;
+
+                ColumnData::String(text.into())
+            }
+            t => unimplemented!("{:?}", t),
         };
 
         Ok(res)
