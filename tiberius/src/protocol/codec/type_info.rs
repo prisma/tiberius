@@ -99,7 +99,6 @@ uint_enum! {
 impl VarLenType {
     pub fn get_size(&self, max_len: usize, mut buf: &[u8]) -> usize {
         use VarLenType::*;
-        buf.get_u8(); // ty
 
         match self {
             Bitn | Intn | Floatn | Guid | Money => buf.get_u8() as usize + 1, // including size
@@ -117,7 +116,7 @@ impl VarLenType {
                 let text_len = buf.get_u32_le() as usize;
 
                 // ptr len byte, ptr len, days, seconds, text_length
-                18 + 4 + 4 + text_len
+                17 + 4 + 4 + text_len
             }
             _ => todo!("{:?}", self),
         }

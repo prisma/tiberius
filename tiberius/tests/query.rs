@@ -81,7 +81,7 @@ async fn test_stored_procedure_multiple() -> Result<()> {
 #[tokio::test]
 async fn test_type_bool() -> Result<()> {
     let mut conn = connect().await?;
-    let mut stream = conn.query("SELECT @P1, @P2", &[&true, &false]).await?;
+    let mut stream = conn.query("SELECT @P1, @P2", &[&false, &false]).await?;
     let mut rows: Vec<bool> = Vec::with_capacity(2);
 
     while let Some(row) = stream.next().await {
@@ -90,7 +90,7 @@ async fn test_type_bool() -> Result<()> {
         rows.push(row.get(1));
     }
 
-    assert_eq!(rows, vec![true, false]);
+    assert_eq!(rows, vec![false, false]);
     Ok(())
 }
 

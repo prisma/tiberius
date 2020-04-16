@@ -125,7 +125,7 @@ where
                     ColumnData::decode(&mut src)?
                 }
                 TypeInfo::VarLenSized(ty, max_len, collation) => {
-                    let size = ty.get_size(max_len, &self.buf.bytes());
+                    let size = ty.get_size(max_len, &self.buf[1..]);
                     ready!(self.try_fill_buffer(size, cx))?;
                     self.buf.get_u8(); // ty
 
@@ -138,7 +138,7 @@ where
                 }
                 TypeInfo::VarLenSizedPrecision { ty, scale, .. } => match ty {
                     VarLenType::Decimaln | VarLenType::Numericn => {
-                        let size = self.buf.bytes().get_u8() as usize;
+                        let size = self.buf[0] as usize;
                         ready!(self.try_fill_buffer(size, cx))?;
                         self.buf.get_u8(); // ty
 
