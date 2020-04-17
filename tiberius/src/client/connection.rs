@@ -10,7 +10,7 @@ use crate::{
 };
 use bytes::BytesMut;
 use codec::PacketCodec;
-use futures::{SinkExt, Stream};
+use futures::{SinkExt, Stream, TryStream};
 use std::{
     cmp,
     pin::Pin,
@@ -18,6 +18,7 @@ use std::{
     task,
 };
 use task::Poll;
+use tokio::future::poll_fn;
 use tokio_util::codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
@@ -70,6 +71,26 @@ impl Connection {
         SinkExt::<Packet>::flush(&mut self.transport).await?;
 
         Ok(())
+    }
+
+    pub(crate) async fn flush_packets(&mut self) -> crate::Result<()> {
+        poll_fn(|cx| {
+            while let Poll::Ready(Some(packet)) = Pin::new(&mut self.transport).try_poll_next(cx)? {
+                event!(
+                    Level::WARN,
+                    "Flushing unhandled packet from the wire. Please consume your streams!",
+                );
+
+                let is_last = packet.is_last();
+
+                if is_last {
+                    break;
+                }
+            }
+
+            Poll::Ready(Ok(()))
+        })
+        .await
     }
 
     pub(crate) fn token_stream(&mut self) -> TokenStream<Transport> {

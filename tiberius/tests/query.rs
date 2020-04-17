@@ -308,3 +308,32 @@ async fn test_stored_procedure() -> Result<()> {
     assert_eq!(rows?, vec![1; 3]);
     Ok(())
 }
+
+#[tokio::test]
+async fn test_drop_stream_before_handling_all_results() -> Result<()> {
+    let mut conn = connect().await?;
+
+    {
+        let stream = conn
+            .query(
+                "SELECT @P1; SELECT @P2;",
+                &[&"a".repeat(8000), &"b".repeat(8001)],
+            )
+            .await?;
+
+        let res: Vec<_> = stream
+            .map_ok(|x| x.get::<_, String>(0))
+            .try_collect()
+            .await?;
+
+        assert_eq!("a".repeat(8000), res[0]);
+    }
+
+    {
+        let stream = conn.query("SELECT @P1", &[&1i32]).await?;
+        let res: Vec<_> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await?;
+        assert_eq!(1i32, res[0]);
+    }
+
+    Ok(())
+}
