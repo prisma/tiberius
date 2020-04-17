@@ -11,7 +11,6 @@ mod error;
 mod macros;
 mod protocol;
 mod row;
-mod statement;
 mod tls;
 
 pub use client::*;

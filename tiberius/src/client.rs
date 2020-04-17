@@ -8,16 +8,13 @@ use crate::{
     prepared,
     protocol::{
         codec::{self, RpcOptionFlags, RpcStatusFlags},
-        stream::ResultSet,
+        stream::{ReceivedToken, ResultSet},
         Context,
     },
-    statement::{private, ToStatement},
 };
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
-use std::{
-    borrow::Cow,
-    sync::{atomic, Arc},
-};
+use futures::TryStreamExt;
+use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug, Clone)]
 pub enum AuthMethod {
@@ -62,58 +59,71 @@ impl Client {
         ClientBuilder::default()
     }
 
-    pub async fn query<'a, 'b, T: ?Sized>(
+    pub async fn execute(
+        &mut self,
+        query: impl Into<Cow<'_, str>>,
+        params: &[&dyn prepared::ToSql],
+    ) -> crate::Result<u64> {
+        let rpc_params = vec![
+            RpcParam {
+                name: Cow::Borrowed("stmt"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::String(query.into()),
+            },
+            RpcParam {
+                name: Cow::Borrowed("params"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::I32(0),
+            },
+        ];
+
+        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
+            .await?;
+
+        let mut ts = self.connection.token_stream();
+
+        loop {
+            match ts.try_next().await? {
+                Some(ReceivedToken::DoneInProc(token_done)) => return Ok(token_done.done_rows),
+                Some(ReceivedToken::Done(token_done)) => return Ok(token_done.done_rows),
+                _ => continue,
+            }
+        }
+    }
+
+    pub async fn query<'a, 'b>(
         &'a mut self,
-        stmt: &'b T,
+        query: impl Into<Cow<'a, str>>,
         params: &'b [&'b dyn prepared::ToSql],
     ) -> crate::Result<ResultSet<'a>>
     where
         'a: 'b,
-        T: ToStatement + 'a,
     {
-        match stmt.to_stmt() {
-            private::StatementRepr::QueryString(ref query) => {
-                self.sp_execute_sql(query, params).await
-            }
-            private::StatementRepr::Statement(ref stmt) => {
-                let query = &stmt.query;
-                let mut query_signature = format!("{}:{}:", query.len(), query);
+        let rpc_params = vec![
+            RpcParam {
+                name: Cow::Borrowed("stmt"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::String(query.into()),
+            },
+            RpcParam {
+                name: Cow::Borrowed("params"),
+                flags: RpcStatusFlags::empty(),
+                value: ColumnData::I32(0),
+            },
+        ];
 
-                for param in params {
-                    query_signature += param.to_sql().0;
-                }
+        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
+            .await?;
 
-                let mut inserted = true;
-
-                let stmt_handle = stmt
-                    .handles
-                    .lock()
-                    .entry(query_signature)
-                    .and_modify(|_| inserted = false)
-                    .or_insert_with(|| Arc::new(atomic::AtomicI32::new(0)))
-                    .clone();
-
-                if inserted {
-                    return self.sp_execute_sql(query, params).await;
-                }
-
-                if stmt_handle.load(atomic::Ordering::SeqCst) == 0 {
-                    return self.sp_prep_exec(stmt_handle, query, params).await;
-                }
-
-                // sp_execute
-                self.sp_execute(stmt_handle, params).await
-            }
-        }
+        Ok(ResultSet::new(&mut self.connection, &self.context))
     }
 
     async fn rpc_perform_query<'a, 'b>(
         &'a mut self,
         proc_id: RpcProcId,
-        mut rpc_params: Vec<RpcParam<'static>>,
+        mut rpc_params: Vec<RpcParam<'b>>,
         params: &'b [&'b dyn prepared::ToSql],
-        stmt_handle: Arc<atomic::AtomicI32>,
-    ) -> crate::Result<ResultSet<'a>>
+    ) -> crate::Result<()>
     where
         'a: 'b,
     {
@@ -148,91 +158,6 @@ impl Client {
             .send(PacketHeader::rpc(&self.context), req)
             .await?;
 
-        Ok(ResultSet::new(
-            &mut self.connection,
-            stmt_handle,
-            &self.context,
-        ))
-    }
-
-    async fn sp_execute_sql<'a, 'b>(
-        &'a mut self,
-        query: &'b str,
-        params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<ResultSet<'a>>
-    where
-        'a: 'b,
-    {
-        let rpc_params = vec![
-            RpcParam {
-                name: Cow::Borrowed("stmt"),
-                flags: RpcStatusFlags::empty(),
-                value: ColumnData::String(query.to_string().into()),
-            },
-            RpcParam {
-                name: Cow::Borrowed("params"),
-                flags: RpcStatusFlags::empty(),
-                value: ColumnData::I32(0),
-            },
-        ];
-
-        let dummy = Arc::new(atomic::AtomicI32::new(0));
-
-        let res = self
-            .rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params, dummy)
-            .await?;
-
-        Ok(res)
-    }
-
-    async fn sp_prep_exec<'a, 'b>(
-        &'a mut self,
-        ret_handle: Arc<atomic::AtomicI32>,
-        query: &'b str,
-        params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<ResultSet<'a>>
-    where
-        'a: 'b,
-    {
-        let rpc_params = vec![
-            RpcParam {
-                name: Cow::Borrowed("handle"),
-                flags: RpcStatusFlags::PARAM_BY_REF_VALUE,
-                value: ColumnData::I32(0),
-            },
-            RpcParam {
-                name: Cow::Borrowed("params"),
-                flags: RpcStatusFlags::empty(),
-                value: ColumnData::I32(0),
-            },
-            RpcParam {
-                name: Cow::Borrowed("stmt"),
-                flags: RpcStatusFlags::empty(),
-                value: ColumnData::String(query.to_string().into()),
-            },
-        ];
-
-        self.rpc_perform_query(RpcProcId::SpPrepExec, rpc_params, params, ret_handle)
-            .await
-    }
-
-    async fn sp_execute<'a, 'b>(
-        &'a mut self,
-        stmt_handle: Arc<atomic::AtomicI32>,
-        params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<ResultSet<'a>>
-    where
-        'a: 'b,
-    {
-        let rpc_params = vec![RpcParam {
-            // handle (using "handle" here makes RpcProcId::SpExecute not work and requires RpcProcIdValue::NAME, wtf)
-            // not specifying the name is better anyways to reduce overhead on execute
-            name: Cow::Borrowed(""),
-            flags: RpcStatusFlags::empty(),
-            value: ColumnData::I32(stmt_handle.load(atomic::Ordering::SeqCst)),
-        }];
-
-        self.rpc_perform_query(RpcProcId::SpExecute, rpc_params, params, stmt_handle)
-            .await
+        Ok(())
     }
 }

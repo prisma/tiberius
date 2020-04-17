@@ -16,12 +16,8 @@ pub struct ResultSet<'a> {
 }
 
 impl<'a> ResultSet<'a> {
-    pub fn new(
-        connection: &'a mut Connection,
-        stmt_handle: Arc<std::sync::atomic::AtomicI32>,
-        context: &'a Context,
-    ) -> Self {
-        let stream = QueryStream::new(connection, stmt_handle, context);
+    pub fn new(connection: &'a mut Connection, context: &'a Context) -> Self {
+        let stream = QueryStream::new(connection, context);
         Self { stream }
     }
 
@@ -61,12 +57,8 @@ impl<'a, S> QueryStream<'a, S>
 where
     S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
 {
-    pub fn new(
-        packet_stream: &'a mut S,
-        stmt_handle: Arc<std::sync::atomic::AtomicI32>,
-        context: &'a Context,
-    ) -> Self {
-        let prepared_stream = PreparedStream::new(packet_stream, stmt_handle, context);
+    pub fn new(packet_stream: &'a mut S, context: &'a Context) -> Self {
+        let prepared_stream = PreparedStream::new(packet_stream, context);
 
         Self {
             prepared_stream,
