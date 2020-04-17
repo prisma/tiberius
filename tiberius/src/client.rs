@@ -64,6 +64,8 @@ impl Client {
         query: impl Into<Cow<'_, str>>,
         params: &[&dyn prepared::ToSql],
     ) -> crate::Result<u64> {
+        self.connection.flush_packets().await?;
+
         let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
@@ -99,6 +101,8 @@ impl Client {
     where
         'a: 'b,
     {
+        self.connection.flush_packets().await?;
+
         let rpc_params = vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),

@@ -15,18 +15,23 @@ async fn main() -> anyhow::Result<()> {
     {
         let stream = conn
             .query(
-                "INSERT INTO test1 (first_name, last_name) VALUES (@P1, @P2), (@P3, @P4)",
-                &[&"foo", &"bar", &"omg", &"lol"],
+                "SELECT @P1; SELECT @P2;",
+                &[&"a".repeat(8000), &"b".repeat(80001)],
             )
             .await?;
 
-        let rows: Vec<String> = stream
+        let res: Vec<_> = stream
             .map_ok(|x| x.get::<_, String>(0))
             .try_collect()
             .await?;
 
-        //println!("Result for SELECT of a big string: {:?}", rows);
-        println!("{:?}", rows);
+        assert_eq!("a".repeat(8000), res[0]);
+    }
+
+    {
+        let stream = conn.query("SELECT @P1", &[&1i32]).await?;
+        let res: Vec<_> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await?;
+        assert_eq!(1i32, res[0]);
     }
 
     Ok(())
