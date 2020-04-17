@@ -84,7 +84,6 @@ where
     }
 
     fn get_col_metadata(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let meta = Arc::new(TokenColMetaData::decode(&mut self.buf)?);
         self.row_cache.reserve(meta.columns.len());
         self.context.set_last_meta(meta.clone());
@@ -120,14 +119,12 @@ where
             let data = match column.base.ty {
                 TypeInfo::FixedLen(fixed_ty) => {
                     ready!(self.try_fill_buffer(fixed_ty.len(), cx))?;
-                    self.buf.get_u8(); // ty
                     let mut src: BytesData<FixedLenType> = BytesData::new(&mut self.buf, &fixed_ty);
                     ColumnData::decode(&mut src)?
                 }
                 TypeInfo::VarLenSized(ty, max_len, collation) => {
-                    let size = ty.get_size(max_len, &self.buf[1..]);
+                    let size = ty.get_size(max_len, &self.buf);
                     ready!(self.try_fill_buffer(size, cx))?;
-                    self.buf.get_u8(); // ty
 
                     let context = VariableLengthContext::new(ty, max_len, collation);
 
@@ -140,7 +137,6 @@ where
                     VarLenType::Decimaln | VarLenType::Numericn => {
                         let size = self.buf[0] as usize;
                         ready!(self.try_fill_buffer(size, cx))?;
-                        self.buf.get_u8(); // ty
 
                         let context = VariableLengthPrecisionContext { scale };
                         let mut src = BytesData::new(&mut self.buf, &context);
@@ -167,20 +163,17 @@ where
     }
 
     fn get_return_value(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let return_value = TokenReturnValue::decode(&mut self.buf)?;
         event!(Level::TRACE, message = ?return_value);
         Ok(ReceivedToken::ReturnValue(return_value))
     }
 
     fn get_return_status(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let status = self.buf.get_u32_le();
         Ok(ReceivedToken::ReturnStatus(status))
     }
 
     fn get_error(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let err = TokenError::decode(&mut src)?;
         event!(Level::ERROR, message = %err.message, code = err.code);
@@ -188,14 +181,12 @@ where
     }
 
     fn get_order(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let order = TokenOrder::decode(&mut self.buf)?;
         event!(Level::TRACE, message = ?order);
         Ok(ReceivedToken::Order(order))
     }
 
     fn get_done_value(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
@@ -203,7 +194,6 @@ where
     }
 
     fn get_done_proc_value(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
@@ -211,7 +201,6 @@ where
     }
 
     fn get_done_in_proc_value(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let mut src = BytesData::new(&mut self.buf, self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
@@ -219,7 +208,6 @@ where
     }
 
     fn get_env_change(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let change = TokenEnvChange::decode(&mut self.buf)?;
 
         if let TokenEnvChange::PacketSize(new_size, _) = change {
@@ -232,14 +220,12 @@ where
     }
 
     fn get_info(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let info = TokenInfo::decode(&mut self.buf)?;
         event!(Level::INFO, "{}", info.message);
         Ok(ReceivedToken::Info(info))
     }
 
     fn get_login_ack(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let ack = TokenLoginAck::decode(&mut self.buf)?;
         event!(Level::INFO, "{} version {}", ack.prog_name, ack.version);
         Ok(ReceivedToken::LoginAck(ack))
@@ -247,7 +233,6 @@ where
 
     #[cfg(windows)]
     fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
-        self.buf.get_u8(); // ty
         let sspi = TokenSSPI::decode(&mut self.buf)?;
         event!(Level::INFO, "SSPI response");
         Ok(ReceivedToken::SSPI(sspi))
@@ -309,9 +294,14 @@ where
             ready!(this.fetch_packet(cx));
         }
 
-        let ty_byte = this.buf.bytes().get_u8();
-        let ty = TokenType::try_from(ty_byte)
-            .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;
+        let ty = if this.row_cache.len() == 0 {
+            let ty_byte = this.buf.get_u8();
+
+            TokenType::try_from(ty_byte)
+                .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?
+        } else {
+            TokenType::Row
+        };
 
         while this.has_more_data && !this.enough_data_for(ty) {
             ready!(this.fetch_packet(cx));
