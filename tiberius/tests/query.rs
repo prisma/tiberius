@@ -65,6 +65,37 @@ async fn test_simple_query() -> Result<()> {
 */
 
 #[tokio::test]
+async fn test_correct_row_handling_when_not_enough_data() -> Result<()> {
+    let mut conn = connect().await?;
+
+    let mut stream = conn
+        .query(
+            "SELECT @P1; SELECT @P2;",
+            &[&"a".repeat(4001), &"b".repeat(2095)],
+        )
+        .await?;
+
+    let result: Vec<String> = stream
+        .by_ref()
+        .map_ok(|x| x.get::<_, String>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(vec!["a".repeat(4001)], result);
+
+    stream.next_resultset();
+
+    let result: Vec<String> = stream
+        .map_ok(|x| x.get::<_, String>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(vec!["b".repeat(2095)], result);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_stored_procedure_multiple_sp() -> Result<()> {
     let mut conn = connect().await?;
     let mut stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'; EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1'", &[]).await?;
