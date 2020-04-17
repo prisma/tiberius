@@ -65,6 +65,36 @@ async fn test_simple_query() -> Result<()> {
 */
 
 #[tokio::test]
+async fn test_execute() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##Test (id int)", &[]).await?;
+
+    let insert_count = conn
+        .execute(
+            "INSERT INTO ##Test (id) VALUES (@P1), (@P2), (@P3)",
+            &[&1i32, &2i32, &3i32],
+        )
+        .await?;
+
+    assert_eq!(3, insert_count);
+
+    let update_count = conn
+        .execute("UPDATE ##Test SET id = @P1 WHERE id = @P2", &[&2i32, &1i32])
+        .await?;
+
+    assert_eq!(1, update_count);
+
+    let delete_count = conn
+        .execute("DELETE ##Test WHERE id <> @P1", &[&3i32])
+        .await?;
+
+    assert_eq!(2, delete_count);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_correct_row_handling_when_not_enough_data() -> Result<()> {
     let mut conn = connect().await?;
 
