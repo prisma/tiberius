@@ -87,19 +87,19 @@ async fn test_stored_procedure_multiple_sp() -> Result<()> {
 #[tokio::test]
 async fn test_stored_procedure_multiple() -> Result<()> {
     let mut conn = connect().await?;
-    let mut stream = conn.query("SELECT 1; SELECT 2;", &[]).await?;
+    let mut stream = conn.query("SELECT 'a'; SELECT 'b';", &[]).await?;
 
-    let rows: Result<Vec<i32>> = stream
+    let rows: Result<Vec<String>> = stream
         .by_ref()
-        .map_ok(|x| x.get::<_, i32>(0))
+        .map_ok(|x| x.get::<_, String>(0))
         .try_collect()
         .await;
 
-    assert_eq!(rows?, vec![1]);
-    assert!(dbg!(stream.next_resultset()));
+    assert_eq!(rows?, vec!["a".to_string()]);
+    assert!(stream.next_resultset());
 
-    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
-    assert_eq!(rows?, vec![2]);
+    let rows: Result<Vec<String>> = stream.map_ok(|x| x.get::<_, String>(0)).try_collect().await;
+    assert_eq!(rows?, vec!["b".to_string()]);
 
     Ok(())
 }

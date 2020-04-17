@@ -1,4 +1,4 @@
-use futures::TryStreamExt;
+use futures::{StreamExt, TryStreamExt};
 use tiberius::{client::AuthMethod, Client};
 
 #[tokio::main]
@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
     }
     */
 
+    /*
     {
         let stream = conn.query("SELECT name FROM test2", &[]).await?;
 
@@ -37,19 +38,37 @@ async fn main() -> anyhow::Result<()> {
         //println!("Result for SELECT of a big string: {:?}", rows);
         println!("length: {}", rows[0].len());
     }
+    */
 
     {
-        let stream = conn.query("SELECT @P1", &[&"a".repeat(8001)]).await?;
+        let mut stream = conn
+            .query(
+                "SELECT @P1; SELECT @P2;",
+                &[&"a".repeat(4001), &"b".repeat(2095)],
+            )
+            .await?;
 
-        let rows: Vec<String> = stream
+        let result: Vec<String> = stream
+            .by_ref()
             .map_ok(|x| x.get::<_, String>(0))
             .try_collect()
             .await?;
 
         //println!("Result for SELECT of a big string: {:?}", rows);
-        println!("length: {}", rows[0].len());
+        println!("length: {}", result[0].len());
+
+        stream.next_resultset();
+
+        let result: Vec<String> = stream
+            .map_ok(|x| x.get::<_, String>(0))
+            .try_collect()
+            .await?;
+
+        //println!("Result for SELECT of a big string: {:?}", rows);
+        println!("length: {}", result[0].len());
     }
 
+    /*
     {
         let stream = conn.query("SELECT first_name from test1", &[]).await?;
 
@@ -62,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
         println!("length: {}", rows[0].len());
         println!("length: {}", rows[1].len());
     }
+    */
 
     Ok(())
 }
