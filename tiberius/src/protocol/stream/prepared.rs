@@ -6,6 +6,7 @@ use crate::protocol::{
 use futures::{ready, Stream, StreamExt};
 use std::{
     pin::Pin,
+    sync::Arc,
     task::{self, Poll},
 };
 
@@ -18,7 +19,7 @@ impl<'a, S> PreparedStream<'a, S>
 where
     S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
 {
-    pub fn new(packet_stream: &'a mut S, context: &'a Context) -> Self {
+    pub fn new(packet_stream: &'a mut S, context: Arc<Context>) -> Self {
         Self {
             token_stream: TokenStream::new(packet_stream, context),
             read_ahead: None,

@@ -10,7 +10,7 @@ use crate::{
 };
 use bytes::BytesMut;
 use codec::PacketCodec;
-use futures::{SinkExt, Stream, TryStream};
+use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use std::{
     cmp,
     pin::Pin,
@@ -18,7 +18,6 @@ use std::{
     task,
 };
 use task::Poll;
-use tokio::future::poll_fn;
 use tokio_util::codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
@@ -28,18 +27,25 @@ pub type Transport = Framed<MaybeTlsStream, PacketCodec>;
 
 pub struct Connection {
     transport: Transport,
+    flushed: bool,
     context: Arc<Context>,
 }
 
 impl Connection {
     pub(crate) fn new(transport: Transport, context: Arc<Context>) -> Self {
-        Self { transport, context }
+        Self {
+            transport,
+            context,
+            flushed: false,
+        }
     }
 
     pub(crate) async fn send<E>(&mut self, mut header: PacketHeader, item: E) -> crate::Result<()>
     where
         E: Sized + Encode<BytesMut>,
     {
+        self.flushed = false;
+
         let packet_size = self.context.packet_size.load(Ordering::SeqCst) as usize - HEADER_BYTES;
 
         let mut payload = BytesMut::new();
@@ -74,27 +80,28 @@ impl Connection {
     }
 
     pub(crate) async fn flush_packets(&mut self) -> crate::Result<()> {
-        poll_fn(|cx| {
-            while let Poll::Ready(Some(packet)) = Pin::new(&mut self.transport).try_poll_next(cx)? {
-                event!(
-                    Level::WARN,
-                    "Flushing unhandled packet from the wire. Please consume your streams!",
-                );
+        if self.flushed {
+            return Ok(());
+        }
 
-                let is_last = packet.is_last();
+        while let Some(packet) = self.try_next().await? {
+            event!(
+                Level::WARN,
+                "Flushing unhandled packet from the wire. Please consume your streams!",
+            );
 
-                if is_last {
-                    break;
-                }
+            let is_last = packet.is_last();
+
+            if is_last {
+                break;
             }
+        }
 
-            Poll::Ready(Ok(()))
-        })
-        .await
+        Ok(())
     }
 
-    pub(crate) fn token_stream(&mut self) -> TokenStream<Transport> {
-        TokenStream::new(&mut self.transport, &self.context)
+    pub(crate) fn token_stream(&mut self) -> TokenStream<Connection> {
+        TokenStream::new(self, self.context.clone())
     }
 
     pub(crate) async fn prelogin(
@@ -200,6 +207,7 @@ impl Connection {
             Ok(Self {
                 transport,
                 context: self.context,
+                flushed: false,
             })
         } else {
             Ok(self)
@@ -217,6 +225,15 @@ impl Stream for Connection {
     type Item = crate::Result<Packet>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.get_mut().transport).poll_next(cx)
+        let this = self.get_mut();
+
+        match ready!(Pin::new(&mut this.transport).try_poll_next(cx)) {
+            Some(Ok(packet)) => {
+                this.flushed = packet.is_last();
+                Poll::Ready(Some(Ok(packet)))
+            }
+            Some(Err(e)) => Err(e)?,
+            None => Poll::Ready(None),
+        }
     }
 }

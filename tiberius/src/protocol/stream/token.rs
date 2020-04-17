@@ -42,7 +42,7 @@ pub enum ReceivedToken {
 
 pub(crate) struct TokenStream<'a, S> {
     packet_stream: Pin<&'a mut S>,
-    context: &'a Context,
+    context: Arc<Context>,
     buf: BytesMut,
     has_more_data: bool,
     row_cache: Vec<ColumnData<'static>>,
@@ -53,7 +53,7 @@ impl<'a, S> TokenStream<'a, S>
 where
     S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
 {
-    pub(crate) fn new(packet_stream: &'a mut S, context: &'a Context) -> Self {
+    pub(crate) fn new(packet_stream: &'a mut S, context: Arc<Context>) -> Self {
         Self {
             packet_stream: Pin::new(packet_stream),
             context,
@@ -179,7 +179,7 @@ where
     }
 
     fn get_error(&mut self) -> crate::Result<ReceivedToken> {
-        let mut src = BytesData::new(&mut self.buf, self.context);
+        let mut src = BytesData::new(&mut self.buf, &*self.context);
         let err = TokenError::decode(&mut src)?;
         event!(Level::ERROR, message = %err.message, code = err.code);
         Err(Error::Server(err))
@@ -192,21 +192,21 @@ where
     }
 
     fn get_done_value(&mut self) -> crate::Result<ReceivedToken> {
-        let mut src = BytesData::new(&mut self.buf, self.context);
+        let mut src = BytesData::new(&mut self.buf, &*self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
         Ok(ReceivedToken::Done(done))
     }
 
     fn get_done_proc_value(&mut self) -> crate::Result<ReceivedToken> {
-        let mut src = BytesData::new(&mut self.buf, self.context);
+        let mut src = BytesData::new(&mut self.buf, &*self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
         Ok(ReceivedToken::DoneProc(done))
     }
 
     fn get_done_in_proc_value(&mut self) -> crate::Result<ReceivedToken> {
-        let mut src = BytesData::new(&mut self.buf, self.context);
+        let mut src = BytesData::new(&mut self.buf, &*self.context);
         let done = TokenDone::decode(&mut src)?;
         event!(Level::TRACE, "{}", done);
         Ok(ReceivedToken::DoneInProc(done))
