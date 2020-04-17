@@ -119,7 +119,7 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(ResultSet::new(&mut self.connection, &self.context))
+        Ok(ResultSet::new(&mut self.connection, self.context.clone()))
     }
 
     async fn rpc_perform_query<'a, 'b>(
