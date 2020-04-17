@@ -8,7 +8,7 @@ use crate::{
     prepared,
     protocol::{
         codec::{self, RpcOptionFlags, RpcStatusFlags},
-        stream::{QueryStream, RowStream},
+        stream::ResultSet,
         Context,
     },
     statement::{private, ToStatement},
@@ -66,7 +66,7 @@ impl Client {
         &'a mut self,
         stmt: &'b T,
         params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<RowStream<'a>>
+    ) -> crate::Result<ResultSet<'a>>
     where
         'a: 'b,
         T: ToStatement + 'a,
@@ -113,7 +113,7 @@ impl Client {
         mut rpc_params: Vec<RpcParam<'static>>,
         params: &'b [&'b dyn prepared::ToSql],
         stmt_handle: Arc<atomic::AtomicI32>,
-    ) -> crate::Result<RowStream<'a>>
+    ) -> crate::Result<ResultSet<'a>>
     where
         'a: 'b,
     {
@@ -148,7 +148,7 @@ impl Client {
             .send(PacketHeader::rpc(&self.context), req)
             .await?;
 
-        Ok(QueryStream::new(
+        Ok(ResultSet::new(
             &mut self.connection,
             stmt_handle,
             &self.context,
@@ -159,7 +159,7 @@ impl Client {
         &'a mut self,
         query: &'b str,
         params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<RowStream<'a>>
+    ) -> crate::Result<ResultSet<'a>>
     where
         'a: 'b,
     {
@@ -190,7 +190,7 @@ impl Client {
         ret_handle: Arc<atomic::AtomicI32>,
         query: &'b str,
         params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<RowStream<'a>>
+    ) -> crate::Result<ResultSet<'a>>
     where
         'a: 'b,
     {
@@ -220,7 +220,7 @@ impl Client {
         &'a mut self,
         stmt_handle: Arc<atomic::AtomicI32>,
         params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<RowStream<'a>>
+    ) -> crate::Result<ResultSet<'a>>
     where
         'a: 'b,
     {

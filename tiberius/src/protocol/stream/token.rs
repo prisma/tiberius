@@ -286,10 +286,6 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        if !this.has_more_data && this.buf.is_empty() {
-            return Poll::Ready(None);
-        }
-
         if this.buf.is_empty() {
             ready!(this.fetch_packet(cx));
         }

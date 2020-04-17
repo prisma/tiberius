@@ -11,9 +11,39 @@ use std::{
     task::{self, Poll},
 };
 
-pub type RowStream<'a> = QueryStream<'a, Connection>;
+pub struct ResultSet<'a> {
+    stream: QueryStream<'a, Connection>,
+}
 
-#[derive(Debug, Copy, Clone)]
+impl<'a> ResultSet<'a> {
+    pub fn new(
+        connection: &'a mut Connection,
+        stmt_handle: Arc<std::sync::atomic::AtomicI32>,
+        context: &'a Context,
+    ) -> Self {
+        let stream = QueryStream::new(connection, stmt_handle, context);
+        Self { stream }
+    }
+
+    pub fn next_resultset(&mut self) -> bool {
+        if self.stream.state == QueryStreamState::HasNext {
+            self.stream.state = QueryStreamState::Initial;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl<'a> Stream for ResultSet<'a> {
+    type Item = crate::Result<Row>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.get_mut().stream).poll_next(cx)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum QueryStreamState {
     Initial,
     HasPotentiallyNext,
