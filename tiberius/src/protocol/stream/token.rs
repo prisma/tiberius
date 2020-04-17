@@ -46,6 +46,7 @@ pub(crate) struct TokenStream<'a, S> {
     buf: BytesMut,
     has_more_data: bool,
     row_cache: Vec<ColumnData<'static>>,
+    handling_row: bool,
 }
 
 impl<'a, S> TokenStream<'a, S>
@@ -59,6 +60,7 @@ where
             buf: BytesMut::new(),
             has_more_data: true,
             row_cache: Vec::new(),
+            handling_row: false,
         }
     }
 
@@ -112,6 +114,7 @@ where
     }
 
     fn poll_row(&mut self, cx: &mut task::Context<'_>) -> Poll<crate::Result<TokenRow>> {
+        self.handling_row = true;
         let col_meta = self.context.last_meta.lock().clone().unwrap();
         let handled_columns = self.row_cache.len();
 
@@ -151,6 +154,8 @@ where
         }
 
         if col_meta.columns.len() == self.row_cache.len() {
+            self.handling_row = false;
+
             let row = TokenRow {
                 meta: col_meta,
                 columns: self.row_cache.drain(..).collect(),
@@ -290,13 +295,13 @@ where
             ready!(this.fetch_packet(cx));
         }
 
-        let ty = if this.row_cache.len() == 0 {
+        let ty = if this.handling_row {
+            TokenType::Row
+        } else {
             let ty_byte = this.buf.get_u8();
 
             TokenType::try_from(ty_byte)
                 .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?
-        } else {
-            TokenType::Row
         };
 
         while this.has_more_data && !this.enough_data_for(ty) {

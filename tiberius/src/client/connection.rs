@@ -186,13 +186,9 @@ impl Connection {
     }
 
     #[cfg(not(feature = "tls"))]
-    pub(crate) async fn tls_handshake(
-        &mut self,
-        ssl: EncryptionLevel,
-        _: bool,
-    ) -> crate::Result<()> {
+    pub(crate) async fn tls_handshake(self, ssl: EncryptionLevel, _: bool) -> crate::Result<Self> {
         assert_eq!(ssl, EncryptionLevel::NotSupported);
-        Ok(())
+        Ok(self)
     }
 }
 
