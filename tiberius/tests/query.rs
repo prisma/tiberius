@@ -68,28 +68,72 @@ async fn test_simple_query() -> Result<()> {
 async fn test_execute() -> Result<()> {
     let mut conn = connect().await?;
 
-    conn.execute("CREATE TABLE ##Test (id int)", &[]).await?;
+    conn.execute("CREATE TABLE ##TestExecute (id int)", &[])
+        .await?;
 
-    let insert_count = conn
+    let mut insert_count = conn
         .execute(
-            "INSERT INTO ##Test (id) VALUES (@P1), (@P2), (@P3)",
+            "INSERT INTO ##TestExecute (id) VALUES (@P1), (@P2), (@P3)",
             &[&1i32, &2i32, &3i32],
         )
         .await?;
 
-    assert_eq!(3, insert_count);
+    assert_eq!(Some(3), insert_count.try_next().await?);
 
-    let update_count = conn
-        .execute("UPDATE ##Test SET id = @P1 WHERE id = @P2", &[&2i32, &1i32])
+    let mut update_count = conn
+        .execute(
+            "UPDATE ##TestExecute SET id = @P1 WHERE id = @P2",
+            &[&2i32, &1i32],
+        )
         .await?;
 
-    assert_eq!(1, update_count);
+    assert_eq!(Some(1), update_count.try_next().await?);
 
-    let delete_count = conn
-        .execute("DELETE ##Test WHERE id <> @P1", &[&3i32])
+    let mut delete_count = conn
+        .execute("DELETE ##TestExecute WHERE id <> @P1", &[&3i32])
         .await?;
 
-    assert_eq!(2, delete_count);
+    assert_eq!(Some(2), delete_count.try_next().await?);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_execute_multiple_separate_results() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##TestExecuteMultiple (id int)", &[])
+        .await?;
+
+    let insert_count = conn
+        .execute(
+            "INSERT INTO ##TestExecuteMultiple (id) VALUES (@P1); INSERT INTO ##TestExecuteMultiple (id) VALUES (@P2), (@P3);",
+            &[&1i32, &2i32, &3i32],
+        )
+        .await?;
+
+    let result: Vec<_> = insert_count.try_collect().await?;
+    assert_eq!(vec![1, 2], result);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_execute_multiple_total() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##TestExecuteMultiple (id int)", &[])
+        .await?;
+
+    let mut insert_count = conn
+        .execute(
+            "INSERT INTO ##TestExecuteMultiple (id) VALUES (@P1); INSERT INTO ##TestExecuteMultiple (id) VALUES (@P2), (@P3);",
+            &[&1i32, &2i32, &3i32],
+        )
+        .await?;
+
+    let result = insert_count.total().await?;
+    assert_eq!(3, result);
 
     Ok(())
 }

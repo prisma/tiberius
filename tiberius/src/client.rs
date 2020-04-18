@@ -8,12 +8,11 @@ use crate::{
     prepared,
     protocol::{
         codec::{self, RpcOptionFlags, RpcStatusFlags},
-        stream::{ReceivedToken, ResultSet},
+        stream::{ExecuteResult, QueryResult},
         Context,
     },
 };
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
-use futures::TryStreamExt;
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug, Clone)]
@@ -59,11 +58,11 @@ impl Client {
         ClientBuilder::default()
     }
 
-    pub async fn execute(
-        &mut self,
+    pub async fn execute<'b, 'a: 'b>(
+        &'a mut self,
         query: impl Into<Cow<'_, str>>,
-        params: &[&dyn prepared::ToSql],
-    ) -> crate::Result<u64> {
+        params: &'b [&'b dyn prepared::ToSql],
+    ) -> crate::Result<ExecuteResult<'a>> {
         self.connection.flush_packets().await?;
 
         let rpc_params = vec![
@@ -82,22 +81,17 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        let mut ts = self.connection.token_stream();
-
-        loop {
-            match ts.try_next().await? {
-                Some(ReceivedToken::DoneInProc(token_done)) => return Ok(token_done.done_rows),
-                Some(ReceivedToken::Done(token_done)) => return Ok(token_done.done_rows),
-                _ => continue,
-            }
-        }
+        Ok(ExecuteResult::new(
+            &mut self.connection,
+            self.context.clone(),
+        ))
     }
 
     pub async fn query<'a, 'b>(
         &'a mut self,
         query: impl Into<Cow<'a, str>>,
         params: &'b [&'b dyn prepared::ToSql],
-    ) -> crate::Result<ResultSet<'a>>
+    ) -> crate::Result<QueryResult<'a>>
     where
         'a: 'b,
     {
@@ -119,7 +113,7 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(ResultSet::new(&mut self.connection, self.context.clone()))
+        Ok(QueryResult::new(&mut self.connection, self.context.clone()))
     }
 
     async fn rpc_perform_query<'a, 'b>(

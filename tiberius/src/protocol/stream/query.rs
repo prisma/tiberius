@@ -1,21 +1,22 @@
+use super::TokenStream;
 use crate::protocol::{
     codec::{DoneStatus, Packet},
     stream::{prepared::PreparedStream, ReceivedToken},
     Context,
 };
 use crate::{client::Connection, Column, Row};
-use futures::{ready, Stream, StreamExt};
+use futures::{ready, Stream, StreamExt, TryStream, TryStreamExt};
 use std::{
     pin::Pin,
     sync::Arc,
     task::{self, Poll},
 };
 
-pub struct ResultSet<'a> {
+pub struct QueryResult<'a> {
     stream: QueryStream<'a, Connection>,
 }
 
-impl<'a> ResultSet<'a> {
+impl<'a> QueryResult<'a> {
     pub fn new(connection: &'a mut Connection, context: Arc<Context>) -> Self {
         let stream = QueryStream::new(connection, context);
         Self { stream }
@@ -31,11 +32,54 @@ impl<'a> ResultSet<'a> {
     }
 }
 
-impl<'a> Stream for ResultSet<'a> {
+impl<'a> Stream for QueryResult<'a> {
     type Item = crate::Result<Row>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.get_mut().stream).poll_next(cx)
+    }
+}
+
+pub struct ExecuteResult<'a> {
+    stream: TokenStream<'a, Connection>,
+}
+
+impl<'a> ExecuteResult<'a> {
+    pub fn new(connection: &'a mut Connection, context: Arc<Context>) -> Self {
+        let stream = TokenStream::new(connection, context);
+        Self { stream }
+    }
+
+    pub async fn total(&mut self) -> crate::Result<u64> {
+        self.try_fold(0, |acc, x| async move { Ok(acc + x) }).await
+    }
+}
+
+impl<'a> Stream for ExecuteResult<'a> {
+    type Item = crate::Result<u64>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+
+        loop {
+            let token = ready!(Pin::new(&mut this.stream).try_poll_next(cx)?);
+
+            match dbg!(token) {
+                Some(ReceivedToken::DoneProc(done)) if done.status.contains(DoneStatus::FINAL) => {
+                    return Poll::Ready(None);
+                }
+                Some(ReceivedToken::DoneProc(done)) => {
+                    return Poll::Ready(Some(Ok(done.done_rows)));
+                }
+                Some(ReceivedToken::DoneInProc(done)) => {
+                    return Poll::Ready(Some(Ok(done.done_rows)));
+                }
+                Some(ReceivedToken::Done(_)) => {
+                    return Poll::Ready(None);
+                }
+                _ => continue,
+            }
+        }
     }
 }
 
