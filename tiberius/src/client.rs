@@ -64,19 +64,7 @@ impl Client {
         params: &'b [&'b dyn prepared::ToSql],
     ) -> crate::Result<ExecuteResult<'a>> {
         self.connection.flush_packets().await?;
-
-        let rpc_params = vec![
-            RpcParam {
-                name: Cow::Borrowed("stmt"),
-                flags: RpcStatusFlags::empty(),
-                value: ColumnData::String(query.into()),
-            },
-            RpcParam {
-                name: Cow::Borrowed("params"),
-                flags: RpcStatusFlags::empty(),
-                value: ColumnData::I32(0),
-            },
-        ];
+        let rpc_params = Self::rpc_params(query);
 
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
@@ -96,8 +84,16 @@ impl Client {
         'a: 'b,
     {
         self.connection.flush_packets().await?;
+        let rpc_params = Self::rpc_params(query);
 
-        let rpc_params = vec![
+        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
+            .await?;
+
+        Ok(QueryResult::new(&mut self.connection, self.context.clone()))
+    }
+
+    fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
+        vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
                 flags: RpcStatusFlags::empty(),
@@ -108,12 +104,7 @@ impl Client {
                 flags: RpcStatusFlags::empty(),
                 value: ColumnData::I32(0),
             },
-        ];
-
-        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
-            .await?;
-
-        Ok(QueryResult::new(&mut self.connection, self.context.clone()))
+        ]
     }
 
     async fn rpc_perform_query<'a, 'b>(
