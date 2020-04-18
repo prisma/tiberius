@@ -1,5 +1,5 @@
-use std::fmt::{self, Debug, Display, Formatter};
 use std::cmp::PartialEq;
+use std::fmt::{self, Debug, Display, Formatter};
 
 /// Represent a sql Decimal / Numeric type. It is stored in a i128 and has a
 /// maximum precision of 38 decimals.
@@ -11,7 +11,7 @@ pub struct Numeric {
 
 impl Numeric {
     /// Creates a new Numeric value.
-    /// 
+    ///
     /// # Panic
     /// It will panic if the scale exceed 37.
     pub fn new_with_scale(value: i128, scale: u8) -> Self {
@@ -19,10 +19,7 @@ impl Numeric {
         // max precision of 38 is possible here.
         assert!(scale < 38);
 
-        Numeric {
-            value,
-            scale,
-        }
+        Numeric { value, scale }
     }
 
     /// Extract the decimal part.
@@ -56,7 +53,13 @@ impl Numeric {
 
 impl Debug for Numeric {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}.{:0pad$}", self.int_part(), self.dec_part(), pad = self.scale as usize)
+        write!(
+            f,
+            "{}.{:0pad$}",
+            self.int_part(),
+            self.dec_part(),
+            pad = self.scale as usize
+        )
     }
 }
 
@@ -100,8 +103,25 @@ impl PartialEq for Numeric {
 
 #[test]
 fn test_numeric_eq() {
-    assert_eq!(Numeric { value: 100501, scale: 2 }, Numeric { value: 1005010, scale: 3 });
-    assert!(Numeric { value: 100501, scale: 2 } != Numeric { value: 10050, scale: 1 });
+    assert_eq!(
+        Numeric {
+            value: 100501,
+            scale: 2
+        },
+        Numeric {
+            value: 1005010,
+            scale: 3
+        }
+    );
+    assert!(
+        Numeric {
+            value: 100501,
+            scale: 2
+        } != Numeric {
+            value: 10050,
+            scale: 1
+        }
+    );
 }
 
 #[test]

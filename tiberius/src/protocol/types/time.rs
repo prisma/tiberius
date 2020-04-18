@@ -1,32 +1,8 @@
+use super::{ColumnData, FromColumnData, ToColumnData, ToSql};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 ///! time type implementations
 use std::io::{Read, Write};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use super::{ColumnData, FromColumnData, ToColumnData, ToSql};
 use {Error, Result};
-
-/// prepares a statement which selects a passed value
-/// this tests serialization of a parameter and deserialization
-/// atlast it checks if the received value is the same as the sent value
-/// it also checks if the time formatted is correct
-#[cfg(test)]
-macro_rules! test_timedatatype {
-    ( $($name:ident: $ty:ty = $val:expr => $str_val:expr),* ) => {
-        $(
-            #[test]
-            fn $name() {
-                let future = SqlConnection::connect(connection_string().as_ref())
-                    .and_then(|conn| {
-                        conn.query("SELECT @P1, convert(varchar, @P1, 121)", &[&$val]).for_each(|row| {
-                            assert_eq!(row.get::<_, $ty>(0), $val);
-                            assert_eq!(row.get::<_, &str>(1), $str_val);
-                            Ok(())
-                        })
-                    });
-                current_thread::block_on_all(future).unwrap();
-            }
-        )*
-    }
-}
 
 /// # Warning
 /// It isn't recommended to use this
@@ -180,8 +156,8 @@ mod chrono {
     extern crate chrono;
 
     use self::chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
-    use types::{ColumnData, FromColumnData, ToColumnData, ToSql};
     use super::{Date, DateTime2, Time};
+    use types::{ColumnData, FromColumnData, ToColumnData, ToSql};
     use {Error, Result};
 
     #[inline]
@@ -210,7 +186,9 @@ mod chrono {
     fn to_sec_fragments(time: &NaiveTime) -> i64 {
         time.signed_duration_since(NaiveTime::from_hms(0, 0, 0))
             .num_nanoseconds()
-            .unwrap() * 300 / (1e9 as i64)
+            .unwrap()
+            * 300
+            / (1e9 as i64)
     }
 
     from_column_data!(
@@ -252,11 +230,11 @@ mod chrono {
 
     #[cfg(test)]
     mod tests {
+        use super::chrono::{NaiveDate, NaiveDateTime};
         use futures::Future;
         use futures_state_stream::StateStream;
-        use tokio::executor::current_thread;
         use tests::connection_string;
-        use super::chrono::{NaiveDate, NaiveDateTime};
+        use tokio::executor::current_thread;
         use SqlConnection;
 
         static DATETIME_TEST_STR: &'static str = "2015-09-05 23:56:04.0100020";
@@ -295,22 +273,20 @@ mod chrono {
 
         #[test]
         fn test_datetime2_to_naive_datetime() {
-            let future = SqlConnection::connect(connection_string().as_ref())
-                .and_then(|conn| {
-                    conn.simple_query(format!(
-                        "select cast('{}' as datetime2(7))",
-                        DATETIME_TEST_STR
-                    )).for_each(|row| {
-                            assert_eq!(
-                                row.get::<_, NaiveDateTime>(0),
-                                NaiveDateTime::parse_from_str(
-                                    DATETIME_TEST_STR,
-                                    "%Y-%m-%d %H:%M:%S%.3f"
-                                ).unwrap()
-                            );
-                            Ok(())
-                        })
-                });
+            let future = SqlConnection::connect(connection_string().as_ref()).and_then(|conn| {
+                conn.simple_query(format!(
+                    "select cast('{}' as datetime2(7))",
+                    DATETIME_TEST_STR
+                ))
+                .for_each(|row| {
+                    assert_eq!(
+                        row.get::<_, NaiveDateTime>(0),
+                        NaiveDateTime::parse_from_str(DATETIME_TEST_STR, "%Y-%m-%d %H:%M:%S%.3f")
+                            .unwrap()
+                    );
+                    Ok(())
+                })
+            });
             current_thread::block_on_all(future).unwrap();
         }
     }
@@ -318,12 +294,12 @@ mod chrono {
 
 #[cfg(test)]
 mod tests {
+    use super::{Date, DateTime, DateTime2, SmallDateTime, Time};
     use futures::Future;
     use futures_state_stream::StateStream;
-    use tokio::executor::current_thread;
-    use super::{Date, DateTime, DateTime2, SmallDateTime, Time};
-    use SqlConnection;
     use tests::connection_string;
+    use tokio::executor::current_thread;
+    use SqlConnection;
 
     test_timedatatype!(
         test_datetime: DateTime = DateTime {
@@ -342,22 +318,21 @@ mod tests {
     #[test]
     fn test_datetime_fixed() {
         let future = SqlConnection::connect(connection_string().as_ref())
-            .and_then(|conn| {
-                conn.simple_exec("create table #Temp(gg datetime NOT NULL)")
-            })
+            .and_then(|conn| conn.simple_exec("create table #Temp(gg datetime NOT NULL)"))
             .and_then(|(_, conn)| {
                 conn.simple_query(
                     "insert into #Temp(gg) OUTPUT Inserted.gg VALUES('2014-02-24T18:42:23.000')",
-                ).for_each(|row| {
-                        assert_eq!(
-                            row.get::<_, DateTime>(0),
-                            DateTime {
-                                days: 41692,                                         //24.02.2014
-                                seconds_fragments: (18 * 3600 + 42 * 60 + 23) * 300, // 18:42:23
-                            }
-                        );
-                        Ok(())
-                    })
+                )
+                .for_each(|row| {
+                    assert_eq!(
+                        row.get::<_, DateTime>(0),
+                        DateTime {
+                            days: 41692,                                         //24.02.2014
+                            seconds_fragments: (18 * 3600 + 42 * 60 + 23) * 300, // 18:42:23
+                        }
+                    );
+                    Ok(())
+                })
             });
         current_thread::block_on_all(future).unwrap();
     }
