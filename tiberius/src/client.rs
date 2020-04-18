@@ -48,22 +48,73 @@ impl AuthMethod {
     }
 }
 
+/// `Client` is the main entry point to the SQL Server, providing query
+/// execution capabilities.
+///
+/// A `Client` is created using the [`ClientBuilder`], defining the needed
+/// connection options and capabilities.
+///
+/// ```no_run
+/// # use tiberius::{Client, AuthMethod};
+/// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut builder = Client::builder();
+///
+/// builder.host("0.0.0.0");
+/// builder.port(1433);
+/// builder.authentication(AuthMethod::sql_server("SA", "<Mys3cureP4ssW0rD>"));
+///
+/// // Client is ready to use.
+/// let mut conn = builder.build().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// [`ClientBuilder`]: struct.ClientBuilder.html
 pub struct Client {
     connection: Connection,
     context: Arc<Context>,
 }
 
 impl Client {
+    /// Starts an instance of [`ClientBuilder`] for specifying the connect
+    /// options.
+    ///
+    /// [`ClientBuilder`]: struct.ClientBuilder.html
     pub fn builder() -> ClientBuilder {
         ClientBuilder::default()
     }
 
+    /// Executes SQL statements in the SQL Server, returning the number rows
+    /// affected. Useful for `INSERT`, `UPDATE` and `DELETE` statements.
+    ///
+    /// The `query` can define the parameter placement by annotating them with
+    /// `@PN`, where N is the index of the parameter, starting from `1`.
+    ///
+    /// ```no_run
+    /// # use tiberius::Client;
+    /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut builder = Client::builder();
+    /// # let mut conn = builder.build().await?;
+    /// let results = conn
+    ///     .execute(
+    ///         "INSERT INTO ##TestExecute (id) VALUES (@P1), (@P2), (@P3)",
+    ///         &[&1i32, &2i32, &3i32],
+    ///     )
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// See the documentation for the resulting [`ExecuteResult`] on how to
+    /// handle the results correctly.
+    ///
+    /// [`ExecuteResult`]: ../struct.ExecuteResult.html
     pub async fn execute<'b, 'a: 'b>(
         &'a mut self,
         query: impl Into<Cow<'_, str>>,
         params: &'b [&'b dyn prepared::ToSql],
     ) -> crate::Result<ExecuteResult<'a>> {
-        self.connection.flush_packets().await?;
+        self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
@@ -75,6 +126,31 @@ impl Client {
         ))
     }
 
+    /// Executes SQL statements in the SQL Server, returning resulting rows.
+    /// Useful for `SELECT` statements.
+    ///
+    /// The `query` can define the parameter placement by annotating them with
+    /// `@PN`, where N is the index of the parameter, starting from `1`.
+    ///
+    /// ```no_run
+    /// # use tiberius::Client;
+    /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut builder = Client::builder();
+    /// # let mut conn = builder.build().await?;
+    /// let rows = conn
+    ///     .query(
+    ///         "INSERT INTO ##TestExecute (id) VALUES (@P1), (@P2), (@P3)",
+    ///         &[&1i32, &2i32, &3i32],
+    ///     )
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// See the documentation for the resulting [`QueryResult`] on how to
+    /// handle the results correctly.
+    ///
+    /// [`QueryResult`]: ../struct.QueryResult.html
     pub async fn query<'a, 'b>(
         &'a mut self,
         query: impl Into<Cow<'a, str>>,
@@ -83,7 +159,7 @@ impl Client {
     where
         'a: 'b,
     {
-        self.connection.flush_packets().await?;
+        self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)

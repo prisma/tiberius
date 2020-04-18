@@ -1,5 +1,5 @@
 use futures::TryStreamExt;
-use tiberius::{client::AuthMethod, Client};
+use tiberius::{AuthMethod, Client};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

@@ -125,7 +125,7 @@ async fn test_execute_multiple_total() -> Result<()> {
     conn.execute("CREATE TABLE ##TestExecuteMultiple (id int)", &[])
         .await?;
 
-    let mut insert_count = conn
+    let insert_count = conn
         .execute(
             "INSERT INTO ##TestExecuteMultiple (id) VALUES (@P1); INSERT INTO ##TestExecuteMultiple (id) VALUES (@P2), (@P3);",
             &[&1i32, &2i32, &3i32],

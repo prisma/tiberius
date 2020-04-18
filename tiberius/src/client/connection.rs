@@ -23,16 +23,27 @@ use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::windows::NtlmSspiBuilder;
 
-pub type Transport = Framed<MaybeTlsStream, PacketCodec>;
-
+/// A `Connection` is an abstraction between the [`Client`] and the server. It
+/// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
+/// splitting them to the negotiated limit automatically.
+///
+/// `Connection` is not meant to use directly, but as an abstraction layer for
+/// the numerous `Stream`s for easy packet handling.
+///
+/// [`Client`]: struct.Encode.html
+/// [`Packet`]: ../protocol/codec/struct.Packet.html
 pub struct Connection {
-    transport: Transport,
+    transport: Framed<MaybeTlsStream, PacketCodec>,
     flushed: bool,
     context: Arc<Context>,
 }
 
 impl Connection {
-    pub(crate) fn new(transport: Transport, context: Arc<Context>) -> Self {
+    /// Creates a new connection.
+    pub(crate) fn new(
+        transport: Framed<MaybeTlsStream, PacketCodec>,
+        context: Arc<Context>,
+    ) -> Self {
         Self {
             transport,
             context,
@@ -40,6 +51,13 @@ impl Connection {
         }
     }
 
+    /// Send an item to the wire. Header should define the item type and item should implement
+    /// [`Encode`], defining the byte structure for the wire.
+    ///
+    /// The `send` will split the packet into multiple packets if bigger than
+    /// the negotiated packet size, and handle flushing to the wire in an optimal way.
+    ///
+    /// [`Encode`]: ../protocol/codec/trait.Encode.html
     pub(crate) async fn send<E>(&mut self, mut header: PacketHeader, item: E) -> crate::Result<()>
     where
         E: Sized + Encode<BytesMut>,
@@ -48,7 +66,7 @@ impl Connection {
 
         let packet_size = self.context.packet_size.load(Ordering::SeqCst) as usize - HEADER_BYTES;
 
-        let mut payload = BytesMut::new();
+        let mut payload = BytesMut::with_capacity(packet_size + HEADER_BYTES);
         item.encode(&mut payload)?;
 
         while !payload.is_empty() {
@@ -79,7 +97,14 @@ impl Connection {
         Ok(())
     }
 
-    pub(crate) async fn flush_packets(&mut self) -> crate::Result<()> {
+    /// Cleans the packet stream from previous use. It is important to use the
+    /// whole stream before using the connection again. Flushing the stream
+    /// makes sure we don't have any old data causing undefined behaviour after
+    /// previous queries.
+    ///
+    /// Calling this will slow down the queries if stream is still dirty, so
+    /// using all the results after querying must be handled properly.
+    pub(crate) async fn flush_stream(&mut self) -> crate::Result<()> {
         if self.flushed {
             return Ok(());
         }
@@ -100,10 +125,14 @@ impl Connection {
         Ok(())
     }
 
-    pub(crate) fn token_stream(&mut self) -> TokenStream<Connection> {
-        TokenStream::new(self, self.context.clone())
-    }
-
+    /// A message sent by the client to set up context for login. The server
+    /// responds to a client PRELOGIN message with a message of packet header
+    /// type 0x04 and with the packet data containing a PRELOGIN structure.
+    ///
+    /// This message stream is also used to wrap the SSL handshake payload if
+    /// encryption is needed. In this scenario, where PRELOGIN message is
+    /// transporting the SSL handshake payload, the packet data is simply the
+    /// raw bytes of the SSL handshake payload.
     pub(crate) async fn prelogin(
         &mut self,
         ssl: EncryptionLevel,
@@ -117,6 +146,8 @@ impl Connection {
         Ok(codec::collect_from(self).await?)
     }
 
+    /// Defines the login record rules with SQL Server. Authentication with
+    /// connection options.
     pub(crate) async fn login(
         &mut self,
         auth: AuthMethod,
@@ -176,6 +207,7 @@ impl Connection {
         Ok(())
     }
 
+    /// Implements the TLS handshake with the SQL Server.
     #[cfg(feature = "tls")]
     pub(crate) async fn tls_handshake(
         self,
@@ -214,10 +246,15 @@ impl Connection {
         }
     }
 
+    /// Implements the TLS handshake with the SQL Server.
     #[cfg(not(feature = "tls"))]
     pub(crate) async fn tls_handshake(self, ssl: EncryptionLevel, _: bool) -> crate::Result<Self> {
         assert_eq!(ssl, EncryptionLevel::NotSupported);
         Ok(self)
+    }
+
+    pub(crate) fn token_stream(&mut self) -> TokenStream<Connection> {
+        TokenStream::new(self, self.context.clone())
     }
 }
 

@@ -1,11 +1,7 @@
 use super::{Decode, Encode};
 use crate::{protocol::Context, uint_enum, Error};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use bytes::{Buf, BufMut, BytesMut};
-use std::{
-    convert::TryFrom,
-    io::{self, Cursor},
-};
+use std::convert::TryFrom;
 
 uint_enum! {
     /// the type of the packet [2.2.3.1.1]#[repr(u32)]
@@ -96,53 +92,8 @@ impl PacketHeader {
         }
     }
 
-    pub fn batch(ctx: &Context) -> Self {
-        Self {
-            ty: PacketType::SQLBatch,
-            status: PacketStatus::NormalMessage,
-            ..ctx.new_header(0)
-        }
-    }
-
     pub fn set_status(&mut self, status: PacketStatus) {
         self.status = status;
-    }
-
-    pub fn set_length(&mut self, length: u16) {
-        self.length = length;
-    }
-
-    pub fn serialize(&self, target: &mut [u8]) -> io::Result<()> {
-        let mut writer = Cursor::new(target);
-        writer.write_u8(self.ty as u8)?;
-        writer.write_u8(self.status as u8)?;
-        writer.write_u16::<BigEndian>(self.length)?;
-        writer.write_u16::<BigEndian>(self.spid)?;
-        writer.write_u8(self.id)?;
-        writer.write_u8(self.window)
-    }
-
-    pub fn unserialize(buf: &[u8]) -> crate::Result<PacketHeader> {
-        let mut cursor = Cursor::new(buf);
-
-        let raw_ty = cursor.read_u8()?;
-        let ty = PacketType::try_from(raw_ty).map_err(|_| {
-            Error::Protocol(format!("header: invalid packet type: {}", raw_ty).into())
-        })?;
-
-        let status = PacketStatus::try_from(cursor.read_u8()?)
-            .map_err(|_| Error::Protocol("header: invalid packet status".into()))?;
-
-        let header = PacketHeader {
-            ty,
-            status,
-            length: cursor.read_u16::<BigEndian>()?,
-            spid: cursor.read_u16::<BigEndian>()?,
-            id: cursor.read_u8()?,
-            window: cursor.read_u8()?,
-        };
-
-        Ok(header)
     }
 }
 
