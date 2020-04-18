@@ -1,4 +1,4 @@
-use super::Decode;
+use crate::protocol::codec::{read_varchar, Decode};
 use bytes::{Buf, BytesMut};
 
 #[derive(Debug)]
@@ -28,15 +28,15 @@ impl Decode<BytesMut> for TokenInfo {
             class: src.get_u8(),
             message: {
                 let len = src.get_u16_le();
-                super::read_varchar(src, len)?
+                read_varchar(src, len)?
             },
             server: {
                 let len = src.get_u8();
-                super::read_varchar(src, len)?
+                read_varchar(src, len)?
             },
             procedure: {
                 let len = src.get_u8();
-                super::read_varchar(src, len)?
+                read_varchar(src, len)?
             },
             line: src.get_u32_le(),
         };

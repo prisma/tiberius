@@ -1,5 +1,8 @@
-use super::{BaseMetaDataColumn, BytesData, ColumnData, Decode};
-use crate::Error;
+use super::BaseMetaDataColumn;
+use crate::{
+    protocol::codec::{read_varchar, BytesData, ColumnData, Decode},
+    Error,
+};
 use bytes::{Buf, BytesMut};
 
 #[derive(Debug)]
@@ -20,7 +23,7 @@ impl Decode<BytesMut> for TokenReturnValue {
         let param_ordinal = src.get_u16_le();
         let param_name_len = src.get_u8() as usize;
 
-        let param_name = super::read_varchar(src, param_name_len)?;
+        let param_name = read_varchar(src, param_name_len)?;
 
         let udf = match src.get_u8() {
             0x01 => false,

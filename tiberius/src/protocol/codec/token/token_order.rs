@@ -1,4 +1,4 @@
-use super::Decode;
+use crate::protocol::codec::Decode;
 use bytes::{Buf, BytesMut};
 
 #[derive(Debug)]

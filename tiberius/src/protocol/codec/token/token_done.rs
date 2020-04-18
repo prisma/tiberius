@@ -1,5 +1,8 @@
-use super::{BytesData, Decode};
-use crate::{protocol::Context, Error};
+use crate::{
+    protocol::codec::{BytesData, Decode},
+    protocol::Context,
+    Error,
+};
 use bitflags::bitflags;
 use bytes::Buf;
 use std::fmt;

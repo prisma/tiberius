@@ -1,5 +1,7 @@
-use super::{BytesData, Decode, FeatureLevel};
-use crate::protocol::Context;
+use crate::protocol::{
+    codec::{read_varchar, BytesData, Decode, FeatureLevel},
+    Context,
+};
 use bytes::Buf;
 use std::fmt;
 
@@ -39,13 +41,13 @@ impl<'a> Decode<BytesData<'a, Context>> for TokenError {
         let class = src.get_u8();
 
         let message_len = src.get_u16_le();
-        let message = super::read_varchar(src, message_len)?;
+        let message = read_varchar(src, message_len)?;
 
         let server_len = src.get_u8();
-        let server = super::read_varchar(src, server_len)?;
+        let server = read_varchar(src, server_len)?;
 
         let procedure_len = src.get_u8();
-        let procedure = super::read_varchar(src, procedure_len)?;
+        let procedure = read_varchar(src, procedure_len)?;
 
         let line = if src.context().version > FeatureLevel::SqlServer2005 {
             src.get_u32_le()

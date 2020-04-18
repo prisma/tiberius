@@ -7,20 +7,8 @@ mod login;
 mod packet;
 mod pre_login;
 mod rpc_request;
-mod token_col_metadata;
-mod token_done;
-mod token_env_change;
-mod token_error;
-mod token_info;
-mod token_login_ack;
-mod token_order;
-mod token_return_value;
-mod token_row;
-mod token_type;
+mod token;
 mod type_info;
-
-#[cfg(windows)]
-mod token_sspi;
 
 pub use bytes_data::*;
 pub use column_data::*;
@@ -31,16 +19,7 @@ pub use login::*;
 pub use packet::*;
 pub use pre_login::*;
 pub use rpc_request::*;
-pub use token_col_metadata::*;
-pub use token_done::*;
-pub use token_env_change::*;
-pub use token_error::*;
-pub use token_info::*;
-pub use token_login_ack::*;
-pub use token_order::*;
-pub use token_return_value::*;
-pub use token_row::*;
-pub use token_type::*;
+pub use token::*;
 pub use type_info::*;
 
 #[cfg(windows)]

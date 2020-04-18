@@ -1,5 +1,7 @@
-use super::Decode;
-use crate::{Error, FeatureLevel};
+use crate::{
+    protocol::codec::{read_varchar, Decode},
+    Error, FeatureLevel,
+};
 use bytes::{Buf, BytesMut};
 use std::convert::TryFrom;
 
@@ -30,7 +32,7 @@ impl Decode<BytesMut> for TokenLoginAck {
 
         let prog_name = {
             let len = src.get_u8();
-            super::read_varchar(src, len)?
+            read_varchar(src, len)?
         };
 
         let version = src.get_u32_le();

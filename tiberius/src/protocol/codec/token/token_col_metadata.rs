@@ -1,4 +1,4 @@
-use super::{read_varchar, Decode, TypeInfo, VarLenType};
+use crate::protocol::codec::{read_varchar, Decode, TypeInfo, VarLenType};
 use bitflags::bitflags;
 use bytes::{Buf, BytesMut};
 

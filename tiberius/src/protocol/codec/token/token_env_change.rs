@@ -1,5 +1,7 @@
-use super::Decode;
-use crate::{uint_enum, Error};
+use crate::{
+    protocol::codec::{read_varchar, Decode},
+    uint_enum, Error,
+};
 use bytes::{Buf, BytesMut};
 use std::{convert::TryFrom, fmt};
 
@@ -67,19 +69,19 @@ impl Decode<BytesMut> for TokenEnvChange {
         let token = match ty {
             EnvChangeTy::Database => {
                 let len = src.get_u8();
-                let new_value = super::read_varchar(src, len)?;
+                let new_value = read_varchar(src, len)?;
 
                 let len = src.get_u8();
-                let old_value = super::read_varchar(src, len)?;
+                let old_value = read_varchar(src, len)?;
 
                 TokenEnvChange::Database(new_value, old_value)
             }
             EnvChangeTy::PacketSize => {
                 let len = src.get_u8();
-                let new_value = super::read_varchar(src, len)?;
+                let new_value = read_varchar(src, len)?;
 
                 let len = src.get_u8();
-                let old_value = super::read_varchar(src, len)?;
+                let old_value = read_varchar(src, len)?;
 
                 TokenEnvChange::PacketSize(new_value.parse()?, old_value.parse()?)
             }

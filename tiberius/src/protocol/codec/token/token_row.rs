@@ -1,4 +1,4 @@
-use super::{ColumnData, TokenColMetaData};
+use crate::protocol::codec::{ColumnData, TokenColMetaData};
 use std::sync::Arc;
 
 #[derive(Debug)]

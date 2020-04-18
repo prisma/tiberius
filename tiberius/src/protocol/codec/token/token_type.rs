@@ -1,5 +1,4 @@
-use super::Decode;
-use crate::{uint_enum, Error};
+use crate::{protocol::codec::Decode, uint_enum, Error};
 use bytes::{Buf, BytesMut};
 use std::convert::TryFrom;
 
