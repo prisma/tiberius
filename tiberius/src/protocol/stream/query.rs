@@ -207,7 +207,7 @@ impl<'a> Stream for ExecuteResult<'a> {
         loop {
             let token = ready!(Pin::new(&mut this.stream).try_poll_next(cx)?);
 
-            match dbg!(token) {
+            match token {
                 Some(ReceivedToken::DoneProc(done)) if done.status.contains(DoneStatus::FINAL) => {
                     return Poll::Ready(None);
                 }

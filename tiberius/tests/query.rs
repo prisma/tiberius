@@ -65,6 +65,67 @@ async fn test_simple_query() -> Result<()> {
 */
 
 #[tokio::test]
+async fn test_kanji_varchars() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##TestKanji (content NVARCHAR(max))", &[])
+        .await?;
+
+    let kanji = "余ったものを後で皆に分けようと思っていただけなのに".to_string();
+    let long_kanji = "余".repeat(8001);
+
+    let res = conn
+        .execute(
+            "INSERT INTO ##TestKanji (content) VALUES (@P1), (@P2)",
+            &[&kanji, &long_kanji],
+        )
+        .await?;
+
+    assert_eq!(2, res.total().await?);
+
+    let stream = conn.query("SELECT content FROM ##TestKanji", &[]).await?;
+
+    let results: Vec<String> = stream
+        .map_ok(|r| r.get::<_, String>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(vec![kanji, long_kanji], results);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_finnish_varchars() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##TestFinnish (content NVARCHAR(max))", &[])
+        .await?;
+
+    let kalevala = "Vaka vanha Väinämöinen / elelevi aikojansa / noilla Väinölän ahoilla, Kalevalan kankahilla.";
+
+    let res = conn
+        .execute(
+            "INSERT INTO ##TestFinnish (content) VALUES (@P1)",
+            &[&kalevala],
+        )
+        .await?;
+
+    assert_eq!(1, res.total().await?);
+
+    let stream = conn.query("SELECT content FROM ##TestFinnish", &[]).await?;
+
+    let results: Vec<String> = stream
+        .map_ok(|r| r.get::<_, String>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(vec![kalevala], results);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_execute() -> Result<()> {
     let mut conn = connect().await?;
 
@@ -102,12 +163,12 @@ async fn test_execute() -> Result<()> {
 async fn test_execute_multiple_separate_results() -> Result<()> {
     let mut conn = connect().await?;
 
-    conn.execute("CREATE TABLE ##TestExecuteMultiple (id int)", &[])
+    conn.execute("CREATE TABLE ##TestExecuteMultiple1 (id int)", &[])
         .await?;
 
     let insert_count = conn
         .execute(
-            "INSERT INTO ##TestExecuteMultiple (id) VALUES (@P1); INSERT INTO ##TestExecuteMultiple (id) VALUES (@P2), (@P3);",
+            "INSERT INTO ##TestExecuteMultiple1 (id) VALUES (@P1); INSERT INTO ##TestExecuteMultiple1 (id) VALUES (@P2), (@P3);",
             &[&1i32, &2i32, &3i32],
         )
         .await?;
@@ -122,12 +183,12 @@ async fn test_execute_multiple_separate_results() -> Result<()> {
 async fn test_execute_multiple_total() -> Result<()> {
     let mut conn = connect().await?;
 
-    conn.execute("CREATE TABLE ##TestExecuteMultiple (id int)", &[])
+    conn.execute("CREATE TABLE ##TestExecuteMultiple2 (id int)", &[])
         .await?;
 
     let insert_count = conn
         .execute(
-            "INSERT INTO ##TestExecuteMultiple (id) VALUES (@P1); INSERT INTO ##TestExecuteMultiple (id) VALUES (@P2), (@P3);",
+            "INSERT INTO ##TestExecuteMultiple2 (id) VALUES (@P1); INSERT INTO ##TestExecuteMultiple2 (id) VALUES (@P2), (@P3);",
             &[&1i32, &2i32, &3i32],
         )
         .await?;

@@ -359,14 +359,13 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u16_le(8000);
                 dst.extend_from_slice(&[0u8; 5][..]);
 
-                let len = s.chars().fold(0, |acc, c| acc + c.len_utf8());
-                dst.put_u16_le(2 * len as u16);
+                dst.put_u16_le(2 * s.encode_utf16().count() as u16);
 
                 for chr in s.encode_utf16() {
                     dst.put_u16_le(chr);
                 }
             }
-            ColumnData::String(ref str_) => {
+            ColumnData::String(ref s) => {
                 // length: 0xffff and raw collation
                 dst.put_u8(VarLenType::NVarchar as u8);
                 dst.extend_from_slice(&[0xff as u8; 2][..]);
@@ -377,11 +376,10 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u64_le(0xfffffffffffffffe as u64);
 
                 // Write the varchar length
-                let ary: Vec<_> = str_.encode_utf16().collect();
-                dst.put_u32_le((ary.len() * 2) as u32);
+                dst.put_u32_le(2 * s.encode_utf16().count() as u32);
 
                 // And the PLP data
-                for chr in ary {
+                for chr in s.encode_utf16() {
                     dst.put_u16_le(chr);
                 }
 

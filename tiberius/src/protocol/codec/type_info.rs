@@ -107,7 +107,7 @@ impl VarLenType {
                 ReadTyMode::Plp => buf.get_u64_le() as usize + 8,          // + size
             },
             NChar => buf.get_u16_le() as usize + 2, // + size
-            VarLenType::Text => {
+            VarLenType::Text | VarLenType::NText => {
                 buf.advance(17); // skip pointers
 
                 buf.get_i32_le(); // days (+ 4)
@@ -157,7 +157,7 @@ impl Decode<BytesMut> for TypeInfo {
                     | VarLenType::BigVarChar
                     | VarLenType::BigBinary => src.get_u16_le() as usize,
                     VarLenType::Daten => 3,
-                    VarLenType::Text => src.get_u32_le() as usize,
+                    VarLenType::Text | VarLenType::NText => src.get_u32_le() as usize,
                     _ => unimplemented!(),
                 };
 

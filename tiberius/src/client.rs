@@ -97,7 +97,7 @@ impl Client {
     /// # let mut conn = builder.build().await?;
     /// let results = conn
     ///     .execute(
-    ///         "INSERT INTO ##TestExecute (id) VALUES (@P1), (@P2), (@P3)",
+    ///         "INSERT INTO ##Test (id) VALUES (@P1), (@P2), (@P3)",
     ///         &[&1i32, &2i32, &3i32],
     ///     )
     ///     .await?;
@@ -139,7 +139,7 @@ impl Client {
     /// # let mut conn = builder.build().await?;
     /// let rows = conn
     ///     .query(
-    ///         "INSERT INTO ##TestExecute (id) VALUES (@P1), (@P2), (@P3)",
+    ///         "SELECT @P1, @P2, @P3",
     ///         &[&1i32, &2i32, &3i32],
     ///     )
     ///     .await?;
