@@ -1,13 +1,15 @@
-use super::{BaseMetaDataColumn, BytesData, Decode, Encode, FixedLenType, TypeInfo, VarLenType};
+use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::{
+    async_read_le_ext::AsyncReadLeExt,
     protocol::{self, types::Numeric},
     Error,
 };
 use byteorder::{ByteOrder, LittleEndian};
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
 use protocol::types::{Collation, Guid};
 use std::borrow::Cow;
+use tokio::io::AsyncReadExt;
 
 #[derive(Clone, Debug)]
 pub enum ColumnData<'a> {
@@ -91,64 +93,139 @@ impl VariableLengthContext {
     }
 }
 
-impl<'a> Decode<BytesData<'a, BaseMetaDataColumn>> for ColumnData<'static> {
-    fn decode(src: &mut BytesData<'a, BaseMetaDataColumn>) -> crate::Result<Self>
+impl<'a> ColumnData<'a> {
+    pub(crate) async fn decode<R>(src: &mut R, ctx: &TypeInfo) -> crate::Result<ColumnData<'a>>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let ret = match src.context().ty {
-            TypeInfo::FixedLen(fixed_ty) => {
-                let mut src: BytesData<FixedLenType> = BytesData::new(src.inner(), &fixed_ty);
-
-                ColumnData::decode(&mut src)?
+        let res = match ctx {
+            TypeInfo::FixedLen(fixed_ty) => Self::decode_fixed_len(src, &fixed_ty).await?,
+            TypeInfo::VarLenSized(ty, max_len, collation) => {
+                let context = VariableLengthContext::new(*ty, *max_len, *collation);
+                Self::decode_var_len(src, &context).await?
             }
-            TypeInfo::VarLenSized(ty, len, collation) => {
-                let context = VariableLengthContext::new(ty, len, collation);
-
-                let mut src: BytesData<VariableLengthContext> =
-                    BytesData::new(src.inner(), &context);
-
-                ColumnData::decode(&mut src)?
-            }
-            TypeInfo::VarLenSizedPrecision { ty, scale, .. } => {
-                match ty {
-                    // Our representation causes loss of information and is only a very approximate representation
-                    // while decimal on the side of MSSQL is an exact representation
-                    // TODO: better representation
-                    VarLenType::Decimaln | VarLenType::Numericn => {
-                        let context = VariableLengthPrecisionContext { scale };
-                        let mut src = BytesData::new(src.inner(), &context);
-
-                        ColumnData::decode(&mut src)?
-                    }
-                    _ => todo!(),
+            TypeInfo::VarLenSizedPrecision { ty, scale, .. } => match ty {
+                VarLenType::Decimaln | VarLenType::Numericn => {
+                    Self::decode_var_len_precision(src, *scale).await?
                 }
+                _ => todo!(),
+            },
+        };
+
+        Ok(res)
+    }
+
+    async fn decode_fixed_len<R>(src: &mut R, ty: &FixedLenType) -> crate::Result<ColumnData<'a>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let ret = match ty {
+            FixedLenType::Null => ColumnData::None,
+            FixedLenType::Bit => ColumnData::Bit(src.read_u8().await? != 0),
+            FixedLenType::Int1 => ColumnData::I8(src.read_i8().await?),
+            FixedLenType::Int2 => ColumnData::I16(src.read_i16_le().await?),
+            FixedLenType::Int4 => ColumnData::I32(src.read_i32_le().await?),
+            FixedLenType::Int8 => ColumnData::I64(src.read_i64_le().await?),
+            FixedLenType::Float4 => ColumnData::F32(src.read_f32_le().await?),
+            FixedLenType::Float8 => ColumnData::F64(src.read_f64_le().await?),
+            // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
+            // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
+            _ => {
+                return Err(Error::Protocol(
+                    format!("unsupported fixed type decoding: {:?}", ty).into(),
+                ))
             }
         };
 
         Ok(ret)
     }
-}
 
-impl<'a> Decode<BytesData<'a, VariableLengthContext>> for ColumnData<'static> {
-    fn decode(src: &mut BytesData<'a, VariableLengthContext>) -> crate::Result<Self>
+    async fn decode_var_len_precision<R>(src: &mut R, scale: u8) -> crate::Result<ColumnData<'a>>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let ty = src.context().ty;
-        let len = src.context().len;
-        let collation = src.context().collation;
-        let src = src.inner();
+        fn decode_d128(buf: &[u8]) -> u128 {
+            let low_part = LittleEndian::read_u64(&buf[0..]) as u128;
+
+            if !buf[8..].iter().any(|x| *x != 0) {
+                return low_part;
+            }
+
+            let high_part = match buf.len() {
+                12 => LittleEndian::read_u32(&buf[8..]) as u128,
+                16 => LittleEndian::read_u64(&buf[8..]) as u128,
+                _ => unreachable!(),
+            };
+
+            // swap high&low for big endian
+            #[cfg(target_endian = "big")]
+            let (low_part, high_part) = (high_part, low_part);
+
+            let high_part = high_part * (u64::max_value() as u128 + 1);
+            low_part + high_part
+        }
+
+        let len = src.read_u8().await?;
+
+        if len == 0 {
+            Ok(ColumnData::None)
+        } else {
+            let sign = match src.read_u8().await? {
+                0 => -1i128,
+                1 => 1i128,
+                _ => return Err(Error::Protocol("decimal: invalid sign".into())),
+            };
+
+            let value = match len {
+                5 => src.read_u32_le().await? as i128 * sign,
+                9 => src.read_u64_le().await? as i128 * sign,
+                13 => {
+                    let mut bytes = [0u8; 12]; //u96
+                    for i in 0..12 {
+                        bytes[i] = src.read_u8().await?;
+                    }
+                    decode_d128(&bytes) as i128 * sign
+                }
+                17 => {
+                    let mut bytes = [0u8; 16]; //u96
+                    for i in 0..16 {
+                        bytes[i] = src.read_u8().await?;
+                    }
+                    decode_d128(&bytes) as i128 * sign
+                }
+                x => {
+                    return Err(Error::Protocol(
+                        format!("decimal/numeric: invalid length of {} received", x).into(),
+                    ))
+                }
+            };
+
+            Ok(ColumnData::Numeric(Numeric::new_with_scale(value, scale)))
+        }
+    }
+
+    async fn decode_var_len<R>(
+        src: &mut R,
+        ctx: &VariableLengthContext,
+    ) -> crate::Result<ColumnData<'a>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let ty = ctx.ty;
+        let len = ctx.len;
+        let collation = ctx.collation;
 
         let res = match ty {
-            VarLenType::Bitn => Self::decode_bit(src)?,
-            VarLenType::Intn => Self::decode_int(src)?,
+            VarLenType::Bitn => Self::decode_bit(src).await?,
+            VarLenType::Intn => Self::decode_int(src).await?,
             // 2.2.5.5.1.5 IEEE754
-            VarLenType::Floatn => Self::decode_float(src)?,
-            VarLenType::Guid => Self::decode_guid(src)?,
-            VarLenType::NChar | VarLenType::NVarchar => Self::decode_variable_string(ty, len, src)?,
-            VarLenType::BigVarChar => Self::decode_big_varchar(len, collation, src)?,
-            VarLenType::Money => Self::decode_money(src)?,
+            VarLenType::Floatn => Self::decode_float(src).await?,
+            VarLenType::Guid => Self::decode_guid(src).await?,
+            VarLenType::NChar | VarLenType::NVarchar => {
+                Self::decode_variable_string(src, ty, len).await?
+            }
+            VarLenType::BigVarChar => Self::decode_big_varchar(src, len, collation).await?,
+            VarLenType::Money => Self::decode_money(src).await?,
             VarLenType::Datetimen => {
                 /*
                 let len = self.read_u8().await?;
@@ -193,16 +270,19 @@ impl<'a> Decode<BytesData<'a, VariableLengthContext>> for ColumnData<'static> {
                  */
                 todo!()
             }
-            VarLenType::BigBinary => Self::decode_binary(len, src)?,
+            VarLenType::BigBinary => Self::decode_binary(src, len).await?,
             VarLenType::Text => {
-                let ptr_len = src.get_u8() as usize;
-                let _ = src.split_to(ptr_len); // text ptr
+                let ptr_len = src.read_u8().await? as usize;
+                let _ = src.read_exact(&mut vec![0; ptr_len][0..ptr_len]).await?; // text ptr
 
-                src.get_i32_le(); // days
-                src.get_u32_le(); // second fractions
+                src.read_i32_le().await?; // days
+                src.read_u32_le().await?; // second fractions
 
-                let text_len = src.get_u32_le() as usize;
-                let text = String::from_utf8(src.split_to(text_len).to_vec())?;
+                let text_len = src.read_u32_le().await? as usize;
+                let mut buf = vec![0; text_len];
+
+                src.read_exact(&mut buf[0..text_len]).await?;
+                let text = String::from_utf8(buf)?;
 
                 ColumnData::String(text.into())
             }
@@ -210,102 +290,6 @@ impl<'a> Decode<BytesData<'a, VariableLengthContext>> for ColumnData<'static> {
         };
 
         Ok(res)
-    }
-}
-
-impl<'a> Decode<BytesData<'a, FixedLenType>> for ColumnData<'static> {
-    fn decode(src: &mut BytesData<'a, FixedLenType>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let ret = match *src.context() {
-            FixedLenType::Null => ColumnData::None,
-            FixedLenType::Bit => ColumnData::Bit(src.get_u8() != 0),
-            FixedLenType::Int1 => ColumnData::I8(src.get_i8()),
-            FixedLenType::Int2 => ColumnData::I16(src.get_i16_le()),
-            FixedLenType::Int4 => ColumnData::I32(src.get_i32_le()),
-            FixedLenType::Int8 => ColumnData::I64(src.get_i64_le()),
-            FixedLenType::Float4 => ColumnData::F32(src.get_f32_le()),
-            FixedLenType::Float8 => ColumnData::F64(src.get_f64_le()),
-            // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
-            // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
-            _ => {
-                return Err(Error::Protocol(
-                    format!("unsupported fixed type decoding: {:?}", src.context()).into(),
-                ))
-            }
-        };
-
-        Ok(ret)
-    }
-}
-
-impl<'a> Decode<BytesData<'a, VariableLengthPrecisionContext>> for ColumnData<'static> {
-    fn decode(src: &mut BytesData<'a, VariableLengthPrecisionContext>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        fn decode_d128(buf: &[u8]) -> u128 {
-            let low_part = LittleEndian::read_u64(&buf[0..]) as u128;
-
-            if !buf[8..].iter().any(|x| *x != 0) {
-                return low_part;
-            }
-
-            let high_part = match buf.len() {
-                12 => LittleEndian::read_u32(&buf[8..]) as u128,
-                16 => LittleEndian::read_u64(&buf[8..]) as u128,
-                _ => unreachable!(),
-            };
-
-            // swap high&low for big endian
-            #[cfg(target_endian = "big")]
-            let (low_part, high_part) = (high_part, low_part);
-
-            let high_part = high_part * (u64::max_value() as u128 + 1);
-            low_part + high_part
-        }
-
-        let len = src.get_u8();
-
-        if len == 0 {
-            Ok(ColumnData::None)
-        } else {
-            let sign = match src.get_u8() {
-                0 => -1i128,
-                1 => 1i128,
-                _ => return Err(Error::Protocol("decimal: invalid sign".into())),
-            };
-
-            let value = match len {
-                5 => src.get_u32_le() as i128 * sign,
-                9 => src.get_u64_le() as i128 * sign,
-                13 => {
-                    let mut bytes = [0u8; 12]; //u96
-                    for i in 0..12 {
-                        bytes[i] = src.get_u8();
-                    }
-                    decode_d128(&bytes) as i128 * sign
-                }
-                17 => {
-                    let mut bytes = [0u8; 16]; //u96
-                    for i in 0..16 {
-                        bytes[i] = src.get_u8();
-                    }
-                    decode_d128(&bytes) as i128 * sign
-                }
-                x => {
-                    return Err(Error::Protocol(
-                        format!("decimal/numeric: invalid length of {} received", x).into(),
-                    ))
-                }
-            };
-
-            Ok(ColumnData::Numeric(Numeric::new_with_scale(
-                value,
-                src.context().scale,
-            )))
-        }
     }
 }
 
@@ -398,12 +382,15 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
 }
 
 impl<'a> ColumnData<'a> {
-    fn decode_bit(src: &mut BytesMut) -> crate::Result<ColumnData<'static>> {
-        let recv_len = src.get_u8() as usize;
+    async fn decode_bit<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let recv_len = src.read_u8().await? as usize;
 
         let res = match recv_len {
             0 => ColumnData::None,
-            1 => ColumnData::Bit(src.get_u8() > 0),
+            1 => ColumnData::Bit(src.read_u8().await? > 0),
             v => {
                 return Err(Error::Protocol(
                     format!("bitn: length of {} is invalid", v).into(),
@@ -414,28 +401,34 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    fn decode_int(src: &mut BytesMut) -> crate::Result<ColumnData<'static>> {
-        let recv_len = src.get_u8() as usize;
+    async fn decode_int<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let recv_len = src.read_u8().await? as usize;
 
         let res = match recv_len {
             0 => ColumnData::None,
-            1 => ColumnData::I8(src.get_i8()),
-            2 => ColumnData::I16(src.get_i16_le()),
-            4 => ColumnData::I32(src.get_i32_le()),
-            8 => ColumnData::I64(src.get_i64_le()),
+            1 => ColumnData::I8(src.read_i8().await?),
+            2 => ColumnData::I16(src.read_i16_le().await?),
+            4 => ColumnData::I32(src.read_i32_le().await?),
+            8 => ColumnData::I64(src.read_i64_le().await?),
             _ => unimplemented!(),
         };
 
         Ok(res)
     }
 
-    fn decode_float(src: &mut BytesMut) -> crate::Result<ColumnData<'static>> {
-        let len = src.get_u8() as usize;
+    async fn decode_float<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let len = src.read_u8().await? as usize;
 
         let res = match len {
             0 => ColumnData::None,
-            4 => ColumnData::F32(src.get_f32_le()),
-            8 => ColumnData::F64(src.get_f64_le()),
+            4 => ColumnData::F32(src.read_f32_le().await?),
+            8 => ColumnData::F64(src.read_f64_le().await?),
             _ => {
                 return Err(Error::Protocol(
                     format!("floatn: length of {} is invalid", len).into(),
@@ -446,8 +439,11 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    fn decode_guid(src: &mut BytesMut) -> crate::Result<ColumnData<'static>> {
-        let len = src.get_u8() as usize;
+    async fn decode_guid<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let len = src.read_u8().await? as usize;
 
         let res = match len {
             0 => ColumnData::None,
@@ -455,7 +451,7 @@ impl<'a> ColumnData<'a> {
                 let mut data = [0u8; 16];
 
                 for i in 0..16 {
-                    data[i] = src.get_u8();
+                    data[i] = src.read_u8().await?;
                 }
 
                 ColumnData::Guid(Cow::Owned(Guid(data)))
@@ -470,18 +466,21 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    fn decode_variable_string(
+    async fn decode_variable_string<R>(
+        src: &mut R,
         ty: VarLenType,
         len: usize,
-        src: &mut BytesMut,
-    ) -> crate::Result<ColumnData<'static>> {
+    ) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
         let mode = if ty == VarLenType::NChar {
             ReadTyMode::FixedSize(len)
         } else {
             ReadTyMode::auto(len)
         };
 
-        let data = Self::decode_plp_type(mode, src)?;
+        let data = Self::decode_plp_type(src, mode).await?;
 
         let res = if let Some(buf) = data {
             if buf.len() % 2 != 0 {
@@ -499,13 +498,16 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    fn decode_big_varchar(
+    async fn decode_big_varchar<R>(
+        src: &mut R,
         len: usize,
         collation: Option<Collation>,
-        src: &mut BytesMut,
-    ) -> crate::Result<ColumnData<'static>> {
+    ) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
         let mode = ReadTyMode::auto(len);
-        let data = Self::decode_plp_type(mode, src)?;
+        let data = Self::decode_plp_type(src, mode).await?;
 
         let res = if let Some(bytes) = data {
             let encoder = collation
@@ -526,15 +528,18 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    fn decode_money(src: &mut BytesMut) -> crate::Result<ColumnData<'static>> {
-        let len = src.get_u8();
+    async fn decode_money<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let len = src.read_u8().await?;
 
         let res = match len {
             0 => ColumnData::None,
-            4 => ColumnData::F64(src.get_i32_le() as f64 / 1e4),
+            4 => ColumnData::F64(src.read_i32_le().await? as f64 / 1e4),
             8 => ColumnData::F64({
-                let high = src.get_i32_le() as i64;
-                let low = src.get_u32_le() as f64;
+                let high = src.read_i32_le().await? as i64;
+                let low = src.read_u32_le().await? as f64;
                 ((high << 32) as f64 + low) / 1e4
             }),
             _ => {
@@ -547,9 +552,12 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    fn decode_binary(len: usize, src: &mut BytesMut) -> crate::Result<ColumnData<'static>> {
+    async fn decode_binary<R>(src: &mut R, len: usize) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
         let mode = ReadTyMode::auto(len);
-        let data = Self::decode_plp_type(mode, src)?;
+        let data = Self::decode_plp_type(src, mode).await?;
 
         let res = if let Some(buf) = data {
             ColumnData::Binary(buf.into())
@@ -560,15 +568,20 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    /// read byte string with or without PLP
-    pub fn decode_plp_type(mode: ReadTyMode, src: &mut BytesMut) -> crate::Result<Option<Vec<u8>>> {
+    pub(crate) async fn decode_plp_type<R>(
+        src: &mut R,
+        mode: ReadTyMode,
+    ) -> crate::Result<Option<Vec<u8>>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
         let mut read_state = ReadTyState::new(mode);
 
         // If we did not read anything yet, initialize the reader.
         if read_state.data.is_none() {
             let size = match read_state.mode {
-                ReadTyMode::FixedSize(_) => src.get_u16_le() as u64,
-                ReadTyMode::Plp => src.get_u64_le(),
+                ReadTyMode::FixedSize(_) => src.read_u16_le().await? as u64,
+                ReadTyMode::Plp => src.read_u64_le().await?,
             };
 
             read_state.data = match (size, read_state.mode) {
@@ -591,7 +604,7 @@ impl<'a> ColumnData<'a> {
                     // We have no chunk. Start a new one.
                     let chunk_size = match read_state.mode {
                         ReadTyMode::FixedSize(_) => 0,
-                        ReadTyMode::Plp => src.get_u32_le() as usize,
+                        ReadTyMode::Plp => src.read_u32_le().await? as usize,
                     };
 
                     if chunk_size == 0 {
@@ -601,7 +614,7 @@ impl<'a> ColumnData<'a> {
                     }
                 } else {
                     // Just read a byte
-                    let byte = src.get_u8();
+                    let byte = src.read_u8().await?;
                     read_state.chunk_data_left -= 1;
 
                     buf.push(byte);

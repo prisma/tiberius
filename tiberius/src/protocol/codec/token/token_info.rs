@@ -1,5 +1,5 @@
-use crate::protocol::codec::{read_varchar, Decode};
-use bytes::{Buf, BytesMut};
+use crate::{async_read_le_ext::AsyncReadLeExt, protocol::codec::read_varchar};
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenInfo {
@@ -15,30 +15,30 @@ pub struct TokenInfo {
     pub(crate) line: u32,
 }
 
-impl Decode<BytesMut> for TokenInfo {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+impl TokenInfo {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let _length = src.get_u16_le();
+        let _length = src.read_u16_le().await?;
 
         let token = TokenInfo {
-            number: src.get_u32_le(),
-            state: src.get_u8(),
-            class: src.get_u8(),
+            number: src.read_u32_le().await?,
+            state: src.read_u8().await?,
+            class: src.read_u8().await?,
             message: {
-                let len = src.get_u16_le();
-                read_varchar(src, len)?
+                let len = src.read_u16_le().await?;
+                read_varchar(src, len).await?
             },
             server: {
-                let len = src.get_u8();
-                read_varchar(src, len)?
+                let len = src.read_u8().await?;
+                read_varchar(src, len).await?
             },
             procedure: {
-                let len = src.get_u8();
-                read_varchar(src, len)?
+                let len = src.read_u8().await?;
+                read_varchar(src, len).await?
             },
-            line: src.get_u32_le(),
+            line: src.read_u32_le().await?,
         };
 
         Ok(token)

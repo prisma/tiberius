@@ -1,6 +1,6 @@
 use super::TokenStream;
 use crate::protocol::{
-    codec::{DoneStatus, Packet},
+    codec::DoneStatus,
     stream::{prepared::PreparedStream, ReceivedToken},
     Context,
 };
@@ -80,12 +80,14 @@ use std::{
 /// [`Rows`]: struct.Row.html
 /// [`next_resultset`]: #method.next_resultset
 pub struct QueryResult<'a> {
-    stream: QueryStream<'a, Connection>,
+    stream: QueryStream<'a>,
 }
 
 impl<'a> QueryResult<'a> {
-    pub(crate) fn new(connection: &'a mut Connection, context: Arc<Context>) -> Self {
-        let stream = QueryStream::new(connection, context);
+    pub(crate) fn new(
+        token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>,
+    ) -> Self {
+        let stream = QueryStream::new(token_stream);
         Self { stream }
     }
 
@@ -153,13 +155,13 @@ impl<'a> Stream for QueryResult<'a> {
 /// [`Rows`]: struct.Row.html
 /// [`next_resultset`]: #method.next_resultset
 pub struct ExecuteResult<'a> {
-    stream: TokenStream<'a, Connection>,
+    token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>,
 }
 
 impl<'a> ExecuteResult<'a> {
     pub(crate) fn new(connection: &'a mut Connection, context: Arc<Context>) -> Self {
-        let stream = TokenStream::new(connection, context);
-        Self { stream }
+        let token_stream = TokenStream::new(connection, context).try_unfold();
+        Self { token_stream }
     }
 
     /// Aggregates all resulting row counts into a sum.
@@ -205,7 +207,8 @@ impl<'a> Stream for ExecuteResult<'a> {
         let this = self.get_mut();
 
         loop {
-            let token = ready!(Pin::new(&mut this.stream).try_poll_next(cx)?);
+            let stream = unsafe { Pin::new_unchecked(&mut *this.token_stream) };
+            let token = ready!(stream.try_poll_next(cx)?);
 
             match token {
                 Some(ReceivedToken::DoneProc(done)) if done.status.contains(DoneStatus::FINAL) => {
@@ -234,18 +237,17 @@ enum QueryStreamState {
     Done,
 }
 
-pub struct QueryStream<'a, S> {
-    prepared_stream: PreparedStream<'a, S>,
+pub struct QueryStream<'a> {
+    prepared_stream: PreparedStream<'a>,
     current_columns: Option<Arc<Vec<Column>>>,
     state: QueryStreamState,
 }
 
-impl<'a, S> QueryStream<'a, S>
-where
-    S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
-{
-    pub(crate) fn new(packet_stream: &'a mut S, context: Arc<Context>) -> Self {
-        let prepared_stream = PreparedStream::new(packet_stream, context);
+impl<'a> QueryStream<'a> {
+    pub(crate) fn new(
+        token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>,
+    ) -> Self {
+        let prepared_stream = PreparedStream::new(token_stream);
 
         Self {
             prepared_stream,
@@ -255,10 +257,7 @@ where
     }
 }
 
-impl<'a, S> Stream for QueryStream<'a, S>
-where
-    S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
-{
+impl<'a> Stream for QueryStream<'a> {
     type Item = crate::Result<Row>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {

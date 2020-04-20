@@ -1,4 +1,3 @@
-mod bytes_data;
 mod column_data;
 mod decode;
 mod encode;
@@ -10,7 +9,6 @@ mod rpc_request;
 mod token;
 mod type_info;
 
-pub use bytes_data::*;
 pub use column_data::*;
 pub use decode::*;
 pub use encode::*;
@@ -25,7 +23,8 @@ pub use type_info::*;
 #[cfg(windows)]
 pub use token_sspi::*;
 
-use bytes::{Buf, BytesMut};
+use crate::async_read_le_ext::AsyncReadLeExt;
+use bytes::BytesMut;
 use futures::{Stream, TryStreamExt};
 
 const HEADER_BYTES: usize = 8;
@@ -62,12 +61,15 @@ where
     Ok(T::decode(&mut buf)?)
 }
 
-pub(crate) fn read_varchar<B: Buf>(src: &mut B, len: impl Into<usize>) -> crate::Result<String> {
+pub(crate) async fn read_varchar<R>(src: &mut R, len: impl Into<usize>) -> crate::Result<String>
+where
+    R: AsyncReadLeExt + Unpin,
+{
     let len = len.into();
     let mut buf = vec![0u16; len];
 
     for i in 0..len {
-        buf[i] = src.get_u16_le();
+        buf[i] = src.read_u16_le().await?;
     }
 
     Ok(String::from_utf16(&buf[..])?)

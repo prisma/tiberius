@@ -165,7 +165,7 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(QueryResult::new(&mut self.connection, self.context.clone()))
+        Ok(QueryResult::new(self.connection.token_stream()))
     }
 
     fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
