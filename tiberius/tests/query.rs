@@ -72,7 +72,7 @@ async fn test_kanji_varchars() -> Result<()> {
         .await?;
 
     let kanji = "余ったものを後で皆に分けようと思っていただけなのに".to_string();
-    let long_kanji = "余".repeat(8001);
+    let long_kanji = "余".repeat(80001);
 
     let res = conn
         .execute(
@@ -132,29 +132,35 @@ async fn test_execute() -> Result<()> {
     conn.execute("CREATE TABLE ##TestExecute (id int)", &[])
         .await?;
 
-    let mut insert_count = conn
+    let insert_count = conn
         .execute(
             "INSERT INTO ##TestExecute (id) VALUES (@P1), (@P2), (@P3)",
             &[&1i32, &2i32, &3i32],
         )
+        .await?
+        .total()
         .await?;
 
-    assert_eq!(Some(3), insert_count.try_next().await?);
+    assert_eq!(3, insert_count);
 
-    let mut update_count = conn
+    let update_count = conn
         .execute(
             "UPDATE ##TestExecute SET id = @P1 WHERE id = @P2",
             &[&2i32, &1i32],
         )
+        .await?
+        .total()
         .await?;
 
-    assert_eq!(Some(1), update_count.try_next().await?);
+    assert_eq!(1, update_count);
 
-    let mut delete_count = conn
+    let delete_count = conn
         .execute("DELETE ##TestExecute WHERE id <> @P1", &[&3i32])
+        .await?
+        .total()
         .await?;
 
-    assert_eq!(Some(2), delete_count.try_next().await?);
+    assert_eq!(2, delete_count);
 
     Ok(())
 }

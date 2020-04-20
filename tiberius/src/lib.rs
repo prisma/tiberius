@@ -3,6 +3,7 @@
 
 use protocol::codec::*;
 
+mod async_read_le_ext;
 mod client;
 mod prepared;
 

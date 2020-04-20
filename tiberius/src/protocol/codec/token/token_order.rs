@@ -1,22 +1,21 @@
-use crate::protocol::codec::Decode;
-use bytes::{Buf, BytesMut};
+use crate::async_read_le_ext::AsyncReadLeExt;
 
 #[derive(Debug)]
 pub struct TokenOrder {
     pub(crate) column_indexes: Vec<u16>,
 }
 
-impl Decode<BytesMut> for TokenOrder {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+impl TokenOrder {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let len = src.get_u16_le() / 2;
+        let len = src.read_u16_le().await? / 2;
 
         let mut column_indexes = Vec::with_capacity(len as usize);
 
         for _ in 0..len {
-            column_indexes.push(src.get_u16_le());
+            column_indexes.push(src.read_u16_le().await?);
         }
 
         Ok(TokenOrder { column_indexes })

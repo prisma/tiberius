@@ -1,9 +1,8 @@
 use crate::{
-    protocol::codec::{read_varchar, Decode},
-    Error, FeatureLevel,
+    async_read_le_ext::AsyncReadLeExt, protocol::codec::read_varchar, Error, FeatureLevel,
 };
-use bytes::{Buf, BytesMut};
 use std::convert::TryFrom;
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenLoginAck {
@@ -18,24 +17,24 @@ pub struct TokenLoginAck {
     pub(crate) version: u32,
 }
 
-impl Decode<BytesMut> for TokenLoginAck {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+impl TokenLoginAck {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let _length = src.get_u16_le();
+        let _length = src.read_u16_le().await?;
 
-        let interface = src.get_u8();
+        let interface = src.read_u8().await?;
 
-        let tds_version = FeatureLevel::try_from(src.get_u32())
+        let tds_version = FeatureLevel::try_from(src.read_u32().await?)
             .map_err(|_| Error::Protocol("Login ACK: Invalid TDS version".into()))?;
 
         let prog_name = {
-            let len = src.get_u8();
-            read_varchar(src, len)?
+            let len = src.read_u8().await?;
+            read_varchar(src, len).await?
         };
 
-        let version = src.get_u32_le();
+        let version = src.read_u32_le().await?;
 
         Ok(TokenLoginAck {
             interface,

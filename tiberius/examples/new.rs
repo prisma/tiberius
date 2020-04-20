@@ -12,29 +12,15 @@ async fn main() -> anyhow::Result<()> {
 
     let mut conn = builder.build().await?;
 
-    conn.execute("CREATE TABLE ##TestText (content NTEXT)", &[])
-        .await?
-        .total()
-        .await?;
+    let string = "a".repeat(4001);
+    let stream = conn.query("SELECT @P1", &[&string.as_str()]).await?;
 
-    let kanji = "a".repeat(4);
-
-    let res = conn
-        .execute("INSERT INTO ##TestText (content) VALUES (@P1)", &[&kanji])
-        .await?
-        .total()
-        .await?;
-
-    assert_eq!(1, res);
-
-    let stream = conn.query("SELECT content FROM ##TestText", &[]).await?;
-
-    let results: Vec<String> = stream
-        .map_ok(|r| r.get::<_, String>(0))
+    let rows: Vec<String> = stream
+        .map_ok(|x| x.get::<_, String>(0))
         .try_collect()
         .await?;
 
-    assert_eq!(vec![kanji], results);
+    assert_eq!(rows, vec![string]);
 
     Ok(())
 }

@@ -1,7 +1,6 @@
-use super::{Decode, ReadTyMode};
-use crate::{protocol::types::Collation, uint_enum, Error};
-use bytes::{Buf, BytesMut};
+use crate::{async_read_le_ext::AsyncReadLeExt, protocol::types::Collation, uint_enum, Error};
 use std::convert::TryFrom;
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub enum TypeInfo {
@@ -30,25 +29,6 @@ uint_enum! {
         Float8 = 0x3E,
         Money4 = 0x7A,
         Int8 = 0x7F,
-    }
-}
-
-impl FixedLenType {
-    pub fn len(&self) -> usize {
-        match self {
-            Self::Null => 0,
-            Self::Int1 => 1,
-            Self::Bit => 1,
-            Self::Int2 => 2,
-            Self::Int4 => 4,
-            Self::Datetime4 => 4,
-            Self::Float4 => 4,
-            Self::Money => 8,
-            Self::Datetime => 8,
-            Self::Float8 => 8,
-            Self::Money4 => 4,
-            Self::Int8 => 8,
-        }
     }
 }
 
@@ -96,39 +76,12 @@ uint_enum! {
     }
 }
 
-impl VarLenType {
-    pub fn get_size(&self, max_len: usize, mut buf: &[u8]) -> usize {
-        use VarLenType::*;
-
-        match self {
-            Bitn | Intn | Floatn | Guid | Money => buf.get_u8() as usize + 1, // including size
-            NVarchar | BigVarChar | BigBinary => match ReadTyMode::auto(max_len) {
-                ReadTyMode::FixedSize(_) => buf.get_u16_le() as usize + 2, // + size
-                ReadTyMode::Plp => buf.get_u64_le() as usize + 8,          // + size
-            },
-            NChar => buf.get_u16_le() as usize + 2, // + size
-            VarLenType::Text | VarLenType::NText => {
-                buf.advance(17); // skip pointers
-
-                buf.get_i32_le(); // days (+ 4)
-                buf.get_u32_le(); // second fractions (+ 4)
-
-                let text_len = buf.get_u32_le() as usize;
-
-                // ptr len byte, ptr len, days, seconds, text_length
-                17 + 4 + 4 + text_len
-            }
-            _ => todo!("{:?}", self),
-        }
-    }
-}
-
-impl Decode<BytesMut> for TypeInfo {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+impl TypeInfo {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let ty = src.get_u8();
+        let ty = src.read_u8().await?;
 
         if let Ok(ty) = FixedLenType::try_from(ty) {
             return Ok(TypeInfo::FixedLen(ty));
@@ -151,20 +104,20 @@ impl Decode<BytesMut> for TypeInfo {
                     | VarLenType::Money
                     | VarLenType::Datetimen
                     | VarLenType::Timen
-                    | VarLenType::Datetime2 => src.get_u8() as usize,
+                    | VarLenType::Datetime2 => src.read_u8().await? as usize,
                     VarLenType::NChar
                     | VarLenType::NVarchar
                     | VarLenType::BigVarChar
-                    | VarLenType::BigBinary => src.get_u16_le() as usize,
+                    | VarLenType::BigBinary => src.read_u16_le().await? as usize,
                     VarLenType::Daten => 3,
-                    VarLenType::Text | VarLenType::NText => src.get_u32_le() as usize,
+                    VarLenType::Text | VarLenType::NText => src.read_u32_le().await? as usize,
                     _ => unimplemented!(),
                 };
 
                 let collation = match ty {
-                    VarLenType::NChar | VarLenType::NVarchar | VarLenType::BigVarChar => {
-                        Some(Collation::new(src.get_u32_le(), src.get_u8()))
-                    }
+                    VarLenType::NChar | VarLenType::NVarchar | VarLenType::BigVarChar => Some(
+                        Collation::new(src.read_u32_le().await?, src.read_u8().await?),
+                    ),
                     _ => None,
                 };
 
@@ -172,8 +125,8 @@ impl Decode<BytesMut> for TypeInfo {
                     VarLenType::Decimaln | VarLenType::Numericn => TypeInfo::VarLenSizedPrecision {
                         ty,
                         size: len,
-                        precision: src.get_u8(),
-                        scale: src.get_u8(),
+                        precision: src.read_u8().await?,
+                        scale: src.read_u8().await?,
                     },
                     _ => TypeInfo::VarLenSized(ty, len, collation),
                 };

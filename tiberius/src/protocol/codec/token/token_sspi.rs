@@ -10,6 +10,16 @@ impl AsRef<[u8]> for TokenSSPI {
     }
 }
 
+impl TokenSSPI {
+    pub(crate) async fn decode_async<R>(src: &mut R) -> crate::Result<Self>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let len = src.read_u16_le().await?;
+        Ok(Self(src.split_to(len as usize).to_vec()))
+    }
+}
+
 impl Decode<BytesMut> for TokenSSPI {
     fn decode(src: &mut BytesMut) -> crate::Result<Self>
     where

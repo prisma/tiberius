@@ -1,10 +1,5 @@
-use crate::{
-    protocol::codec::{BytesData, Decode},
-    protocol::Context,
-    Error,
-};
+use crate::{async_read_le_ext::AsyncReadLeExt, protocol::Context, Error};
 use bitflags::bitflags;
-use bytes::Buf;
 use std::fmt;
 
 #[derive(Debug)]
@@ -27,6 +22,31 @@ bitflags! {
     }
 }
 
+impl TokenDone {
+    pub(crate) async fn decode<R>(src: &mut R, ctx: &Context) -> crate::Result<Self>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let status = DoneStatus::from_bits(src.read_u16_le().await?)
+            .ok_or(Error::Protocol("done(variant): invalid status".into()))?;
+
+        let cur_cmd = src.read_u16_le().await?;
+        let done_row_count_bytes = ctx.version.done_row_count_bytes();
+
+        let done_rows = match done_row_count_bytes {
+            8 => src.read_u64_le().await?,
+            4 => src.read_u32_le().await? as u64,
+            _ => unreachable!(),
+        };
+
+        Ok(TokenDone {
+            status,
+            cur_cmd,
+            done_rows,
+        })
+    }
+}
+
 impl fmt::Display for TokenDone {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.done_rows == 0 {
@@ -40,30 +60,5 @@ impl fmt::Display for TokenDone {
                 self.status, self.done_rows
             )
         }
-    }
-}
-
-impl<'a> Decode<BytesData<'a, Context>> for TokenDone {
-    fn decode(src: &mut BytesData<'a, Context>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let status = DoneStatus::from_bits(src.get_u16_le())
-            .ok_or(Error::Protocol("done(variant): invalid status".into()))?;
-
-        let cur_cmd = src.get_u16_le();
-        let done_row_count_bytes = src.context().version.done_row_count_bytes();
-
-        let done_rows = match done_row_count_bytes {
-            8 => src.get_u64_le(),
-            4 => src.get_u32_le() as u64,
-            _ => unreachable!(),
-        };
-
-        Ok(TokenDone {
-            status,
-            cur_cmd,
-            done_rows,
-        })
     }
 }

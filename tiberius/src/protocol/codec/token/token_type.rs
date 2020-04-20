@@ -1,6 +1,4 @@
-use crate::{protocol::codec::Decode, uint_enum, Error};
-use bytes::{Buf, BytesMut};
-use std::convert::TryFrom;
+use crate::uint_enum;
 
 uint_enum! {
     /// Types of tokens in a token stream. Read from the first byte of the stream.
@@ -85,19 +83,5 @@ uint_enum! {
         ///
         /// Length: 8 or 12 bytes (after SQL Server 2005)
         DoneInProc = 0xFF,
-    }
-}
-
-impl Decode<BytesMut> for TokenType {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let ty_byte = src.get_u8();
-
-        let ty = TokenType::try_from(ty_byte)
-            .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;
-
-        Ok(ty)
     }
 }

@@ -1,9 +1,6 @@
-use crate::{
-    protocol::codec::{read_varchar, Decode},
-    uint_enum, Error,
-};
-use bytes::{Buf, BytesMut};
+use crate::{async_read_le_ext::AsyncReadLeExt, protocol::codec::read_varchar, uint_enum, Error};
 use std::{convert::TryFrom, fmt};
+use tokio::io::AsyncReadExt;
 
 uint_enum! {
     #[repr(u8)]
@@ -55,42 +52,44 @@ impl fmt::Display for TokenEnvChange {
     }
 }
 
-impl Decode<BytesMut> for TokenEnvChange {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+impl TokenEnvChange {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let _len = src.get_u16_le();
-        let ty_byte = src.get_u8();
+        let _len = src.read_u16_le().await?;
+        let ty_byte = src.read_u8().await?;
 
         let ty = EnvChangeTy::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid envchange type {:x}", ty_byte).into()))?;
 
         let token = match ty {
             EnvChangeTy::Database => {
-                let len = src.get_u8();
-                let new_value = read_varchar(src, len)?;
+                let len = src.read_u8().await?;
+                let new_value = read_varchar(src, len).await?;
 
-                let len = src.get_u8();
-                let old_value = read_varchar(src, len)?;
+                let len = src.read_u8().await?;
+                let old_value = read_varchar(src, len).await?;
 
                 TokenEnvChange::Database(new_value, old_value)
             }
             EnvChangeTy::PacketSize => {
-                let len = src.get_u8();
-                let new_value = read_varchar(src, len)?;
+                let len = src.read_u8().await?;
+                let new_value = read_varchar(src, len).await?;
 
-                let len = src.get_u8();
-                let old_value = read_varchar(src, len)?;
+                let len = src.read_u8().await?;
+                let old_value = read_varchar(src, len).await?;
 
                 TokenEnvChange::PacketSize(new_value.parse()?, old_value.parse()?)
             }
             EnvChangeTy::SqlCollation => {
-                let len = src.get_u8() as usize;
-                let new_value = src.split_to(len).to_vec();
+                let len = src.read_u8().await? as usize;
+                let mut new_value = vec![0; len];
+                src.read_exact(&mut new_value[0..len]).await?;
 
-                let len = src.get_u8() as usize;
-                let old_value = src.split_to(len).to_vec();
+                let len = src.read_u8().await? as usize;
+                let mut old_value = vec![0; len];
+                src.read_exact(&mut old_value[0..len]).await?;
 
                 TokenEnvChange::SqlCollation(new_value, old_value)
             }
