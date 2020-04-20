@@ -1,9 +1,10 @@
 use super::BaseMetaDataColumn;
 use crate::{
-    protocol::codec::{read_varchar, BytesData, ColumnData, Decode},
+    async_read_le_ext::AsyncReadLeExt,
+    protocol::codec::{read_varchar, ColumnData},
     Error,
 };
-use bytes::{Buf, BytesMut};
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenReturnValue {
@@ -15,25 +16,24 @@ pub struct TokenReturnValue {
     pub value: ColumnData<'static>,
 }
 
-impl Decode<BytesMut> for TokenReturnValue {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+impl TokenReturnValue {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let param_ordinal = src.get_u16_le();
-        let param_name_len = src.get_u8() as usize;
+        let param_ordinal = src.read_u16_le().await?;
+        let param_name_len = src.read_u8().await? as usize;
 
-        let param_name = read_varchar(src, param_name_len)?;
+        let param_name = read_varchar(src, param_name_len).await?;
 
-        let udf = match src.get_u8() {
+        let udf = match src.read_u8().await? {
             0x01 => false,
             0x02 => true,
             _ => return Err(Error::Protocol("ReturnValue: invalid status".into())),
         };
 
-        let meta = BaseMetaDataColumn::decode(src)?;
-        let mut src = BytesData::new(src, &meta);
-        let value = ColumnData::decode(&mut src)?;
+        let meta = BaseMetaDataColumn::decode(src).await?;
+        let value = ColumnData::decode(src, &meta.ty).await?;
 
         let token = TokenReturnValue {
             param_ordinal,

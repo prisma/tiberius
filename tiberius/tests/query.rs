@@ -72,7 +72,7 @@ async fn test_kanji_varchars() -> Result<()> {
         .await?;
 
     let kanji = "余ったものを後で皆に分けようと思っていただけなのに".to_string();
-    let long_kanji = "余".repeat(8001);
+    let long_kanji = "余".repeat(80001);
 
     let res = conn
         .execute(

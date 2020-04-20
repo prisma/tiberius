@@ -1,6 +1,9 @@
-use crate::protocol::codec::{read_varchar, Decode, TypeInfo, VarLenType};
+use crate::{
+    async_read_le_ext::AsyncReadLeExt,
+    protocol::codec::{read_varchar, TypeInfo, VarLenType},
+};
 use bitflags::bitflags;
-use bytes::{Buf, BytesMut};
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenColMetaData {
@@ -37,12 +40,13 @@ bitflags! {
     }
 }
 
-impl Decode<BytesMut> for TokenColMetaData {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+#[allow(dead_code)]
+impl TokenColMetaData {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let column_count = src.get_u16_le();
+        let column_count = src.read_u16_le().await?;
         let mut columns = Vec::with_capacity(column_count as usize);
 
         if column_count > 0 && column_count < 0xffff {
@@ -53,13 +57,14 @@ impl Decode<BytesMut> for TokenColMetaData {
 
             // read all metadata for each column
             for _ in 0..column_count {
-                let base = BaseMetaDataColumn::decode(src)?;
-                let col_name_len = src.get_u8();
+                let base = BaseMetaDataColumn::decode(src).await?;
+                let col_name_len = src.read_u8().await?;
 
                 let meta = MetaDataColumn {
                     base,
-                    col_name: read_varchar(src, col_name_len)?,
+                    col_name: read_varchar(src, col_name_len).await?,
                 };
+
                 columns.push(meta);
             }
         }
@@ -68,25 +73,25 @@ impl Decode<BytesMut> for TokenColMetaData {
     }
 }
 
-impl Decode<BytesMut> for BaseMetaDataColumn {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
+impl BaseMetaDataColumn {
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        Self: Sized,
+        R: AsyncReadLeExt + Unpin,
     {
-        let _user_ty = src.get_u32_le();
-        let raw_flags = src.get_u16_le();
+        let _user_ty = src.read_u32_le().await?;
+        let raw_flags = src.read_u16_le().await?;
         let flags = ColmetaDataFlags::from_bits(raw_flags).unwrap();
-        let ty = TypeInfo::decode(src)?;
+        let ty = TypeInfo::decode(src).await?;
 
         match ty {
             TypeInfo::VarLenSized(VarLenType::Text, _, _) => {
-                src.get_u16_le();
-                src.get_u16_le();
-                src.get_u16_le();
+                src.read_u16_le().await?;
+                src.read_u16_le().await?;
+                src.read_u16_le().await?;
 
                 // table name (wtf)
-                let len = src.get_u16_le();
-                read_varchar(src, len)?;
+                let len = src.read_u16_le().await?;
+                read_varchar(src, len).await?;
             }
             _ => (),
         }

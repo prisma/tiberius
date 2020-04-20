@@ -1,4 +1,5 @@
 use crate::{
+    async_read_le_ext::AsyncReadLeExt,
     client::AuthMethod,
     protocol::{
         codec::{self, Encode, LoginMessage, Packet, PacketHeader, PacketStatus, PreloginMessage},
@@ -12,12 +13,13 @@ use bytes::BytesMut;
 use codec::PacketCodec;
 use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use std::{
-    cmp,
+    cmp, io,
     pin::Pin,
     sync::{atomic::Ordering, Arc},
     task,
 };
 use task::Poll;
+use tokio::io::AsyncRead;
 use tokio_util::codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
@@ -36,6 +38,7 @@ pub struct Connection {
     transport: Framed<MaybeTlsStream, PacketCodec>,
     flushed: bool,
     context: Arc<Context>,
+    buf: BytesMut,
 }
 
 impl Connection {
@@ -48,6 +51,7 @@ impl Connection {
             transport,
             context,
             flushed: false,
+            buf: BytesMut::new(),
         }
     }
 
@@ -105,6 +109,8 @@ impl Connection {
     /// Calling this will slow down the queries if stream is still dirty, so
     /// using all the results after querying must be handled properly.
     pub(crate) async fn flush_stream(&mut self) -> crate::Result<()> {
+        self.buf.truncate(0);
+
         if self.flushed {
             return Ok(());
         }
@@ -240,6 +246,7 @@ impl Connection {
                 transport,
                 context: self.context,
                 flushed: false,
+                buf: BytesMut::new(),
             })
         } else {
             Ok(self)
@@ -264,7 +271,7 @@ impl Stream for Connection {
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        match ready!(Pin::new(&mut this.transport).try_poll_next(cx)) {
+        match ready!(this.transport.try_poll_next_unpin(cx)) {
             Some(Ok(packet)) => {
                 this.flushed = packet.is_last();
                 Poll::Ready(Some(Ok(packet)))
@@ -274,3 +281,38 @@ impl Stream for Connection {
         }
     }
 }
+
+impl AsyncRead for Connection {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let size = buf.len();
+
+        if this.buf.len() < size {
+            match ready!(Pin::new(&mut this.transport).try_poll_next(cx)) {
+                Some(Ok(packet)) => {
+                    this.flushed = packet.is_last();
+                    let (_, payload) = packet.into_parts();
+                    this.buf.extend(payload);
+                    Poll::Pending
+                }
+                Some(Err(e)) => Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    e.to_string(),
+                ))),
+                None => Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "No more packets in the wire",
+                ))),
+            }
+        } else {
+            buf.copy_from_slice(this.buf.split_to(size).as_ref());
+            Poll::Ready(Ok(size))
+        }
+    }
+}
+
+impl AsyncReadLeExt for Connection {}

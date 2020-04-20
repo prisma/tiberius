@@ -1,10 +1,10 @@
 use super::TokenStream;
 use crate::protocol::{
-    codec::{DoneStatus, Packet},
+    codec::DoneStatus,
     stream::{prepared::PreparedStream, ReceivedToken},
     Context,
 };
-use crate::{client::Connection, Column, Row};
+use crate::{async_read_le_ext::AsyncReadLeExt, client::Connection, Column, Row};
 use futures::{ready, Stream, StreamExt, TryStream, TryStreamExt};
 use std::{
     pin::Pin,
@@ -242,7 +242,7 @@ pub struct QueryStream<'a, S> {
 
 impl<'a, S> QueryStream<'a, S>
 where
-    S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
+    S: AsyncReadLeExt + Unpin + 'a,
 {
     pub(crate) fn new(packet_stream: &'a mut S, context: Arc<Context>) -> Self {
         let prepared_stream = PreparedStream::new(packet_stream, context);
@@ -257,7 +257,7 @@ where
 
 impl<'a, S> Stream for QueryStream<'a, S>
 where
-    S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
+    S: AsyncReadLeExt + Unpin + 'a,
 {
     type Item = crate::Result<Row>;
 

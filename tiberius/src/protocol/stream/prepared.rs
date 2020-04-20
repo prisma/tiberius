@@ -1,7 +1,7 @@
 use super::{ReceivedToken, TokenStream};
-use crate::protocol::{
-    codec::{DoneStatus, Packet},
-    Context,
+use crate::{
+    async_read_le_ext::AsyncReadLeExt,
+    protocol::{codec::DoneStatus, Context},
 };
 use futures::{ready, Stream, StreamExt};
 use std::{
@@ -17,7 +17,7 @@ pub(crate) struct PreparedStream<'a, S> {
 
 impl<'a, S> PreparedStream<'a, S>
 where
-    S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
+    S: AsyncReadLeExt + Unpin + 'a,
 {
     pub fn new(packet_stream: &'a mut S, context: Arc<Context>) -> Self {
         Self {
@@ -29,7 +29,7 @@ where
 
 impl<'a, S> Stream for PreparedStream<'a, S>
 where
-    S: Stream<Item = crate::Result<Packet>> + Unpin + 'a,
+    S: AsyncReadLeExt + Unpin + 'a,
 {
     type Item = crate::Result<ReceivedToken>;
 
