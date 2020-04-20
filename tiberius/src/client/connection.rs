@@ -297,21 +297,24 @@ impl AsyncRead for Connection {
                     this.flushed = packet.is_last();
                     let (_, payload) = packet.into_parts();
                     this.buf.extend(payload);
-                    Poll::Pending
                 }
-                Some(Err(e)) => Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::BrokenPipe,
-                    e.to_string(),
-                ))),
-                None => Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "No more packets in the wire",
-                ))),
+                Some(Err(e)) => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        e.to_string(),
+                    )))
+                }
+                None => {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "No more packets in the wire",
+                    )))
+                }
             }
-        } else {
-            buf.copy_from_slice(this.buf.split_to(size).as_ref());
-            Poll::Ready(Ok(size))
         }
+
+        buf.copy_from_slice(this.buf.split_to(size).as_ref());
+        Poll::Ready(Ok(size))
     }
 }
 
