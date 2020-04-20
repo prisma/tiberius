@@ -169,6 +169,42 @@ where
         event!(Level::INFO, "SSPI response");
         Ok(ReceivedToken::SSPI(sspi))
     }
+
+    pub fn try_unfold(self) -> impl Stream<Item = crate::Result<ReceivedToken>> + 'a {
+        futures::stream::try_unfold((self, true), |(mut this, more_data)| async move {
+            if !more_data {
+                return Ok(None);
+            }
+
+            let ty_byte = this.conn.read_u8().await?;
+
+            let ty = TokenType::try_from(ty_byte)
+                .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;
+
+            let token = match ty {
+                TokenType::ReturnStatus => this.get_return_status().await?,
+                TokenType::ColMetaData => this.get_col_metadata().await?,
+                TokenType::Row => this.get_row().await?,
+                TokenType::Done => {
+                    let result = this.get_done_value().await?;
+                    return Ok(Some((result, (this, false))));
+                }
+                TokenType::DoneProc => this.get_done_proc_value().await?,
+                TokenType::DoneInProc => this.get_done_in_proc_value().await?,
+                TokenType::ReturnValue => this.get_return_value().await?,
+                TokenType::Error => this.get_error().await?,
+                TokenType::Order => this.get_order().await?,
+                TokenType::EnvChange => this.get_env_change().await?,
+                TokenType::Info => this.get_info().await?,
+                TokenType::LoginAck => this.get_login_ack().await?,
+                #[cfg(windows)]
+                TokenType::SSPI => this.get_sspi().await?,
+                _ => panic!("Token {:?} unimplemented!", ty),
+            };
+
+            Ok(Some((token, (this, true))))
+        })
+    }
 }
 
 impl<'a, S> Stream for TokenStream<'a, S>
