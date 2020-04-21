@@ -259,7 +259,12 @@ async fn test_stored_procedure_multiple_sp() -> Result<()> {
 #[tokio::test]
 async fn test_stored_procedure_multiple() -> Result<()> {
     let mut conn = connect().await?;
-    let mut stream = conn.query("SELECT 'a'; SELECT 'b';", &[]).await?;
+
+    let mut stream = conn
+        .query("SELECT 'a' AS first; SELECT 'b' AS second;", &[])
+        .await?;
+
+    assert_eq!(vec!["first"], stream.columns());
 
     let rows: Result<Vec<String>> = stream
         .by_ref()
@@ -267,10 +272,19 @@ async fn test_stored_procedure_multiple() -> Result<()> {
         .try_collect()
         .await;
 
+    assert_eq!(vec!["first"], stream.columns());
     assert_eq!(rows?, vec!["a".to_string()]);
-    assert!(stream.next_resultset());
 
-    let rows: Result<Vec<String>> = stream.map_ok(|x| x.get::<_, String>(0)).try_collect().await;
+    assert!(stream.next_resultset());
+    assert_eq!(vec!["second"], stream.columns());
+
+    let rows: Result<Vec<String>> = stream
+        .by_ref()
+        .map_ok(|x| x.get::<_, String>(0))
+        .try_collect()
+        .await;
+
+    assert_eq!(vec!["second"], stream.columns());
     assert_eq!(rows?, vec!["b".to_string()]);
 
     Ok(())

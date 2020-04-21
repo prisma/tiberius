@@ -14,11 +14,13 @@ pub struct TokenRow {
     pub columns: Vec<ColumnData<'static>>,
 }
 
+/// A bitmap of null values in the row.
 struct RowBitmap {
     data: Vec<u8>,
 }
 
 impl RowBitmap {
+    /// Is the given column index null or not.
     fn is_null(&self, i: usize) -> bool {
         let index = i / 8;
         let bit = i % 8;
@@ -26,6 +28,8 @@ impl RowBitmap {
         self.data[index] & (1 << bit) > 0
     }
 
+    /// Decode the bitmap data from the beginning of the row. Only doable if the
+    /// type is `NbcRowToken`.
     async fn decode<R>(src: &mut R, columns: usize) -> crate::Result<Self>
     where
         R: AsyncReadLeExt + Unpin,
@@ -39,6 +43,8 @@ impl RowBitmap {
 }
 
 impl TokenRow {
+    /// Normal row. We'll read the metadata what we've cached and parse columns
+    /// based on that.
     pub(crate) async fn decode<R>(src: &mut R, ctx: &Context) -> crate::Result<Self>
     where
         R: AsyncReadLeExt + Unpin,
@@ -59,6 +65,8 @@ impl TokenRow {
         Ok(row)
     }
 
+    /// SQL Server has packed nulls on this row type. We'll read what columns
+    /// are null from the bitmap.
     pub(crate) async fn decode_nbc<R>(src: &mut R, ctx: &Context) -> crate::Result<Self>
     where
         R: AsyncReadLeExt + Unpin,

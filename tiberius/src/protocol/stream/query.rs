@@ -4,7 +4,7 @@ use crate::protocol::{
     stream::{prepared::PreparedStream, ReceivedToken},
     Context,
 };
-use crate::{client::Connection, Column, Row};
+use crate::{client::Connection, Column, Error, Row};
 use futures::{ready, Stream, StreamExt, TryStream, TryStreamExt};
 use std::{
     pin::Pin,
@@ -91,11 +91,56 @@ impl<'a> QueryResult<'a> {
         Self { stream }
     }
 
+    pub(crate) async fn fetch_metadata(&mut self) -> crate::Result<()> {
+        self.stream.fetch_metadata().await
+    }
+
+    /// Names of the columns of the current resultset. Order is the same as the
+    /// order of columns in the rows. Needs to be called separately for every
+    /// result set.
+    ///
+    /// ```no_run
+    /// # use tiberius::{Client, AuthMethod};
+    /// # use std::env;
+    /// use futures::{StreamExt, TryStreamExt};
+    /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut builder = Client::builder();
+    /// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
+    /// #     builder.host(host);
+    /// # };
+    /// # if let Ok(port) = env::var("TIBERIUS_TEST_PORT") {
+    /// #     let port: u16 = port.parse().unwrap();
+    /// #     builder.port(port);
+    /// # };
+    /// # if let Ok(user) = env::var("TIBERIUS_TEST_USER") {
+    /// #     let pw = env::var("TIBERIUS_TEST_PW").unwrap();
+    /// #     builder.authentication(AuthMethod::sql_server(user, pw));
+    /// # };
+    /// # let mut conn = builder.build().await?;
+    ///
+    /// let mut result_set = conn
+    ///     .query(
+    ///         "SELECT 1 AS foo; SELECT 2 AS bar",
+    ///         &[&1i32, &2i32, &3i32],
+    ///     )
+    ///     .await?;
+    ///
+    /// assert_eq!(vec!["foo"], result_set.columns());
+    /// result_set.next_resultset();
+    /// assert_eq!(vec!["bar"], result_set.columns());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn columns(&'a self) -> Vec<&str> {
+        self.stream.columns()
+    }
+
     /// Returns `true` if stream has more result sets available. Must be called
     /// before polling again to get results from the next query.
     pub fn next_resultset(&mut self) -> bool {
         if self.stream.state == QueryStreamState::HasNext {
             self.stream.state = QueryStreamState::Initial;
+
             true
         } else {
             false
@@ -259,6 +304,7 @@ enum QueryStreamState {
 pub struct QueryStream<'a> {
     prepared_stream: PreparedStream<'a>,
     current_columns: Option<Arc<Vec<Column>>>,
+    previous_columns: Option<Arc<Vec<Column>>>,
     state: QueryStreamState,
 }
 
@@ -271,8 +317,64 @@ impl<'a> QueryStream<'a> {
         Self {
             prepared_stream,
             current_columns: None,
+            previous_columns: None,
             state: QueryStreamState::Initial,
         }
+    }
+
+    pub(crate) async fn fetch_metadata(&mut self) -> crate::Result<()> {
+        loop {
+            match self.prepared_stream.try_next().await? {
+                Some(ReceivedToken::NewResultset(meta)) => {
+                    let columns = meta
+                        .columns
+                        .iter()
+                        .map(|x| Column {
+                            name: x.col_name.clone(),
+                        })
+                        .collect::<Vec<_>>();
+
+                    self.store_columns(columns);
+
+                    return Ok(());
+                }
+                Some(ReceivedToken::Done(_)) => {
+                    return Err(Error::Protocol("Never got result metadata".into()))
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    pub(crate) fn columns(&self) -> Vec<&str> {
+        match self.state {
+            QueryStreamState::HasNext => self
+                .previous_columns
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect(),
+            _ => self
+                .current_columns
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|c| c.name.as_str())
+                .collect(),
+        }
+    }
+
+    fn store_columns(&mut self, columns: Vec<Column>) {
+        if let Some(columns) = self.current_columns.take() {
+            self.previous_columns = Some(columns);
+        }
+
+        self.current_columns = Some(Arc::new(columns));
+
+        if let QueryStreamState::HasPotentiallyNext = self.state {
+            self.state = QueryStreamState::HasNext;
+        };
     }
 }
 
@@ -303,11 +405,7 @@ impl<'a> Stream for QueryStream<'a> {
                         })
                         .collect::<Vec<_>>();
 
-                    this.current_columns = Some(Arc::new(column_meta));
-
-                    if let QueryStreamState::HasPotentiallyNext = this.state {
-                        this.state = QueryStreamState::HasNext;
-                    };
+                    this.store_columns(column_meta);
 
                     continue;
                 }

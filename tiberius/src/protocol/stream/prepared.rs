@@ -37,7 +37,6 @@ impl<'a> Stream for PreparedStream<'a> {
 
             return match item {
                 token @ ReceivedToken::NewResultset(_) => {
-                    // Make sure the held back DONEINPROC token finds its way to the querystream
                     if let Some(read_ahead) = self.read_ahead.take() {
                         self.read_ahead = Some(token);
                         return Poll::Ready(Some(Ok(read_ahead)));

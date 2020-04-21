@@ -165,7 +165,10 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(QueryResult::new(self.connection.token_stream()))
+        let mut result = QueryResult::new(self.connection.token_stream());
+        result.fetch_metadata().await?;
+
+        Ok(result)
     }
 
     fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
