@@ -101,6 +101,25 @@ impl<'a> QueryResult<'a> {
             false
         }
     }
+
+    /// Collects results from all queries in the stream into memory in the order
+    /// of querying.
+    pub async fn into_vec(mut self) -> crate::Result<Vec<Vec<Row>>> {
+        let first: Vec<Row> = self.by_ref().try_collect().await?;
+        let mut results = vec![first];
+
+        while self.next_resultset() {
+            results.push(self.by_ref().try_collect().await?);
+        }
+
+        Ok(results)
+    }
+
+    /// A convenience method on collecting the results of the first query into
+    /// memory. Drops all other results.
+    pub async fn into_first(self) -> crate::Result<Vec<Row>> {
+        Ok(self.try_collect().await?)
+    }
 }
 
 impl<'a> Stream for QueryResult<'a> {
