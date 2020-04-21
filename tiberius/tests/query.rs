@@ -448,3 +448,43 @@ async fn test_drop_stream_before_handling_all_results() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_nbc_row() -> Result<()> {
+    let mut conn = connect().await?;
+
+    let mut stream = conn
+        .query(
+            "SELECT NULL, NULL, NULL, NULL, 1, NULL, NULL, NULL, 2, NULL, NULL, 3, NULL, 4",
+            &[],
+        )
+        .await?;
+
+    let expected_results = vec![
+        None,
+        None,
+        None,
+        None,
+        Some(1),
+        None,
+        None,
+        None,
+        Some(2),
+        None,
+        None,
+        Some(3),
+        None,
+        Some(4),
+    ];
+
+    let mut res: Vec<Option<i32>> = Vec::new();
+    while let Some(row) = stream.try_next().await? {
+        for i in 0..expected_results.len() {
+            res.push(row.try_get(i)?)
+        }
+    }
+
+    assert_eq!(expected_results, res);
+
+    Ok(())
+}

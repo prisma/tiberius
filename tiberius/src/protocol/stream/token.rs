@@ -40,7 +40,6 @@ pub enum ReceivedToken {
 pub(crate) struct TokenStream<'a, S> {
     conn: &'a mut S,
     context: Arc<Context>,
-    row_mode: bool,
 }
 
 impl<'a, S> TokenStream<'a, S>
@@ -48,11 +47,7 @@ where
     S: AsyncReadLeExt + Unpin + 'a,
 {
     pub(crate) fn new(conn: &'a mut S, context: Arc<Context>) -> Self {
-        Self {
-            conn,
-            context,
-            row_mode: false,
-        }
+        Self { conn, context }
     }
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
@@ -92,9 +87,14 @@ where
     }
 
     async fn get_row(&mut self) -> crate::Result<ReceivedToken> {
-        self.row_mode = true;
         let return_value = TokenRow::decode(self.conn, &self.context).await?;
-        self.row_mode = false;
+
+        event!(Level::TRACE, message = ?return_value);
+        Ok(ReceivedToken::Row(return_value))
+    }
+
+    async fn get_nbc_row(&mut self) -> crate::Result<ReceivedToken> {
+        let return_value = TokenRow::decode_nbc(self.conn, &self.context).await?;
 
         event!(Level::TRACE, message = ?return_value);
         Ok(ReceivedToken::Row(return_value))
@@ -187,6 +187,7 @@ where
                 TokenType::ReturnStatus => this.get_return_status().await?,
                 TokenType::ColMetaData => this.get_col_metadata().await?,
                 TokenType::Row => this.get_row().await?,
+                TokenType::NbcRow => this.get_nbc_row().await?,
                 TokenType::Done => {
                     let result = this.get_done_value().await?;
                     return Ok(Some((result, (this, false))));
