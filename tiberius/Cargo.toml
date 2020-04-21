@@ -21,7 +21,6 @@ thiserror = "1.0"
 bytes = "0.5"
 pretty-hex = "0.1"
 pin-project-lite = "0.1"
-pin-utils = "0.1.0-alpha.4"
 
 [dependencies.tokio-util]
 version = "0.3"
