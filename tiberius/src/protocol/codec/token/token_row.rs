@@ -14,7 +14,22 @@ pub struct TokenRow {
     pub columns: Vec<ColumnData<'static>>,
 }
 
-/// A bitmap of null values in the row.
+/// A bitmap of null values in the row. Sometimes SQL Server decides to pack the
+/// null values in the row, calling it the NBCROW. In this kind of tokens the row
+/// itself skips the null columns completely, but they can be found from the bitmap
+/// stored in the beginning of the token.
+///
+/// One byte can store eight bits of information. Bits with value of one being null.
+///
+/// If our row has eight columns, and our byte in bits is:
+///
+/// ```
+/// 1 0 0 1 0 1 0 0
+/// ```
+///
+/// This would mean columns 0, 3 and 5 are null and should not be parsed at all.
+/// For more than eight columns, more bits need to be reserved for the bitmap
+/// (see the size calculation).
 struct RowBitmap {
     data: Vec<u8>,
 }
