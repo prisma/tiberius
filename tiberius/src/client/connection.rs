@@ -266,6 +266,10 @@ impl Connection {
     ) -> Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a> {
         TokenStream::new(self, self.context.clone()).try_unfold()
     }
+
+    pub(crate) fn is_eof(&self) -> bool {
+        self.flushed && self.buf.is_empty()
+    }
 }
 
 impl Stream for Connection {

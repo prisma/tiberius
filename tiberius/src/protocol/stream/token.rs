@@ -2,6 +2,7 @@
 use super::codec::TokenSSPI;
 use crate::{
     async_read_le_ext::AsyncReadLeExt,
+    client::Connection,
     protocol::{
         codec::{
             TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenInfo, TokenLoginAck,
@@ -37,16 +38,13 @@ pub enum ReceivedToken {
     SSPI(TokenSSPI),
 }
 
-pub(crate) struct TokenStream<'a, S> {
-    conn: &'a mut S,
+pub(crate) struct TokenStream<'a> {
+    conn: &'a mut Connection,
     context: Arc<Context>,
 }
 
-impl<'a, S> TokenStream<'a, S>
-where
-    S: AsyncReadLeExt + Unpin + 'a,
-{
-    pub(crate) fn new(conn: &'a mut S, context: Arc<Context>) -> Self {
+impl<'a> TokenStream<'a> {
+    pub(crate) fn new(conn: &'a mut Connection, context: Arc<Context>) -> Self {
         Self { conn, context }
     }
 
@@ -173,8 +171,8 @@ where
     }
 
     pub fn try_unfold(self) -> Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a> {
-        let s = futures::stream::try_unfold((self, true), |(mut this, more_data)| async move {
-            if !more_data {
+        let s = futures::stream::try_unfold(self, |mut this| async move {
+            if this.conn.is_eof() {
                 return Ok(None);
             }
 
@@ -188,10 +186,7 @@ where
                 TokenType::ColMetaData => this.get_col_metadata().await?,
                 TokenType::Row => this.get_row().await?,
                 TokenType::NbcRow => this.get_nbc_row().await?,
-                TokenType::Done => {
-                    let result = this.get_done_value().await?;
-                    return Ok(Some((result, (this, false))));
-                }
+                TokenType::Done => this.get_done_value().await?,
                 TokenType::DoneProc => this.get_done_proc_value().await?,
                 TokenType::DoneInProc => this.get_done_in_proc_value().await?,
                 TokenType::ReturnValue => this.get_return_value().await?,
@@ -205,7 +200,7 @@ where
                 _ => panic!("Token {:?} unimplemented!", ty),
             };
 
-            Ok(Some((token, (this, true))))
+            Ok(Some((token, this)))
         });
 
         Box::new(s)
