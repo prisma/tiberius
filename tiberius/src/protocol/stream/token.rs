@@ -11,17 +11,13 @@ use crate::{
     },
     Error, TokenType,
 };
-use futures::{ready, FutureExt, Stream, TryStreamExt};
-use pin_utils::pin_mut;
+use futures::{Stream, TryStreamExt};
 use std::{
     convert::TryFrom,
-    future::Future,
     pin::Pin,
     sync::{atomic::Ordering, Arc},
-    task,
 };
-use task::Poll;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::AsyncReadExt;
 use tracing::{event, Level};
 
 #[derive(Debug)]
@@ -59,9 +55,12 @@ where
         }
     }
 
-    pub(crate) async fn flush_done(&mut self) -> crate::Result<TokenDone> {
+    pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
+        let mut stream = self.try_unfold();
+        let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
+
         loop {
-            match self.try_next().await? {
+            match stream.try_next().await? {
                 Some(ReceivedToken::Done(token)) => return Ok(token),
                 Some(_) => (),
                 None => return Err(crate::Error::Protocol("Never got DONE token.".into())),
@@ -70,9 +69,12 @@ where
     }
 
     #[cfg(windows)]
-    pub(crate) async fn flush_sspi(&mut self) -> crate::Result<TokenSSPI> {
+    pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSSPI> {
+        let mut stream = self.try_unfold();
+        let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
+
         loop {
-            match self.try_next().await? {
+            match stream.try_next().await? {
                 Some(ReceivedToken::SSPI(token)) => return Ok(token),
                 Some(_) => (),
                 None => return Err(crate::Error::Protocol("Never got SSPI token.".into())),
@@ -170,8 +172,8 @@ where
         Ok(ReceivedToken::SSPI(sspi))
     }
 
-    pub fn try_unfold(self) -> impl Stream<Item = crate::Result<ReceivedToken>> + 'a {
-        futures::stream::try_unfold((self, true), |(mut this, more_data)| async move {
+    pub fn try_unfold(self) -> Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a> {
+        let s = futures::stream::try_unfold((self, true), |(mut this, more_data)| async move {
             if !more_data {
                 return Ok(None);
             }
@@ -203,100 +205,8 @@ where
             };
 
             Ok(Some((token, (this, true))))
-        })
-    }
-}
+        });
 
-impl<'a, S> Stream for TokenStream<'a, S>
-where
-    S: AsyncReadLeExt + AsyncRead + Unpin + 'a,
-{
-    type Item = crate::Result<ReceivedToken>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-
-        let ty_byte = ready!(Pin::new(&mut this.conn.read_u8()).poll(cx))?;
-
-        let ty = if this.row_mode {
-            TokenType::Row
-        } else {
-            TokenType::try_from(ty_byte)
-                .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?
-        };
-
-        match ty {
-            TokenType::ReturnStatus => {
-                let fut = this.get_return_status();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::ColMetaData => {
-                let fut = this.get_col_metadata();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::Row => {
-                let fut = this.get_row();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::Done => {
-                let fut = this.get_done_value();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::DoneProc => {
-                let fut = this.get_done_proc_value();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::DoneInProc => {
-                let fut = this.get_done_in_proc_value();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::ReturnValue => {
-                let fut = this.get_return_value();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::Error => {
-                let fut = this.get_error();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::Order => {
-                let fut = this.get_order();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::EnvChange => {
-                let fut = this.get_env_change();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::Info => {
-                let fut = this.get_info();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            TokenType::LoginAck => {
-                let fut = this.get_login_ack();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            #[cfg(windows)]
-            TokenType::SSPI => {
-                let fut = this.get_sspi();
-                pin_mut!(fut);
-                Poll::Ready(Some(ready!(fut.poll_unpin(cx))))
-            }
-            _ => panic!("Token {:?} unimplemented!", ty),
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, None)
+        Box::new(s)
     }
 }

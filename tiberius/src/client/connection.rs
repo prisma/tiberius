@@ -3,7 +3,7 @@ use crate::{
     client::AuthMethod,
     protocol::{
         codec::{self, Encode, LoginMessage, Packet, PacketHeader, PacketStatus, PreloginMessage},
-        stream::TokenStream,
+        stream::{ReceivedToken, TokenStream},
         Context, HEADER_BYTES,
     },
     tls::MaybeTlsStream,
@@ -171,7 +171,9 @@ impl Connection {
                 msg.integrated_security = buf;
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
-                self.token_stream().flush_done().await?;
+
+                let ts = TokenStream::new(self, self.context.clone());
+                ts.flush_done().await?;
 
                 let mut ts = self.token_stream();
                 let sspi_bytes = ts.flush_sspi().await?;
@@ -205,7 +207,9 @@ impl Connection {
                 msg.password = password.into();
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
-                self.token_stream().flush_done().await?;
+
+                let ts = TokenStream::new(self, self.context.clone());
+                ts.flush_done().await?;
             }
             x => panic!("Auth method not supported {:?}", x),
         }
@@ -260,8 +264,10 @@ impl Connection {
         Ok(self)
     }
 
-    pub(crate) fn token_stream(&mut self) -> TokenStream<Connection> {
-        TokenStream::new(self, self.context.clone())
+    pub(crate) fn token_stream<'a>(
+        &'a mut self,
+    ) -> Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a> {
+        TokenStream::new(self, self.context.clone()).try_unfold()
     }
 }
 

@@ -1,36 +1,26 @@
-use super::{ReceivedToken, TokenStream};
-use crate::{
-    async_read_le_ext::AsyncReadLeExt,
-    protocol::{codec::DoneStatus, Context},
-};
-use futures::{ready, Stream, StreamExt};
+use super::ReceivedToken;
+use crate::protocol::codec::DoneStatus;
+use futures::{ready, Stream};
 use std::{
     pin::Pin,
-    sync::Arc,
     task::{self, Poll},
 };
 
-pub(crate) struct PreparedStream<'a, S> {
-    token_stream: TokenStream<'a, S>,
+pub(crate) struct PreparedStream<'a> {
+    token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>,
     read_ahead: Option<ReceivedToken>,
 }
 
-impl<'a, S> PreparedStream<'a, S>
-where
-    S: AsyncReadLeExt + Unpin + 'a,
-{
-    pub fn new(packet_stream: &'a mut S, context: Arc<Context>) -> Self {
+impl<'a> PreparedStream<'a> {
+    pub fn new(token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>) -> Self {
         Self {
-            token_stream: TokenStream::new(packet_stream, context),
+            token_stream,
             read_ahead: None,
         }
     }
 }
 
-impl<'a, S> Stream for PreparedStream<'a, S>
-where
-    S: AsyncReadLeExt + Unpin + 'a,
-{
+impl<'a> Stream for PreparedStream<'a> {
     type Item = crate::Result<ReceivedToken>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
@@ -39,7 +29,8 @@ where
                 return Poll::Ready(Some(Ok(self.read_ahead.take().unwrap())));
             }
 
-            let item = match ready!(self.token_stream.poll_next_unpin(cx)) {
+            let stream = unsafe { Pin::new_unchecked(&mut *self.token_stream) };
+            let item = match ready!(stream.poll_next(cx)) {
                 Some(res) => res?,
                 None => return Poll::Ready(None),
             };
