@@ -106,7 +106,12 @@ impl Row {
         };
 
         let col_data = &self.data.columns[idx];
-        R::try_from(col_data).map(Some)
+
+        if let ColumnData::None = col_data {
+            Ok(None)
+        } else {
+            R::try_from(col_data).map(Some)
+        }
     }
 }
 

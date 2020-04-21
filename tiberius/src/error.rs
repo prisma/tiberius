@@ -36,6 +36,15 @@ pub enum Error {
     Server(TokenError),
     #[error("Operation cancelled")]
     Canceled,
+    #[cfg(feature = "tls")]
+    #[error("Error forming TLS connection {}", _0)]
+    Tls(String),
+}
+
+impl From<native_tls::Error> for Error {
+    fn from(v: native_tls::Error) -> Self {
+        Error::Tls(format!("{}", v))
+    }
 }
 
 impl From<Infallible> for Error {

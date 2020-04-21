@@ -237,10 +237,7 @@ impl Connection {
             let connector = tokio_tls::TlsConnector::from(cx);
 
             let stream = match self.transport.into_inner() {
-                MaybeTlsStream::Raw(tcp) => connector
-                    .connect("", tcp)
-                    .await
-                    .expect("TODO: handle error"),
+                MaybeTlsStream::Raw(tcp) => connector.connect("", tcp).await?,
                 _ => unreachable!(),
             };
 
