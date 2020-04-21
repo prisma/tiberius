@@ -303,6 +303,11 @@ impl AsyncRead for Connection {
                     this.flushed = packet.is_last();
                     let (_, payload) = packet.into_parts();
                     this.buf.extend(payload);
+
+                    if this.buf.len() < size {
+                        cx.waker().wake_by_ref();
+                        return Poll::Pending;
+                    }
                 }
                 Some(Err(e)) => {
                     return Poll::Ready(Err(io::Error::new(
