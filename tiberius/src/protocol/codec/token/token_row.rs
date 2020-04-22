@@ -23,7 +23,7 @@ pub struct TokenRow {
 ///
 /// If our row has eight columns, and our byte in bits is:
 ///
-/// ```
+/// ```ignore
 /// 1 0 0 1 0 1 0 0
 /// ```
 ///
@@ -64,7 +64,7 @@ impl TokenRow {
     where
         R: AsyncReadLeExt + Unpin,
     {
-        let col_meta = ctx.last_meta.lock().clone().unwrap();
+        let col_meta = ctx.last_meta.lock().await.clone().unwrap();
 
         let mut row = TokenRow {
             meta: col_meta.clone(),
@@ -86,7 +86,7 @@ impl TokenRow {
     where
         R: AsyncReadLeExt + Unpin,
     {
-        let col_meta = ctx.last_meta.lock().clone().unwrap();
+        let col_meta = ctx.last_meta.lock().await.clone().unwrap();
         let row_bitmap = RowBitmap::decode(src, col_meta.columns.len()).await?;
 
         let mut row = TokenRow {
