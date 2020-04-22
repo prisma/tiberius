@@ -68,6 +68,8 @@ macro_rules! le_reader {
 }
 
 pub trait AsyncReadLeExt: AsyncRead {
+    fn debug_buffer(&self);
+
     fn read_f32<'a>(&'a mut self) -> ReadF32<&'a mut Self>
     where
         Self: Unpin,
