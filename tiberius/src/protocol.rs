@@ -9,6 +9,7 @@ use std::{
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
     sync::Arc,
 };
+use tokio::sync::Mutex;
 
 uint_enum! {
     /// The configured encryption level specifying if encryption is required
@@ -30,7 +31,7 @@ pub struct Context {
     pub version: FeatureLevel,
     pub packet_size: AtomicU32,
     pub packet_id: AtomicU8,
-    pub last_meta: parking_lot::Mutex<Option<Arc<TokenColMetaData>>>,
+    pub last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
 }
 
 impl Context {
@@ -39,7 +40,7 @@ impl Context {
             version: FeatureLevel::SqlServerN,
             packet_size: AtomicU32::new(4096),
             packet_id: AtomicU8::new(0),
-            last_meta: parking_lot::Mutex::new(None),
+            last_meta: Mutex::new(None),
         }
     }
 
@@ -47,8 +48,8 @@ impl Context {
         PacketHeader::new(length, self.packet_id.fetch_add(1, Ordering::SeqCst))
     }
 
-    pub fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
-        *self.last_meta.lock() = Some(meta);
+    pub async fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
+        *self.last_meta.lock().await = Some(meta);
     }
 }
 
