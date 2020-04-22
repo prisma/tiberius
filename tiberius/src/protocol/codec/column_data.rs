@@ -7,7 +7,6 @@ use crate::{
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
-use pretty_hex::*;
 use protocol::types::{Collation, Guid};
 use std::borrow::Cow;
 use tokio::io::AsyncReadExt;
@@ -271,7 +270,7 @@ impl<'a> ColumnData<'a> {
                  */
                 todo!()
             }
-            VarLenType::BigBinary => Self::decode_binary(src, len).await?,
+            VarLenType::BigBinary | VarLenType::BigVarBin => Self::decode_binary(src, len).await?,
             VarLenType::Text => Self::decode_text(src).await?,
             VarLenType::NText => Self::decode_ntext(src).await?,
             t => unimplemented!("{:?}", t),
@@ -361,11 +360,24 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
             ColumnData::None => {
                 dst.put_u8(FixedLenType::Null as u8);
             }
-            ColumnData::Binary(bytes) => {
+            ColumnData::Binary(bytes) if bytes.len() <= 8000 => {
                 dst.put_u8(VarLenType::BigVarBin as u8);
                 dst.put_u16_le(8000);
                 dst.put_u16_le(bytes.len() as u16);
                 dst.extend(bytes.into_owned());
+            }
+            ColumnData::Binary(bytes) => {
+                dst.put_u8(VarLenType::BigVarBin as u8);
+                // Max length
+                dst.put_u16_le(0xffff as u16);
+                // Also the length is unknown
+                dst.put_u64_le(0xfffffffffffffffe as u64);
+                // We'll write in one chunk, length is the whole bytes length
+                dst.put_u32_le(bytes.len() as u32);
+                // Payload
+                dst.extend(bytes.into_owned());
+                // PLP_TERMINATOR
+                dst.put_u32_le(0);
             }
             // TODO
             ColumnData::Guid(_) => todo!(),

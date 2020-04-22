@@ -41,6 +41,24 @@ impl<'a> TryFrom<&'a ColumnData<'a>> for String {
     }
 }
 
+impl<'a> TryFrom<&'a ColumnData<'a>> for Vec<u8> {
+    type Error = Error;
+
+    fn try_from(data: &ColumnData) -> crate::Result<Self> {
+        match data {
+            ColumnData::Binary(s) => Ok(s.to_vec()),
+            _ => Err(Error::Conversion(
+                format!(
+                    "cannot interpret {:?} as an {} value",
+                    data,
+                    stringify!($ty)
+                )
+                .into(),
+            )),
+        }
+    }
+}
+
 #[derive(Debug)] // TODO
 pub struct Column {
     pub(crate) name: String,
