@@ -67,12 +67,12 @@ uint_enum! {
         NText = 0x63,
         // not supported yet
         SSVariant = 0x62, // legacy types (not supported since post-7.2):
-                        // Char = 0x2F,
-                        // VarChar = 0x27,
-                        // Binary = 0x2D,
-                        // VarBinary = 0x25,
-                        // Numeric = 0x3F,
-                        // Decimal = 0x37
+                          // Char = 0x2F,
+                          // Binary = 0x2D,
+                          // VarBinary = 0x25,
+                          // VarChar = 0x27,
+                          // Numeric = 0x3F,
+                          // Decimal = 0x37
     }
 }
 
@@ -108,10 +108,11 @@ impl TypeInfo {
                     VarLenType::NChar
                     | VarLenType::NVarchar
                     | VarLenType::BigVarChar
-                    | VarLenType::BigBinary => src.read_u16_le().await? as usize,
+                    | VarLenType::BigBinary
+                    | VarLenType::BigVarBin => src.read_u16_le().await? as usize,
                     VarLenType::Daten => 3,
                     VarLenType::Text | VarLenType::NText => src.read_u32_le().await? as usize,
-                    _ => unimplemented!(),
+                    _ => todo!("not yet implemented for {:?}", ty),
                 };
 
                 let collation = match ty {

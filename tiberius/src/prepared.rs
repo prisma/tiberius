@@ -77,6 +77,60 @@ impl ToSql for Option<String> {
     }
 }
 
+impl ToSql for &[u8] {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        let sql_type = match self.len() {
+            0..=8000 => "VARBINARY(8000)",
+            _ => "VARBINARY(MAX)",
+        };
+
+        (sql_type, ColumnData::Binary(Cow::from(*self)))
+    }
+}
+
+impl ToSql for Option<&[u8]> {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        match self {
+            Some(s) => {
+                let sql_type = match s.len() {
+                    0..=4000 => "VARBINARY(8000)",
+                    _ => "VARBINARY(MAX)",
+                };
+
+                (sql_type, ColumnData::Binary(Cow::from(*s)))
+            }
+            None => ("VARBINARY(4000)", ColumnData::None),
+        }
+    }
+}
+
+impl ToSql for Vec<u8> {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        let sql_type = match self.len() {
+            0..=8000 => "VARBINARY(8000)",
+            _ => "VARBINARY(MAX)",
+        };
+
+        (sql_type, ColumnData::Binary(Cow::from(self)))
+    }
+}
+
+impl ToSql for Option<Vec<u8>> {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        match self {
+            Some(s) => {
+                let sql_type = match s.len() {
+                    0..=4000 => "VARBINARY(8000)",
+                    _ => "VARBINARY(MAX)",
+                };
+
+                (sql_type, ColumnData::Binary(Cow::from(s)))
+            }
+            None => ("VARBINARY(8000)", ColumnData::None),
+        }
+    }
+}
+
 impl ToSql for bool {
     fn to_sql(&self) -> (&'static str, ColumnData) {
         ("bit", ColumnData::Bit(*self))
