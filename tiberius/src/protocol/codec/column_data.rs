@@ -1,4 +1,4 @@
-use super::{Encode, FixedLenType, TypeInfo, VarLenType};
+use super::{read_varchar, Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::{
     async_read_le_ext::AsyncReadLeExt,
     protocol::{self, types::Numeric},
@@ -271,21 +271,8 @@ impl<'a> ColumnData<'a> {
                 todo!()
             }
             VarLenType::BigBinary => Self::decode_binary(src, len).await?,
-            VarLenType::Text => {
-                let ptr_len = src.read_u8().await? as usize;
-                let _ = src.read_exact(&mut vec![0; ptr_len][0..ptr_len]).await?; // text ptr
-
-                src.read_i32_le().await?; // days
-                src.read_u32_le().await?; // second fractions
-
-                let text_len = src.read_u32_le().await? as usize;
-                let mut buf = vec![0; text_len];
-
-                src.read_exact(&mut buf[0..text_len]).await?;
-                let text = String::from_utf8(buf)?;
-
-                ColumnData::String(text.into())
-            }
+            VarLenType::Text => Self::decode_text(src).await?,
+            VarLenType::NText => Self::decode_ntext(src).await?,
             t => unimplemented!("{:?}", t),
         };
 
@@ -371,7 +358,9 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u32_le(0);
             }
             // TODO
-            ColumnData::None => {}
+            ColumnData::None => {
+                dst.put_u8(FixedLenType::Null as u8);
+            }
             ColumnData::Guid(_) => {}
             ColumnData::Binary(_) => {}
             ColumnData::Numeric(_) => {}
@@ -464,6 +453,51 @@ impl<'a> ColumnData<'a> {
         };
 
         Ok(res)
+    }
+
+    async fn decode_text<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let ptr_len = src.read_u8().await? as usize;
+
+        if ptr_len == 0 {
+            Ok(ColumnData::None)
+        } else {
+            let _ = src.read_exact(&mut vec![0; ptr_len][0..ptr_len]).await?; // text ptr
+
+            src.read_i32_le().await?; // days
+            src.read_u32_le().await?; // second fractions
+
+            let text_len = src.read_u32_le().await? as usize;
+            let mut buf = vec![0; text_len];
+
+            src.read_exact(&mut buf[0..text_len]).await?;
+            let text = String::from_utf8(buf)?;
+
+            Ok(ColumnData::String(text.into()))
+        }
+    }
+
+    async fn decode_ntext<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let ptr_len = src.read_u8().await? as usize;
+
+        if ptr_len == 0 {
+            Ok(ColumnData::None)
+        } else {
+            let _ = src.read_exact(&mut vec![0; ptr_len][0..ptr_len]).await?; // text ptr
+
+            src.read_i32_le().await?; // days
+            src.read_u32_le().await?; // second fractions
+
+            let text_len = src.read_u32_le().await? as usize / 2;
+            let text = read_varchar(src, text_len).await?;
+
+            Ok(ColumnData::String(text.into()))
+        }
     }
 
     async fn decode_variable_string<R>(

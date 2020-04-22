@@ -502,3 +502,115 @@ async fn test_nbc_row() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_ntext() -> Result<()> {
+    let mut conn = connect().await?;
+
+    let string = r#"Hääpuhetta voi värittää kertomalla vitsejä, aforismeja,
+        sananlaskuja, laulunsäkeitä ja muita lainauksia. Huumori sopii hääpuheeseen,
+        mutta vitsit eivät saa loukata. Häissä ensimmäisen juhlapuheen pitää
+        perinteisesti morsiamen isä."#;
+
+    conn.execute("CREATE TABLE ##TestNText (content NTEXT)", &[])
+        .await?;
+
+    conn.execute("INSERT INTO ##TestNText (content) VALUES (@P1)", &[&string])
+        .await?;
+
+    let stream = conn.query("SELECT content FROM ##TestNText", &[]).await?;
+
+    let rows: Vec<String> = stream
+        .map_ok(|x| x.get::<_, String>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(rows, vec![string]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_ntext_empty() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##TestNTextEmpty (content NTEXT)", &[])
+        .await?;
+
+    conn.execute(
+        "INSERT INTO ##TestNTextEmpty (content) VALUES (@P1)",
+        &[&Option::<String>::None],
+    )
+    .await?;
+
+    let mut stream = conn
+        .query("SELECT content FROM ##TestNTextEmpty", &[])
+        .await?;
+
+    let mut rows: Vec<Option<String>> = Vec::new();
+
+    while let Some(row) = stream.try_next().await? {
+        let s: Option<String> = row.try_get(0)?;
+        rows.push(s);
+    }
+
+    assert_eq!(rows, vec![None]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_text() -> Result<()> {
+    let mut conn = connect().await?;
+
+    let string = "a".repeat(10000);
+
+    conn.execute("CREATE TABLE ##TestText (content TEXT)", &[])
+        .await?;
+
+    conn.execute(
+        "INSERT INTO ##TestText (content) VALUES (@P1)",
+        &[&string.as_str()],
+    )
+    .await?;
+
+    let stream = conn.query("SELECT content FROM ##TestText", &[]).await?;
+
+    let rows: Vec<String> = stream
+        .map_ok(|x| x.get::<_, String>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(rows, vec![string]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_text_empty() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##TestTextEmpty (content TEXT)", &[])
+        .await?;
+
+    conn.execute(
+        "INSERT INTO ##TestTextEmpty (content) VALUES (@P1)",
+        &[&Option::<String>::None],
+    )
+    .await?;
+
+    let mut stream = conn
+        .query("SELECT content FROM ##TestTextEmpty", &[])
+        .await?;
+
+    let mut rows: Vec<Option<String>> = Vec::new();
+
+    while let Some(row) = stream.try_next().await? {
+        let s: Option<String> = row.try_get(0)?;
+        rows.push(s);
+    }
+
+    assert_eq!(rows, vec![None]);
+
+    Ok(())
+}

@@ -115,9 +115,13 @@ impl TypeInfo {
                 };
 
                 let collation = match ty {
-                    VarLenType::NChar | VarLenType::NVarchar | VarLenType::BigVarChar => Some(
-                        Collation::new(src.read_u32_le().await?, src.read_u8().await?),
-                    ),
+                    VarLenType::NText
+                    | VarLenType::NChar
+                    | VarLenType::NVarchar
+                    | VarLenType::BigVarChar => Some(Collation::new(
+                        src.read_u32_le().await?,
+                        src.read_u8().await?,
+                    )),
                     _ => None,
                 };
 
