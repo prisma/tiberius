@@ -614,3 +614,75 @@ async fn test_text_empty() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_varbinary_empty() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute(
+        "CREATE TABLE ##TestVarBinaryEmpty (content VARBINARY(max))",
+        &[],
+    )
+    .await?;
+
+    let total = conn
+        .execute(
+            "INSERT INTO ##TestVarBinaryEmpty (content) VALUES (@P1)",
+            &[&Option::<Vec<u8>>::None],
+        )
+        .await?
+        .total()
+        .await?;
+
+    assert_eq!(1, total);
+
+    let mut stream = conn
+        .query("SELECT content FROM ##TestVarBinaryEmpty", &[])
+        .await?;
+
+    let mut rows: Vec<Option<Vec<u8>>> = Vec::new();
+
+    while let Some(row) = stream.try_next().await? {
+        let s: Option<Vec<u8>> = row.try_get(0)?;
+        rows.push(s);
+    }
+
+    assert_eq!(rows, vec![None]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_binary() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##TestBinary (content BINARY(8000))", &[])
+        .await?;
+
+    let mut binary = vec![0; 7999];
+    binary.push(5);
+
+    let inserted = conn
+        .execute(
+            "INSERT INTO ##TestBinary (content) VALUES (@P1)",
+            &[&binary.as_slice()],
+        )
+        .await?
+        .total()
+        .await?;
+
+    assert_eq!(1, inserted);
+
+    let mut stream = conn.query("SELECT content FROM ##TestBinary", &[]).await?;
+
+    let mut rows: Vec<Vec<u8>> = Vec::new();
+    while let Some(row) = stream.try_next().await? {
+        let s: Vec<u8> = row.get::<_, Vec<u8>>(0);
+        rows.push(s);
+    }
+
+    assert_eq!(8000, rows[0].len());
+    assert_eq!(binary, rows[0]);
+
+    Ok(())
+}

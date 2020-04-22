@@ -7,6 +7,7 @@ use crate::{
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
+use pretty_hex::*;
 use protocol::types::{Collation, Guid};
 use std::borrow::Cow;
 use tokio::io::AsyncReadExt;
@@ -357,13 +358,18 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 // PLP_TERMINATOR
                 dst.put_u32_le(0);
             }
-            // TODO
             ColumnData::None => {
                 dst.put_u8(FixedLenType::Null as u8);
             }
-            ColumnData::Guid(_) => {}
-            ColumnData::Binary(_) => {}
-            ColumnData::Numeric(_) => {}
+            ColumnData::Binary(bytes) => {
+                dst.put_u8(VarLenType::BigVarBin as u8);
+                dst.put_u16_le(8000);
+                dst.put_u16_le(bytes.len() as u16);
+                dst.extend(bytes.into_owned());
+            }
+            // TODO
+            ColumnData::Guid(_) => todo!(),
+            ColumnData::Numeric(_) => todo!(),
         }
 
         Ok(())
