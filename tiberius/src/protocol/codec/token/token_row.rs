@@ -36,6 +36,7 @@ struct RowBitmap {
 
 impl RowBitmap {
     /// Is the given column index null or not.
+    #[inline]
     fn is_null(&self, i: usize) -> bool {
         let index = i / 8;
         let bit = i % 8;
