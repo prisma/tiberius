@@ -137,7 +137,9 @@ impl<'a> QueryResult<'a> {
     /// Returns `true` if stream has more result sets available. Must be called
     /// before polling again to get results from the next query.
     pub fn next_resultset(&mut self) -> bool {
-        if self.stream.state == QueryStreamState::HasNext {
+        if self.stream.state == QueryStreamState::Initial {
+            true
+        } else if self.stream.state == QueryStreamState::HasNext {
             self.stream.state = QueryStreamState::Initial;
 
             true
