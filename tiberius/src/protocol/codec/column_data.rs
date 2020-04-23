@@ -7,7 +7,9 @@ use crate::{
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
-use protocol::types::Collation;
+use protocol::types::{Collation, DateTime, SmallDateTime};
+#[cfg(feature = "tds73")]
+use protocol::types::{Date, DateTime2, DateTimeOffset, Time};
 use std::borrow::Cow;
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
@@ -26,12 +28,17 @@ pub enum ColumnData<'a> {
     Guid(Uuid),
     Binary(Cow<'a, [u8]>),
     Numeric(Numeric),
+    DateTime(DateTime),
+    SmallDateTime(SmallDateTime),
+    #[cfg(feature = "tds73")]
+    Time(Time),
+    #[cfg(feature = "tds73")]
+    Date(Date),
+    #[cfg(feature = "tds73")]
+    DateTime2(DateTime2),
+    #[cfg(feature = "tds73")]
+    DateTimeOffset(DateTimeOffset),
     /*
-    DateTime(time::DateTime),
-    SmallDateTime(time::SmallDateTime),
-    Time(time::Time),
-    Date(time::Date),
-    DateTime2(time::DateTime2),
     /// a buffer string which is a reference to a buffer of a received packet
     BString(Str),
      */
@@ -129,8 +136,8 @@ impl<'a> ColumnData<'a> {
             FixedLenType::Int8 => ColumnData::I64(src.read_i64_le().await?),
             FixedLenType::Float4 => ColumnData::F32(src.read_f32_le().await?),
             FixedLenType::Float8 => ColumnData::F64(src.read_f64_le().await?),
-            // FixedLenType::Datetime => parse_datetimen(trans, 8)?,
-            // FixedLenType::Datetime4 => parse_datetimen(trans, 4)?,
+            FixedLenType::Datetime => Self::decode_datetimen(src, 8).await?,
+            FixedLenType::Datetime4 => Self::decode_datetimen(src, 4).await?,
             _ => {
                 return Err(Error::Protocol(
                     format!("unsupported fixed type decoding: {:?}", ty).into(),
@@ -228,49 +235,32 @@ impl<'a> ColumnData<'a> {
             VarLenType::BigVarChar => Self::decode_big_varchar(src, len, collation).await?,
             VarLenType::Money => Self::decode_money(src).await?,
             VarLenType::Datetimen => {
-                /*
-                let len = self.read_u8().await?;
-                parse_datetimen(trans, len)?
-                 */
-                todo!()
+                let len = src.read_u8().await?;
+                Self::decode_datetimen(src, len).await?
             }
-            VarLenType::Daten => {
-                /*
-                    let len = trans.inner.read_u8()?;
-                    match len {
-                    0 => ColumnData::None,
-                    3 => {
-                    let mut bytes = [0u8; 4];
-                    try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
-                    ColumnData::Date(time::Date::new(LittleEndian::read_u32(&bytes)))
-                }
-                    _ => {
-                    return Err(Error::Protocol(
-                    format!("daten: length of {} is invalid", len).into(),
-                ))
-                }
-                }
-                     */
-                todo!()
-            }
+
+            #[cfg(feature = "tds73")]
+            VarLenType::Daten => Self::decode_date(src).await?,
+
+            #[cfg(feature = "tds73")]
             VarLenType::Timen => {
-                /*
-                let rlen = trans.inner.read_u8()?;
-                ColumnData::Time(time::Time::decode(&mut *trans.inner, *len, rlen)?)
-                 */
-                todo!()
+                let rlen = src.read_u8().await?;
+
+                ColumnData::Time(Time::decode(src, len as usize, rlen as usize).await?)
             }
+
+            #[cfg(feature = "tds73")]
             VarLenType::Datetime2 => {
-                /*
-                let rlen = trans.inner.read_u8()? - 3;
-                let time = time::Time::decode(&mut *trans.inner, *len, rlen)?;
-                let mut bytes = [0u8; 4];
-                try_ready!(trans.inner.read_bytes_to(&mut bytes[..3]));
-                let date = time::Date::new(LittleEndian::read_u32(&bytes));
-                ColumnData::DateTime2(time::DateTime2(date, time))
-                 */
-                todo!()
+                let rlen = src.read_u8().await? - 3;
+                ColumnData::DateTime2(DateTime2::decode(src, len as usize, rlen as usize).await?)
             }
+
+            #[cfg(feature = "tds73")]
+            VarLenType::DatetimeOffsetn => {
+                let dto = DateTimeOffset::decode(src, len as usize).await?;
+                ColumnData::DateTimeOffset(dto)
+            }
+
             VarLenType::BigBinary | VarLenType::BigVarBin => Self::decode_binary(src, len).await?,
             VarLenType::Text => Self::decode_text(src).await?,
             VarLenType::NText => Self::decode_ntext(src).await?,
@@ -386,6 +376,43 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 // PLP_TERMINATOR
                 dst.put_u32_le(0);
             }
+            ColumnData::DateTime(dt) => {
+                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 8, 8]);
+                dt.encode(dst)?;
+            }
+            ColumnData::SmallDateTime(dt) => {
+                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 4, 4]);
+                dt.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::Time(time) => {
+                dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale, time.len()?]);
+
+                time.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::Date(date) => {
+                dst.extend_from_slice(&[VarLenType::Daten as u8, 3]);
+                date.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::DateTime2(dt) => {
+                let len = dt.time.len()? + 3;
+
+                dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time.scale, len]);
+
+                dt.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::DateTimeOffset(dto) => {
+                dst.extend_from_slice(&[
+                    VarLenType::DatetimeOffsetn as u8,
+                    dto.datetime2.time.scale,
+                    dto.datetime2.time.len()? + 5,
+                ]);
+
+                dto.encode(dst)?;
+            }
             ColumnData::Numeric(_) => todo!(),
         }
 
@@ -394,6 +421,44 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
 }
 
 impl<'a> ColumnData<'a> {
+    #[cfg(feature = "tds73")]
+    async fn decode_date<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let len = src.read_u8().await?;
+
+        let res = match len {
+            0 => ColumnData::None,
+            3 => ColumnData::Date(Date::decode(src).await?),
+            _ => {
+                return Err(Error::Protocol(
+                    format!("daten: length of {} is invalid", len).into(),
+                ))
+            }
+        };
+
+        Ok(res)
+    }
+
+    async fn decode_datetimen<R>(src: &mut R, len: u8) -> crate::Result<ColumnData<'static>>
+    where
+        R: AsyncReadLeExt + Unpin,
+    {
+        let datetime = match len {
+            0 => ColumnData::None,
+            4 => ColumnData::SmallDateTime(SmallDateTime::decode(src).await?),
+            8 => ColumnData::DateTime(DateTime::decode(src).await?),
+            _ => {
+                return Err(Error::Protocol(
+                    format!("datetimen: length of {} is invalid", len).into(),
+                ))
+            }
+        };
+
+        Ok(datetime)
+    }
+
     async fn decode_bit<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
         R: AsyncReadLeExt + Unpin,

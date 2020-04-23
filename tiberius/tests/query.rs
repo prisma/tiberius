@@ -771,3 +771,155 @@ async fn test_max_binary() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn test_naive_small_date_time_tds73() -> Result<()> {
+    use chrono::{NaiveDate, NaiveDateTime};
+
+    let mut conn = connect().await?;
+    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+
+    conn.execute("CREATE TABLE ##TestSmallDt (date smalldatetime)", &[])
+        .await?;
+
+    conn.execute("INSERT INTO ##TestSmallDt (date) VALUES (@P1)", &[&dt])
+        .await?
+        .total()
+        .await?;
+
+    let stream = conn.query("SELECT date FROM ##TestSmallDt", &[]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, NaiveDateTime>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(dt, rows[0]);
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn test_naive_date_time2_tds73() -> Result<()> {
+    use chrono::{NaiveDate, NaiveDateTime};
+
+    let mut conn = connect().await?;
+    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+
+    conn.execute("CREATE TABLE ##NaiveDateTime2 (date datetime2)", &[])
+        .await?;
+
+    conn.execute("INSERT INTO ##NaiveDateTime2 (date) VALUES (@P1)", &[&dt])
+        .await?
+        .total()
+        .await?;
+
+    let stream = conn.query("SELECT date FROM ##NaiveDateTime2", &[]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, NaiveDateTime>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(dt, rows[0]);
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(all(feature = "chrono", not(feature = "tds73")))]
+async fn test_naive_date_time_tds72() -> Result<()> {
+    use chrono::{NaiveDate, NaiveDateTime};
+
+    let mut conn = connect().await?;
+    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+
+    let stream = conn.query("SELECT @P1", &[&dt]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, NaiveDateTime>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(dt, rows[0]);
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn test_naive_time() -> Result<()> {
+    use chrono::NaiveTime;
+
+    let mut conn = connect().await?;
+    let time = NaiveTime::from_hms(16, 20, 0);
+
+    let stream = conn.query("SELECT @P1", &[&time]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, NaiveTime>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(time, rows[0]);
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn test_naive_date() -> Result<()> {
+    use chrono::NaiveDate;
+
+    let mut conn = connect().await?;
+    let date = NaiveDate::from_ymd(2020, 4, 20);
+
+    let stream = conn.query("SELECT @P1", &[&date]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, NaiveDate>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(date, rows[0]);
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn test_date_time_utc() -> Result<()> {
+    use chrono::{offset::Utc, DateTime, NaiveDate};
+
+    let mut conn = connect().await?;
+    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+
+    let stream = conn.query("SELECT @P1", &[&dt]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, DateTime<Utc>>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(dt, rows[0]);
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn test_date_time_fixed() -> Result<()> {
+    use chrono::{offset::FixedOffset, DateTime, NaiveDate};
+
+    let mut conn = connect().await?;
+    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let fixed = FixedOffset::east(3600 * 3);
+    let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+
+    let stream = conn.query("SELECT @P1", &[&dt]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, DateTime<FixedOffset>>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(dt, rows[0]);
+    Ok(())
+}

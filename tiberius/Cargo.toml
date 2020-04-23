@@ -21,6 +21,10 @@ bytes = "0.5"
 pretty-hex = "0.1"
 pin-project-lite = "0.1"
 
+[dependencies.chrono]
+version = "0.4"
+optional = true
+
 [dependencies.uuid]
 version = "0.8"
 features = ["v1", "v3", "v4"]
@@ -65,5 +69,6 @@ version = "0.2"
 version = "1"
 
 [features]
-default = ["tls"]
+default = ["tls", "chrono", "tds73"]
 tls = ["native-tls", "tokio-tls"]
+tds73 = []

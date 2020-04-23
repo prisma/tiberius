@@ -104,6 +104,7 @@ impl TypeInfo {
                     | VarLenType::Money
                     | VarLenType::Datetimen
                     | VarLenType::Timen
+                    | VarLenType::DatetimeOffsetn
                     | VarLenType::Datetime2 => src.read_u8().await? as usize,
                     VarLenType::NChar
                     | VarLenType::NVarchar

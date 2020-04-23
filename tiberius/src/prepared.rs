@@ -1,8 +1,20 @@
 use crate::protocol::codec::ColumnData;
+use crate::to_sql;
 use std::borrow::Cow;
 use uuid::Uuid;
 
 const MAX_NVARCHAR_SIZE: usize = 1 << 30;
+
+to_sql!(self_,
+        bool: ("bit", ColumnData::Bit(*self_));
+        i8: ("tinyint", ColumnData::I8(*self_));
+        i16: ("smallint", ColumnData::I16(*self_));
+        i32: ("int", ColumnData::I32(*self_));
+        i64: ("bigint", ColumnData::I64(*self_));
+        f32: ("float(24)", ColumnData::F32(*self_));
+        f64: ("float(53)", ColumnData::F64(*self_));
+        Uuid: ("uniqueidentifier", ColumnData::Guid(*self_));
+);
 
 pub trait ToSql {
     fn to_sql(&self) -> (&'static str, ColumnData);
@@ -128,126 +140,6 @@ impl ToSql for Option<Vec<u8>> {
                 (sql_type, ColumnData::Binary(Cow::from(s)))
             }
             None => ("VARBINARY(8000)", ColumnData::None),
-        }
-    }
-}
-
-impl ToSql for bool {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("bit", ColumnData::Bit(*self))
-    }
-}
-
-impl ToSql for Option<bool> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("bit", ColumnData::None),
-            Some(item) => ("bit", ColumnData::Bit(*item)),
-        }
-    }
-}
-
-impl ToSql for i8 {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("tinyint", ColumnData::I8(*self))
-    }
-}
-
-impl ToSql for Option<i8> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("tinyint", ColumnData::None),
-            Some(item) => ("tinyint", ColumnData::I8(*item)),
-        }
-    }
-}
-
-impl ToSql for i16 {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("smallint", ColumnData::I16(*self))
-    }
-}
-
-impl ToSql for Option<i16> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("smallint", ColumnData::None),
-            Some(item) => ("smallint", ColumnData::I16(*item)),
-        }
-    }
-}
-
-impl ToSql for i32 {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("int", ColumnData::I32(*self))
-    }
-}
-
-impl ToSql for Option<i32> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("int", ColumnData::None),
-            Some(item) => ("int", ColumnData::I32(*item)),
-        }
-    }
-}
-
-impl ToSql for i64 {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("bigint", ColumnData::I64(*self))
-    }
-}
-
-impl ToSql for Option<i64> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("bigint", ColumnData::None),
-            Some(item) => ("bigint", ColumnData::I64(*item)),
-        }
-    }
-}
-
-impl ToSql for f32 {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("float(24)", ColumnData::F32(*self))
-    }
-}
-
-impl ToSql for Option<f32> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("float(24)", ColumnData::None),
-            Some(item) => ("float(24)", ColumnData::F32(*item)),
-        }
-    }
-}
-
-impl ToSql for f64 {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("float(53)", ColumnData::F64(*self))
-    }
-}
-
-impl ToSql for Option<f64> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("float(53)", ColumnData::None),
-            Some(item) => ("float(24)", ColumnData::F64(*item)),
-        }
-    }
-}
-
-impl ToSql for Uuid {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("uniqueidentifier", ColumnData::Guid(*self))
-    }
-}
-
-impl ToSql for Option<Uuid> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        match self {
-            None => ("uniqueidentifier", ColumnData::None),
-            Some(item) => ("uniqueidentifier", ColumnData::Guid(*item)),
         }
     }
 }

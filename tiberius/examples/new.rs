@@ -1,3 +1,4 @@
+use chrono::{offset::*, DateTime, NaiveDate};
 use futures::TryStreamExt;
 use tiberius::{AuthMethod, Client};
 
@@ -12,27 +13,26 @@ async fn main() -> anyhow::Result<()> {
 
     let mut conn = builder.build().await?;
 
-    conn.execute("CREATE TABLE ##TestTextEmpty (content TEXT)", &[])
+    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let fixed = FixedOffset::west(3600 * 3);
+    let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+
+    conn.execute("CREATE TABLE TestSmallDt (date datetimeoffset)", &[])
         .await?;
 
-    conn.execute(
-        "INSERT INTO ##TestTextEmpty (content) VALUES (@P1)",
-        &[&Option::<String>::None],
-    )
-    .await?;
-
-    let mut stream = conn
-        .query("SELECT content FROM ##TestTextEmpty", &[])
+    conn.execute("INSERT INTO TestSmallDt (date) VALUES (@P1)", &[&dt])
+        .await?
+        .total()
         .await?;
 
-    let mut rows: Vec<Option<String>> = Vec::new();
+    let stream = conn.query("SELECT date FROM TestSmallDt", &[]).await?;
 
-    while let Some(row) = stream.try_next().await? {
-        let s: Option<String> = row.try_get(0)?;
-        rows.push(s);
-    }
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, DateTime<Utc>>(0))
+        .try_collect()
+        .await?;
 
-    assert_eq!(rows, vec![None]);
+    assert_eq!(dt, rows[0]);
 
     Ok(())
 }
