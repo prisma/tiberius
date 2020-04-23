@@ -3,58 +3,31 @@ use crate::protocol::codec::ColumnData;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use crate::error::Error;
+use crate::{error::Error, from_column_data};
 use protocol::codec::TokenRow;
 use uuid::Uuid;
 
-macro_rules! from_column_data {
-    ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
-        $(
-            impl<'a> TryFrom<&'a ColumnData<'a>> for $ty {
-                type Error = Error;
-
-                fn try_from(data: &ColumnData) -> crate::Result<Self> {
-                    match *data {
-                        $( $pat => Ok($val), )*
-                        _ => Err(Error::Conversion(format!("cannot interpret {:?} as an {} value", data, stringify!($ty)).into()))
-                    }
-                }
-            }
-        )*
-    };
-}
-
-impl<'a> TryFrom<&'a ColumnData<'a>> for String {
+impl<'a> TryFrom<&'a ColumnData<'a>> for &'a str {
     type Error = Error;
 
-    fn try_from(data: &ColumnData) -> crate::Result<Self> {
-        match data {
-            ColumnData::String(s) => Ok(s.to_string()),
+    fn try_from(value: &'a ColumnData<'a>) -> Result<Self, Self::Error> {
+        match value {
+            ColumnData::String(s) => Ok(s.as_ref()),
             _ => Err(Error::Conversion(
-                format!(
-                    "cannot interpret {:?} as an {} value",
-                    data,
-                    stringify!($ty)
-                )
-                .into(),
+                format!("cannot interpret {:?} as an str value", value).into(),
             )),
         }
     }
 }
 
-impl<'a> TryFrom<&'a ColumnData<'a>> for Vec<u8> {
+impl<'a> TryFrom<&'a ColumnData<'a>> for &'a [u8] {
     type Error = Error;
 
-    fn try_from(data: &ColumnData) -> crate::Result<Self> {
-        match data {
-            ColumnData::Binary(s) => Ok(s.to_vec()),
+    fn try_from(value: &'a ColumnData<'a>) -> Result<Self, Self::Error> {
+        match value {
+            ColumnData::Binary(s) => Ok(s.as_ref()),
             _ => Err(Error::Conversion(
-                format!(
-                    "cannot interpret {:?} as an {} value",
-                    data,
-                    stringify!($ty)
-                )
-                .into(),
+                format!("cannot interpret {:?} as a [u8] value", value).into(),
             )),
         }
     }
@@ -135,15 +108,17 @@ impl Row {
 }
 
 from_column_data!(
-    // integers are auto-castable on receiving
-    bool:       ColumnData::Bit(val) => val;
-    i8:         ColumnData::I8(val) => val;
-    i16:        ColumnData::I16(val) => val;
-    i32:        ColumnData::I32(val) => val;
-    i64:        ColumnData::I64(val) => val;
-    f32:        ColumnData::F32(val) => val;
-    f64:        ColumnData::F64(val) => val;
-    Uuid:       ColumnData::Guid(val) => val
+    bool:       ColumnData::Bit(val) => *val;
+    i8:         ColumnData::I8(val) => *val;
+    i16:        ColumnData::I16(val) => *val;
+    i32:        ColumnData::I32(val) => *val;
+    i64:        ColumnData::I64(val) => *val;
+    f32:        ColumnData::F32(val) => *val;
+    f64:        ColumnData::F64(val) => *val;
+    Uuid:       ColumnData::Guid(val) => *val;
+    String:     ColumnData::String(val) => val.to_string();
+    Vec<u8>:    ColumnData::Binary(val) => val.to_vec()
+
                 // ColumnData::Numeric(val) => val.into();
     // TODO &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
     //             ColumnData::String(ref buf) => buf;
