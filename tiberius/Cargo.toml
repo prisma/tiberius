@@ -21,6 +21,10 @@ bytes = "0.5"
 pretty-hex = "0.1"
 pin-project-lite = "0.1"
 
+[dependencies.uuid]
+version = "0.8"
+features = ["v1", "v3", "v4"]
+
 [dependencies.tokio-util]
 version = "0.3"
 features = ["codec"]

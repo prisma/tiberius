@@ -2,6 +2,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use std::env;
 use std::sync::Once;
 use tiberius::{AuthMethod, Client, Result};
+use uuid::Uuid;
 
 static LOGGER_SETUP: Once = Once::new();
 
@@ -718,6 +719,20 @@ async fn test_var_binary() -> Result<()> {
 
     assert_eq!(80, rows[0].len());
     assert_eq!(binary, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_guid() -> Result<()> {
+    let mut conn = connect().await?;
+
+    let id = Uuid::new_v4();
+    let stream = conn.query("SELECT @P1", &[&id]).await?;
+
+    let rows: Vec<Uuid> = stream.map_ok(|x| x.get::<_, Uuid>(0)).try_collect().await?;
+
+    assert_eq!(id, rows[0]);
 
     Ok(())
 }

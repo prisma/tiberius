@@ -7,9 +7,10 @@ use crate::{
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
-use protocol::types::{Collation, Guid};
+use protocol::types::Collation;
 use std::borrow::Cow;
 use tokio::io::AsyncReadExt;
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub enum ColumnData<'a> {
@@ -22,10 +23,10 @@ pub enum ColumnData<'a> {
     F64(f64),
     Bit(bool),
     String(Cow<'a, str>),
-    Guid(Cow<'a, Guid>),
+    Guid(Uuid),
     Binary(Cow<'a, [u8]>),
     Numeric(Numeric),
-    /* Guid(Cow<'a, Guid>),
+    /*
     DateTime(time::DateTime),
     SmallDateTime(time::SmallDateTime),
     Time(time::Time),
@@ -325,6 +326,12 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.extend_from_slice(&header);
                 dst.put_f64_le(val);
             }
+            ColumnData::Guid(uuid) => {
+                let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.extend_from_slice(uuid.as_bytes());
+            }
             ColumnData::String(ref s) if s.len() <= 4000 => {
                 dst.put_u8(VarLenType::NVarchar as u8);
                 dst.put_u16_le(8000);
@@ -379,8 +386,6 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 // PLP_TERMINATOR
                 dst.put_u32_le(0);
             }
-            // TODO
-            ColumnData::Guid(_) => todo!(),
             ColumnData::Numeric(_) => todo!(),
         }
 
@@ -461,7 +466,7 @@ impl<'a> ColumnData<'a> {
                     data[i] = src.read_u8().await?;
                 }
 
-                ColumnData::Guid(Cow::Owned(Guid(data)))
+                ColumnData::Guid(Uuid::from_slice(&data)?)
             }
             _ => {
                 return Err(Error::Protocol(

@@ -41,6 +41,12 @@ pub enum Error {
     Tls(String),
 }
 
+impl From<uuid::Error> for Error {
+    fn from(e: uuid::Error) -> Self {
+        Self::Conversion(format!("Error convertiong a Guid value {}", e).into())
+    }
+}
+
 impl From<native_tls::Error> for Error {
     fn from(v: native_tls::Error) -> Self {
         Error::Tls(format!("{}", v))

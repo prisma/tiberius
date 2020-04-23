@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use protocol::codec::TokenRow;
+use uuid::Uuid;
 
 macro_rules! from_column_data {
     ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
@@ -141,7 +142,8 @@ from_column_data!(
     i32:        ColumnData::I32(val) => val;
     i64:        ColumnData::I64(val) => val;
     f32:        ColumnData::F32(val) => val;
-    f64:        ColumnData::F64(val) => val
+    f64:        ColumnData::F64(val) => val;
+    Uuid:       ColumnData::Guid(val) => val
                 // ColumnData::Numeric(val) => val.into();
     // TODO &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
     //             ColumnData::String(ref buf) => buf;

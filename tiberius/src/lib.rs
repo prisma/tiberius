@@ -21,6 +21,7 @@ pub use protocol::{
     EncryptionLevel,
 };
 pub use row::{Column, Row};
+pub use uuid::Uuid;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

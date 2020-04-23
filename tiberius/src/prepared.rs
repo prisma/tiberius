@@ -1,5 +1,6 @@
 use crate::protocol::codec::ColumnData;
 use std::borrow::Cow;
+use uuid::Uuid;
 
 const MAX_NVARCHAR_SIZE: usize = 1 << 30;
 
@@ -232,6 +233,21 @@ impl ToSql for Option<f64> {
         match self {
             None => ("float(53)", ColumnData::None),
             Some(item) => ("float(24)", ColumnData::F64(*item)),
+        }
+    }
+}
+
+impl ToSql for Uuid {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        ("uniqueidentifier", ColumnData::Guid(*self))
+    }
+}
+
+impl ToSql for Option<Uuid> {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        match self {
+            None => ("uniqueidentifier", ColumnData::None),
+            Some(item) => ("uniqueidentifier", ColumnData::Guid(*item)),
         }
     }
 }
