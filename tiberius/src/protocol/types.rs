@@ -1,6 +1,5 @@
-mod numeric;
 mod collation;
+mod numeric;
 
-pub use numeric::Numeric;
 pub use collation::Collation;
-
+pub use numeric::Numeric;

@@ -8,9 +8,9 @@ use crate::{
     prepared,
     protocol::{
         codec::{self, RpcOptionFlags, RpcStatusFlags},
-        stream::{ExecuteResult, QueryResult},
         Context,
     },
+    result::{ExecuteResult, QueryResult},
 };
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
 use std::{borrow::Cow, sync::Arc};
