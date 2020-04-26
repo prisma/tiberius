@@ -76,9 +76,7 @@ impl Connection {
 
         while !payload.is_empty() {
             let writable = cmp::min(payload.len(), packet_size);
-
-            let split_payload = BytesMut::from(&payload[..writable]);
-            payload = BytesMut::from(&payload[writable..]);
+            let split_payload = payload.split_to(writable);
 
             if payload.is_empty() {
                 header.set_status(PacketStatus::EndOfMessage);
