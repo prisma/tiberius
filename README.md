@@ -8,8 +8,10 @@ A native TDS (MSSQL) 7.4 driver for Rust
 
 **NOTE**: Supporting async/await and revising the API is currently ongoing in
 this repo. Basics are now working and the crate is soon going to be in a stage
-ready for testing. Please test and file issues if I miss a feature you need
-or if finding bugs. I expect this to be in a usable state mid-May latest.
+ready for testing. Please test and file issues if we miss a feature you need
+or if you find bugs. I expect this to be in a usable state mid-May latest.
+
+We also have our [Discord server](https://discord.gg/jxC2vH) for dev chat.
 
 ### Documentation
 
