@@ -11,9 +11,10 @@ this repo. Basics are now working and the crate is soon going to be in a stage
 ready for testing. Please test and file issues if I miss a feature you need
 or if finding bugs. I expect this to be in a usable state mid-May latest.
 
-[Documentation](https://docs.rs/tiberius) (deprecared, compile from this branch)
+### Documentation
 
-Please check the documentation above for any examples.
+Please compile with `cargo doc` from `master` until the new version is released
+to crates.io.
 
 For installing please don't forget the following things:
 
