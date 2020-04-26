@@ -71,7 +71,7 @@ impl Connection {
 
         let packet_size = self.context.packet_size.load(Ordering::SeqCst) as usize - HEADER_BYTES;
 
-        let mut payload = BytesMut::with_capacity(packet_size + HEADER_BYTES);
+        let mut payload = BytesMut::new();
         item.encode(&mut payload)?;
 
         while !payload.is_empty() {
