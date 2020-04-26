@@ -1,10 +1,15 @@
 # Tiberius
-[![Build status](https://ci.appveyor.com/api/projects/status/ei34it5ppntytrev/branch/master?svg=true)](https://ci.appveyor.com/project/steffengy/tiberius/branch/master)
-[![Build Status](https://travis-ci.org/steffengy/tiberius.svg?branch=master)](https://travis-ci.org/steffengy/tiberius)
+[![Build
+status](https://ci.appveyor.com/api/projects/status/ei34it5ppntytrev/branch/master?svg=true)](https://ci.appveyor.com/project/steffengy/tiberius/branch/master)
+[![Build
+Status](https://travis-ci.org/steffengy/tiberius.svg?branch=master)](https://travis-ci.org/steffengy/tiberius)
 [![Documentation](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)  
 A native TDS (MSSQL) 7.4 driver for Rust
 
-**NOTE**: Supporting async/await and revising the API is currently ongoing in this repo. Basics are now working and the crate is soon going to be in a stage ready for testing.
+**NOTE**: Supporting async/await and revising the API is currently ongoing in
+this repo. Basics are now working and the crate is soon going to be in a stage
+ready for testing. Please test and file issues if I miss a feature you need
+or if finding bugs. I expect this to be in a usable state mid-May latest.
 
 [Documentation](https://docs.rs/tiberius) (deprecared, compile from this branch)
 
@@ -14,7 +19,8 @@ For installing please don't forget the following things:
 
 ### Enable TCP for SQL Server
 As of now only TCP is supported, which is **disabled by default**.  
-Make sure to enable TCP in your [MSSQL settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx).
+Make sure to enable TCP in your [MSSQL
+settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx).
 
 ### Encryption (TLS/SSL)
 
@@ -29,7 +35,8 @@ $rootStore.Add($cert)
 $rootStore.Close();
 ```
 You also have to [change the certificate in the SQL Server settings](https://support.microsoft.com/en-us/help/316898/how-to-enable-ssl-encryption-for-an-instance-of-sql-server-by-using-microsoft-management-console).  
-In a production setting you likely want to use a certificate that is issued by a CA.
+In a production setting you likely want to use a certificate that is issued by a
+CA.
 
 #### b) Disable certificate validation by using `TrustServerCertificate=true` in your connection string (requires 0.2.2)
 
@@ -49,9 +56,10 @@ It also leads to SPN's being used, which makes replay attacks harder.
 Not supported yet.  
 
 ### SQL Type Mappings
-Any nullable type should be accessed as `Option<T>` where T is any Rust Type listed below.
-This table unfortunately still is very incomplete, if you have a question about a specific
-type please create an issue, which will make this table grow.
+Any nullable type should be accessed as `Option<T>` where T is any Rust Type
+listed below. This table unfortunately still is very incomplete, if you have a
+question about a specific type please create an issue, which will make this
+table grow.
 
 |SQL Type|Rust Type|Feature|
 |--------|--------|-------|
@@ -59,12 +67,12 @@ type please create an issue, which will make this table grow.
 |uniqueidentifier|tiberius::ty::Guid|
 |DATETIME|tiberius::ty::DateTime
 |DATETIME2|tiberius::ty::DateTime2
-|DATETIME,DATETIME2|chrono::NaiveDateTime|chrono|
-Support for versions below 7.4 (to 7.2 so that everything >= SQL Server 2008 works) is desired.
+|DATETIME,DATETIME2|chrono::NaiveDateTime|chrono| Support for versions below 7.4 (to 7.2 so that everything >= SQL Server 2008 works) is desired.
 
 ### Supported Connection String Parameters
 
-Not every parameter is supported yet. Below is a list of all parameters supported.
+Not every parameter is supported yet. Below is a list of all parameters
+supported.
 
 |Parameters|Description|
 |--------|--------|
@@ -78,4 +86,5 @@ Not every parameter is supported yet. Below is a list of all parameters supporte
 
 
 ## Old State (v0.1)
-The old state can be found [in the "old" branch (click me)](https://github.com/steffengy/tiberius/tree/old)
+The old state can be found [in the "old" branch (click
+me)](https://github.com/steffengy/tiberius/tree/old)
