@@ -225,7 +225,7 @@ impl Connection {
         if ssl != EncryptionLevel::NotSupported {
             let mut builder = native_tls::TlsConnector::builder();
 
-            if trust_cert {
+            if !trust_cert {
                 builder.danger_accept_invalid_certs(true);
                 builder.danger_accept_invalid_hostnames(true);
                 builder.use_sni(false);

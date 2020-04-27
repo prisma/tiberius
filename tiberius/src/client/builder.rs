@@ -5,7 +5,7 @@ use crate::{
     Client, EncryptionLevel, Error,
 };
 use ::std::str;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     net::{TcpStream, UdpSocket},
     time,
@@ -76,7 +76,13 @@ impl ClientBuilder {
             .unwrap_or("127.0.0.1");
 
         let port = self.port.unwrap_or(1433);
-        let mut addr = format!("{}:{}", host, port).parse().unwrap();
+
+        let mut addr = tokio::net::lookup_host(format!("{}:{}", host, port))
+            .await?
+            .next()
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+            })?;
 
         if let Some(ref instance_name) = self.instance_name {
             addr = find_tcp_sql_browser_addr(addr, instance_name).await?;

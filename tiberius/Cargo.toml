@@ -44,7 +44,7 @@ optional = true
 version = "0.2.1"
 
 [dependencies.tokio]
-features = ["sync", "io-std", "stream", "time", "io-util", "tcp", "udp"]
+features = ["sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
 version = "0.2"
 
 [dependencies.tokio-tls]
