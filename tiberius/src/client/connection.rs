@@ -6,7 +6,7 @@ use crate::{
         stream::{ReceivedToken, TokenStream},
         Context, HEADER_BYTES,
     },
-    tls::MaybeTlsStream,
+    tls::{MaybeTlsStream, TlsPreloginWrapper},
     EncryptionLevel,
 };
 use bytes::BytesMut;
@@ -85,7 +85,7 @@ impl Connection {
 
             event!(
                 Level::TRACE,
-                "Encoding a packet from a buffer of size {}",
+                "Sending a packet ({} bytes)",
                 split_payload.len() + HEADER_BYTES,
             );
 
@@ -223,6 +223,8 @@ impl Connection {
         trust_cert: bool,
     ) -> crate::Result<Self> {
         if ssl != EncryptionLevel::NotSupported {
+            event!(Level::INFO, "Performing a TLS handshake");
+
             let mut builder = native_tls::TlsConnector::builder();
 
             if trust_cert {
@@ -234,10 +236,15 @@ impl Connection {
             let cx = builder.build().unwrap();
             let connector = tokio_tls::TlsConnector::from(cx);
 
-            let stream = match self.transport.into_inner() {
-                MaybeTlsStream::Raw(tcp) => connector.connect("", tcp).await?,
+            let mut stream = match self.transport.into_inner() {
+                MaybeTlsStream::Raw(tcp) => {
+                    connector.connect("", TlsPreloginWrapper::new(tcp)).await?
+                }
                 _ => unreachable!(),
             };
+
+            stream.get_mut().handshake_complete();
+            event!(Level::INFO, "TLS handshake successful");
 
             let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
 

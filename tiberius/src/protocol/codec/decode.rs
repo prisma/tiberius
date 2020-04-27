@@ -15,13 +15,6 @@ impl Decoder for PacketCodec {
     type Error = Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        event!(
-            Level::TRACE,
-            "Decoding a packet from a buffer of size {} and capacity {}",
-            src.len(),
-            src.capacity(),
-        );
-
         if src.len() < HEADER_BYTES {
             src.reserve(HEADER_BYTES);
             return Ok(None);
@@ -34,6 +27,8 @@ impl Decoder for PacketCodec {
             src.reserve(length);
             return Ok(None);
         }
+
+        event!(Level::TRACE, "Reading a {:?} ({} bytes)", header.ty, length,);
 
         let header = PacketHeader::decode(src)?;
         let payload = src.split_to(length - HEADER_BYTES);
