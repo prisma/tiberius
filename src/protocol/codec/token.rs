@@ -20,4 +20,6 @@ pub use token_login_ack::*;
 pub use token_order::*;
 pub use token_return_value::*;
 pub use token_row::*;
+#[cfg(windows)]
+pub use token_sspi::*;
 pub use token_type::*;

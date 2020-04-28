@@ -9,6 +9,7 @@ $wmi = new-object ($smo + 'Wmi.ManagedComputer')
 
 # Enable TCP/IP
 $uri = "ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']"
+echo $uri
 $Tcp = $wmi.GetSmoObject($uri)
 $Tcp.IsEnabled = $true
 $TCP.alter()

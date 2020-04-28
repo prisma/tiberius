@@ -20,9 +20,6 @@ pub use rpc_request::*;
 pub use token::*;
 pub use type_info::*;
 
-#[cfg(windows)]
-pub use token_sspi::*;
-
 use crate::async_read_le_ext::AsyncReadLeExt;
 use bytes::BytesMut;
 use futures::{Stream, TryStreamExt};
