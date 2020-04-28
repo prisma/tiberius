@@ -1,7 +1,7 @@
 use futures_util::{StreamExt, TryStreamExt};
 use std::env;
 use std::sync::Once;
-use tiberius::{AuthMethod, Client, Result};
+use tiberius::{AuthMethod, Client, EncryptionLevel, Result};
 use uuid::Uuid;
 
 static LOGGER_SETUP: Once = Once::new();
@@ -12,6 +12,8 @@ async fn connect() -> Result<Client> {
     });
 
     let mut builder = Client::builder();
+    builder.ssl(EncryptionLevel::Required);
+    builder.trust_cert();
 
     if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
         builder.host(host);
