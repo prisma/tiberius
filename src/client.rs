@@ -108,7 +108,7 @@ impl Client {
     /// See the documentation for the resulting [`ExecuteResult`] on how to
     /// handle the results correctly.
     ///
-    /// [`ExecuteResult`]: ../struct.ExecuteResult.html
+    /// [`ExecuteResult`]: struct.ExecuteResult.html
     pub async fn execute<'b, 'a: 'b>(
         &'a mut self,
         query: impl Into<Cow<'_, str>>,
@@ -150,7 +150,7 @@ impl Client {
     /// See the documentation for the resulting [`QueryResult`] on how to
     /// handle the results correctly.
     ///
-    /// [`QueryResult`]: ../struct.QueryResult.html
+    /// [`QueryResult`]: struct.QueryResult.html
     pub async fn query<'a, 'b>(
         &'a mut self,
         query: impl Into<Cow<'a, str>>,
