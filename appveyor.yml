@@ -1,31 +1,30 @@
 environment:
   matrix:
   - TARGET: x86_64-pc-windows-msvc
-    VERSION: 1.43.0
+    CHANNEL: stable
     MSSQL:  SQL2016
     INSTANCE: MSSQL13.SQL2016
     TIBERIUS_TEST_INSTANCE: SQL2016
   - TARGET: i686-pc-windows-msvc
-    VERSION: 1.43.0
+    CHANNEL: stable
     MSSQL:  SQL2014
     INSTANCE: MSSQL12.SQL2014
     TIBERIUS_TEST_INSTANCE: SQL2014
   - TARGET: i686-pc-windows-gnu
-    VERSION: 1.43.0
+    CHANNEL: stable
     MSSQL:  SQL2012SP1
     INSTANCE: MSSQL11.SQL2012SP1
     TIBERIUS_TEST_INSTANCE: SQL2012SP1
   - TARGET: x86_64-pc-windows-gnu
-    VERSION: 1.43.0
+    CHANNEL: stable
     MSSQL:  SQL2008R2SP2
     INSTANCE: MSSQL10_50.SQL2008R2SP2
     TIBERIUS_TEST_INSTANCE: SQL2008R2SP2
 
 install:
-  - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-${env:VERSION}-${env:TARGET}.exe"
-  - rust-${env:VERSION}-${env:TARGET}.exe /VERYSILENT /NORESTART /DIR="C:\Program Files (x86)\Rust"
-  - SET PATH=%PATH%;C:\Program Files (x86)\Rust\bin
-  - SET PATH=%PATH%;C:\MinGW\bin
+  - appveyor DownloadFile https://win.rustup.rs/ -FileName rustup-init.exe
+  - rustup-init -yv --default-toolchain %CHANNEL% --default-host %TARGET%
+  - set PATH=%PATH%;%USERPROFILE%\.cargo\bin
   - rustc -V
   - cargo -V
   - ps: .\appveyor.ps1 ${env:MSSQL} ${env:INSTANCE}
@@ -33,4 +32,3 @@ build: false
 
 test_script:
   - cargo test --target %TARGET% --all
-  - IF "%MSSQL%" == "SQL2016" cd tiberius && cargo test --no-default-features
