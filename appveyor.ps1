@@ -8,11 +8,9 @@ $smo = 'Microsoft.SqlServer.Management.Smo.'
 $wmi = new-object ($smo + 'Wmi.ManagedComputer')
 
 # Enable TCP/IP
-$uri = "ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']"
 $uri = "ManagedComputer[@Name='$serverName']/ ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']"
-$wmi.GetSmoObject("ManagedComputer") | Get-Member
-$wmi.GetSmoObject("ManagedComputer[@Name='serverName']") | Get-Member
-$wmi.GetSmoObject("ManagedComputer[@Name='serverName']/ ServerInstance[@Name='$instanceName']") | Get-Member
+$wmi.GetSmoObject("ManagedComputer[@Name='$serverName']") | Get-Member
+$wmi.GetSmoObject("ManagedComputer[@Name='$serverName']/ ServerInstance[@Name='$instanceName']") | Get-Member
 Get-Member -InputObject $wmi
 $Tcp = $wmi.GetSmoObject($uri)
 $Tcp.IsEnabled = $true
