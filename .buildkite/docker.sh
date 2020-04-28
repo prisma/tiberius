@@ -4,7 +4,7 @@ MSSQL_SA_PASSWORD="<YourStrong@Passw0rd>"
 
 docker network create test-net
 
-docker run --name test-mssql \
+docker run --name test-mssql --network test-net \
     -e ACCEPT_EULA=Y \
     -e SA_PASSWORD=$MSSQL_SA_PASSWORD \
     -p 1433:1433 \
