@@ -1,10 +1,6 @@
 # Tiberius
-[![Build
-status](https://ci.appveyor.com/api/projects/status/ei34it5ppntytrev/branch/master?svg=true)](https://ci.appveyor.com/project/steffengy/tiberius/branch/master)
-[![Build
-Status](https://travis-ci.org/steffengy/tiberius.svg?branch=master)](https://travis-ci.org/steffengy/tiberius)
-[![Documentation](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)  
-A native TDS (MSSQL) 7.4 driver for Rust
+[![Build status](https://badge.buildkite.com/172053d935f64a275beca911ab20bad34e7597775ce024469d.svg)](https://buildkite.com/prisma/tiberius)
+A native TDS (MSSQL) 7.3 driver for Rust
 
 **NOTE**: Supporting async/await and revising the API is currently ongoing in
 this repo. Basics are now working and the crate is soon going to be in a stage
@@ -16,8 +12,7 @@ We also have our [Discord server](https://discord.gg/jxC2vH) for dev chat.
 
 ### Documentation
 
-Please compile with `cargo doc` from `master` until the new version is released
-to crates.io.
+- [Master](https://prisma.github.io/tiberius/tiberius/index.html)
 
 For installing please don't forget the following things:
 
