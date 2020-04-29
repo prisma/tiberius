@@ -164,16 +164,15 @@ impl Connection {
         match auth {
             #[cfg(windows)]
             AuthMethod::WindowsIntegrated => {
-                let builder = NtlmSspiBuilder::new();
+                let builder = NtlmSspiBuilder::new()
+                    .target_spn(self.context.spn());
+
                 let mut sspi_client = builder.build()?;
                 let buf = sspi_client.next_bytes(None)?;
 
                 msg.integrated_security = buf;
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
-
-                let ts = TokenStream::new(self, self.context.clone());
-                ts.flush_done().await?;
 
                 let ts = TokenStream::new(self, self.context.clone());
                 let sspi_bytes = ts.flush_sspi().await?;

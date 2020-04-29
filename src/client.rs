@@ -28,7 +28,6 @@ pub enum AuthMethod {
         user: String,
         password: String,
     },
-    /// Windows-integrated Authentication (SSPI / sspi)
     WindowsIntegrated,
 }
 

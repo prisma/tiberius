@@ -27,29 +27,39 @@ uint_enum! {
 }
 
 /// Context, that might be required to make sure we understand and are understood by the server
-pub struct Context {
-    pub version: FeatureLevel,
-    pub packet_size: AtomicU32,
-    pub packet_id: AtomicU8,
-    pub last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
+pub(crate) struct Context {
+    pub(crate) version: FeatureLevel,
+    pub(crate) packet_size: AtomicU32,
+    pub(crate) packet_id: AtomicU8,
+    pub(crate) last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
+    pub(crate) spn: Option<String>,
 }
 
 impl Context {
-    pub fn new() -> Context {
+    pub(crate) fn new() -> Context {
         Context {
             version: FeatureLevel::SqlServerN,
             packet_size: AtomicU32::new(4096),
             packet_id: AtomicU8::new(0),
             last_meta: Mutex::new(None),
+            spn: None,
         }
     }
 
-    pub fn new_header(&self, length: usize) -> PacketHeader {
+    pub(crate) fn new_header(&self, length: usize) -> PacketHeader {
         PacketHeader::new(length, self.packet_id.fetch_add(1, Ordering::SeqCst))
     }
 
-    pub async fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
+    pub(crate) async fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
         *self.last_meta.lock().await = Some(meta);
+    }
+
+    pub(crate) fn set_spn(&mut self, host: impl AsRef<str>, port: u16) {
+        self.spn = Some(format!("MSSQLSvc/{}:{}", host.as_ref(), port));
+    }
+
+    pub(crate) fn spn(&self) -> &str {
+        self.spn.as_ref().map(|s| s.as_str()).unwrap_or("")
     }
 }
 
