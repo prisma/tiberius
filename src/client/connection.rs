@@ -10,7 +10,7 @@ use crate::{
     EncryptionLevel,
 };
 use bytes::BytesMut;
-use codec::PacketCodec;
+use codec::{TokenSSPI, PacketCodec};
 use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
 use std::{
@@ -24,7 +24,7 @@ use tokio::io::AsyncRead;
 use tokio_util::codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
-use winauth::windows::NtlmSspiBuilder;
+use winauth::{windows::NtlmSspiBuilder, NextBytes};
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
@@ -163,7 +163,7 @@ impl Connection {
             #[cfg(windows)]
             AuthMethod::WindowsIntegrated => {
                 let builder = NtlmSspiBuilder::new();
-                let sspi_client = builder.build()?;
+                let mut sspi_client = builder.build()?;
                 let buf = sspi_client.next_bytes(None)?;
 
                 msg.integrated_security = buf;
@@ -173,24 +173,19 @@ impl Connection {
                 let ts = TokenStream::new(self, self.context.clone());
                 ts.flush_done().await?;
 
-                let mut ts = self.token_stream();
+                let ts = TokenStream::new(self, self.context.clone());
                 let sspi_bytes = ts.flush_sspi().await?;
 
-                match sspi_client.next_bytes(Some(sspi_bytes))? {
+                match sspi_client.next_bytes(Some(sspi_bytes.as_ref()))? {
                     Some(sspi_response) => {
                         event!(Level::TRACE, sspi_response_len = sspi_response.len());
 
-                        let mut header = PacketHeader::login(&self.ctx);
-                        header.set_length((sspi_response.len() + HEADER_BYTES) as u16);
+                        let header = PacketHeader::login(&self.context);
+                        let token = TokenSSPI::new(sspi_response);
+                        self.send(header, token).await?;
 
-                        let mut header_buf = [0u8; HEADER_BYTES];
-                        header.serialize(&mut header_buf)?;
-
-                        let mut buf = vec![];
-                        buf.extend_from_slice(&header_buf);
-                        buf.extend_from_slice(&sspi_response);
-
-                        self.stream.write_all(&buf).await?;
+                        let ts = TokenStream::new(self, self.context.clone());
+                        ts.flush_done().await?;
                     }
                     None => unreachable!(),
                 }

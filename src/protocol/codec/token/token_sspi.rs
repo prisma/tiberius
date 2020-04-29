@@ -1,5 +1,8 @@
-use super::Decode;
-use bytes::{Buf, BytesMut};
+use crate::{
+    async_read_le_ext::AsyncReadLeExt, protocol::codec::Encode,
+};
+use tokio::io::AsyncReadExt;
+use bytes::BytesMut;
 
 #[derive(Debug)]
 pub struct TokenSSPI(Vec<u8>);
@@ -11,22 +14,25 @@ impl AsRef<[u8]> for TokenSSPI {
 }
 
 impl TokenSSPI {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+
     pub(crate) async fn decode_async<R>(src: &mut R) -> crate::Result<Self>
     where
         R: AsyncReadLeExt + Unpin,
     {
-        let len = src.read_u16_le().await?;
-        Ok(Self(src.split_to(len as usize).to_vec()))
+        let len = src.read_u16_le().await? as usize;
+        let mut bytes = vec![0; len];
+        src.read_exact(&mut bytes[0..len]).await?;
+
+        Ok(Self(bytes))
     }
 }
 
-impl Decode<BytesMut> for TokenSSPI {
-    fn decode(src: &mut BytesMut) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let len = src.get_u16_le();
-
-        Ok(Self(src.split_to(len as usize).to_vec()))
+impl Encode<BytesMut> for TokenSSPI {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.extend(self.0);
+        Ok(())
     }
 }

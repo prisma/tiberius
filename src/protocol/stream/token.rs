@@ -1,5 +1,5 @@
 #[cfg(windows)]
-use super::codec::TokenSSPI;
+use crate::protocol::codec::TokenSSPI;
 use crate::{
     async_read_le_ext::AsyncReadLeExt,
     client::Connection,
@@ -165,7 +165,7 @@ impl<'a> TokenStream<'a> {
 
     #[cfg(windows)]
     async fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
-        let sspi = TokenSSPI::decode(self.conn).await?;
+        let sspi = TokenSSPI::decode_async(self.conn).await?;
         event!(Level::INFO, "SSPI response");
         Ok(ReceivedToken::SSPI(sspi))
     }
