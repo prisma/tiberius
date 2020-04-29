@@ -40,7 +40,7 @@ uint_enum! {
 
 /// packet header consisting of 8 bytes [2.2.3.1]
 #[derive(Debug, Clone, Copy)]
-pub struct PacketHeader {
+pub(crate) struct PacketHeader {
     pub ty: PacketType,
     pub status: PacketStatus,
     /// [BE] the length of the packet (including the 8 header bytes)

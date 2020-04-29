@@ -67,8 +67,6 @@ impl ClientBuilder {
     }
 
     pub async fn build(self) -> crate::Result<Client> {
-        let context = Arc::new(Context::new());
-
         let host = self
             .host
             .as_ref()
@@ -87,6 +85,10 @@ impl ClientBuilder {
         if let Some(ref instance_name) = self.instance_name {
             addr = find_tcp_sql_browser_addr(addr, instance_name).await?;
         };
+
+        let mut context = Context::new();
+        context.set_spn(host, port);
+        let context = Arc::new(context);
 
         let mut connection = connect_tcp(addr, context.clone()).await?;
         let prelogin = connection.prelogin(self.ssl).await?;
@@ -136,12 +138,12 @@ async fn find_tcp_sql_browser_addr(
     let len = time::timeout(timeout, socket.recv(&mut buf))
         .await
         .map_err(|_: time::Elapsed| {
-            Error::Conversion("SQL browser timeout during resolving instance".into())
+            Error::Conversion(format!("SQL browser timeout during resolving instance {}", instance_name).into())
         })??;
 
     buf.truncate(len);
 
-    let err = Error::Conversion("Could not resolve SQL browser instance".into());
+    let err = Error::Conversion(format!("Could not resolve SQL browser instance {}", instance_name).into());
 
     if len == 0 {
         return Err(err);
