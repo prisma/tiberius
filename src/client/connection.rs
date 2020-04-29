@@ -164,32 +164,18 @@ impl Connection {
         match auth {
             #[cfg(windows)]
             AuthMethod::WindowsIntegrated => {
-                let builder = NtlmSspiBuilder::new()
-                    .target_spn(self.context.spn());
+                let sspi_client = NtlmSspiBuilder::new()
+                    .target_spn(self.context.spn())
+                    .build()?;
+                self.windows_auth(msg, sspi_client).await?;
+            }
+            #[cfg(windows)]
+            AuthMethod::Windows { user, password, domain} => {
+                let spn = self.context.spn().to_string();
+                let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
+                let client = builder.build(domain, user, password);
 
-                let mut sspi_client = builder.build()?;
-                let buf = sspi_client.next_bytes(None)?;
-
-                msg.integrated_security = buf;
-
-                self.send(PacketHeader::login(&self.context), msg).await?;
-
-                let ts = TokenStream::new(self, self.context.clone());
-                let sspi_bytes = ts.flush_sspi().await?;
-
-                match sspi_client.next_bytes(Some(sspi_bytes.as_ref()))? {
-                    Some(sspi_response) => {
-                        event!(Level::TRACE, sspi_response_len = sspi_response.len());
-
-                        let header = PacketHeader::login(&self.context);
-                        let token = TokenSSPI::new(sspi_response);
-                        self.send(header, token).await?;
-
-                        let ts = TokenStream::new(self, self.context.clone());
-                        ts.flush_done().await?;
-                    }
-                    None => unreachable!(),
-                }
+                self.windows_auth(msg, client).await?;
             }
             AuthMethod::None => panic!("No authentication method specified"), // TODO?
             AuthMethod::SqlServer { user, password } => {
@@ -205,7 +191,6 @@ impl Connection {
                 let ts = TokenStream::new(self, self.context.clone());
                 ts.flush_done().await?;
             }
-            x => panic!("Auth method not supported {:?}", x),
         }
 
         Ok(())
@@ -254,6 +239,33 @@ impl Connection {
             Ok(self)
         }
     }
+
+    #[cfg(windows)]
+    /// Performs needed handshakes for Windows-based authentications.
+    async fn windows_auth<'a>(&'a mut self, mut msg: LoginMessage<'a>, mut client: impl NextBytes) -> crate::Result<()> {
+        msg.integrated_security = client.next_bytes(None)?;
+        self.send(PacketHeader::login(&self.context), msg).await?;
+
+        let ts = TokenStream::new(self, self.context.clone());
+        let sspi_bytes = ts.flush_sspi().await?;
+
+        match client.next_bytes(Some(sspi_bytes.as_ref()))? {
+            Some(sspi_response) => {
+                event!(Level::TRACE, sspi_response_len = sspi_response.len());
+
+                let header = PacketHeader::login(&self.context);
+                let token = TokenSSPI::new(sspi_response);
+                self.send(header, token).await?;
+
+                let ts = TokenStream::new(self, self.context.clone());
+                ts.flush_done().await?;
+            }
+            None => unreachable!(),
+        }
+
+        Ok(())
+    }
+
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(not(feature = "tls"))]
