@@ -27,6 +27,7 @@ pub enum AuthMethod {
     Windows {
         user: String,
         password: String,
+        domain: Option<String>,
     },
     WindowsIntegrated,
 }
@@ -39,10 +40,16 @@ impl AuthMethod {
         }
     }
 
-    pub fn windows(user: impl ToString, password: impl ToString) -> Self {
+    pub fn windows(user: impl AsRef<str>, password: impl ToString) -> Self {
+        let (domain, user) = match user.as_ref().find("\\") {
+            Some(idx) => (Some(&user.as_ref()[..idx]), &user.as_ref()[idx + 1..]),
+            _ => (None, user.as_ref()),
+        };
+
         Self::Windows {
             user: user.to_string(),
             password: password.to_string(),
+            domain: domain.map(|s| s.to_string())
         }
     }
 }
