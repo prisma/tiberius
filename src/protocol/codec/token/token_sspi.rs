@@ -1,8 +1,6 @@
-use crate::{
-    async_read_le_ext::AsyncReadLeExt, protocol::codec::Encode,
-};
-use tokio::io::AsyncReadExt;
+use crate::{async_read_le_ext::AsyncReadLeExt, protocol::codec::Encode};
 use bytes::BytesMut;
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenSSPI(Vec<u8>);

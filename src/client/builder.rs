@@ -138,12 +138,20 @@ async fn find_tcp_sql_browser_addr(
     let len = time::timeout(timeout, socket.recv(&mut buf))
         .await
         .map_err(|_: time::Elapsed| {
-            Error::Conversion(format!("SQL browser timeout during resolving instance {}", instance_name).into())
+            Error::Conversion(
+                format!(
+                    "SQL browser timeout during resolving instance {}",
+                    instance_name
+                )
+                .into(),
+            )
         })??;
 
     buf.truncate(len);
 
-    let err = Error::Conversion(format!("Could not resolve SQL browser instance {}", instance_name).into());
+    let err = Error::Conversion(
+        format!("Could not resolve SQL browser instance {}", instance_name).into(),
+    );
 
     if len == 0 {
         return Err(err);

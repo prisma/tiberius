@@ -170,7 +170,11 @@ impl Connection {
                 self.windows_auth(msg, sspi_client).await?;
             }
             #[cfg(windows)]
-            AuthMethod::Windows { user, password, domain} => {
+            AuthMethod::Windows {
+                user,
+                password,
+                domain,
+            } => {
                 let spn = self.context.spn().to_string();
                 let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
                 let client = builder.build(domain, user, password);
@@ -242,7 +246,11 @@ impl Connection {
 
     #[cfg(windows)]
     /// Performs needed handshakes for Windows-based authentications.
-    async fn windows_auth<'a>(&'a mut self, mut msg: LoginMessage<'a>, mut client: impl NextBytes) -> crate::Result<()> {
+    async fn windows_auth<'a>(
+        &'a mut self,
+        mut msg: LoginMessage<'a>,
+        mut client: impl NextBytes,
+    ) -> crate::Result<()> {
         msg.integrated_security = client.next_bytes(None)?;
         self.send(PacketHeader::login(&self.context), msg).await?;
 
@@ -265,7 +273,6 @@ impl Connection {
 
         Ok(())
     }
-
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(not(feature = "tls"))]
