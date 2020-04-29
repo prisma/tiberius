@@ -10,7 +10,9 @@ use crate::{
     EncryptionLevel,
 };
 use bytes::BytesMut;
-use codec::{TokenSSPI, PacketCodec};
+use codec::PacketCodec;
+#[cfg(windows)]
+use codec::TokenSSPI;
 use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
 use std::{
