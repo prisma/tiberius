@@ -24,11 +24,14 @@ pub enum AuthMethod {
         password: String,
     },
     /// Windows authentication
+    #[cfg(windows)]
     Windows {
         user: String,
         password: String,
         domain: Option<String>,
     },
+    /// Windows integrated authentication (current user)
+    #[cfg(windows)]
     WindowsIntegrated,
 }
 
@@ -40,6 +43,7 @@ impl AuthMethod {
         }
     }
 
+    #[cfg(windows)]
     pub fn windows(user: impl AsRef<str>, password: impl ToString) -> Self {
         let (domain, user) = match user.as_ref().find("\\") {
             Some(idx) => (Some(&user.as_ref()[..idx]), &user.as_ref()[idx + 1..]),
@@ -49,7 +53,7 @@ impl AuthMethod {
         Self::Windows {
             user: user.to_string(),
             password: password.to_string(),
-            domain: domain.map(|s| s.to_string())
+            domain: domain.map(|s| s.to_string()),
         }
     }
 }
