@@ -209,7 +209,7 @@ impl<'a> Stream for QueryResult<'a> {
 ///     )
 ///     .await?;
 ///
-/// let result: Vec<u64> = stream.try_collect().await?;
+/// let result: Vec<u64> = stream.into_iter().collect();
 /// assert_eq!(vec![1, 2], result);
 /// # Ok(())
 /// # }
@@ -218,14 +218,24 @@ impl<'a> Stream for QueryResult<'a> {
 /// [`Client`]: struct.Client.html
 /// [`Rows`]: struct.Row.html
 /// [`next_resultset`]: #method.next_resultset
-pub struct ExecuteResult<'a> {
-    token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>,
+pub struct ExecuteResult {
+    rows_affected: Vec<u64>,
 }
 
-impl<'a> ExecuteResult<'a> {
-    pub(crate) fn new(connection: &'a mut Connection) -> Self {
-        let token_stream = TokenStream::new(connection).try_unfold();
-        Self { token_stream }
+impl<'a> ExecuteResult {
+    pub(crate) async fn try_new(connection: &'a mut Connection) -> crate::Result<Self> {
+        let mut token_stream = TokenStream::new(connection).try_unfold();
+        let stream = unsafe { Pin::new_unchecked(&mut *token_stream) };
+        let rows_affected = stream.try_fold(Vec::new(), |mut acc, token| async move {
+            match token {
+                ReceivedToken::DoneProc(done) if done.status.contains(DoneStatus::FINAL) => (),
+                ReceivedToken::DoneProc(done) => acc.push(done.done_rows),
+                ReceivedToken::DoneInProc(done) => acc.push(done.done_rows),
+                _ => (),
+            }
+            Ok(acc)
+        }).await?;
+        Ok(Self { rows_affected })
     }
 
     /// Aggregates all resulting row counts into a sum.
@@ -249,46 +259,26 @@ impl<'a> ExecuteResult<'a> {
     /// # };
     /// # let mut conn = builder.build().await?;
     ///
-    /// let stream = conn
+    /// let rows_affected = conn
     ///     .execute(
     ///         "INSERT INTO #Test (id) VALUES (@P1); INSERT INTO #Test (id) VALUES (@P2, @P3)",
     ///         &[&1i32, &2i32, &3i32],
     ///     )
     ///     .await?;
     ///
-    /// assert_eq!(3, stream.total().await?);
+    /// assert_eq!(3, rows_affected.total());
     /// # Ok(())
     /// # }
-    pub async fn total(self) -> crate::Result<u64> {
-        self.try_fold(0, |acc, x| async move { Ok(acc + x) }).await
+    pub fn total(self) -> u64 {
+        self.rows_affected.into_iter().sum()
+        //self.try_fold(0, |acc, x| async move { Ok(acc + x) }).await
     }
 }
 
-impl<'a> Stream for ExecuteResult<'a> {
-    type Item = crate::Result<u64>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-
-        loop {
-            let stream = unsafe { Pin::new_unchecked(&mut *this.token_stream) };
-            let token = ready!(stream.try_poll_next(cx)?);
-
-            match token {
-                Some(ReceivedToken::DoneProc(done)) if done.status.contains(DoneStatus::FINAL) => {
-                    return Poll::Ready(None);
-                }
-                Some(ReceivedToken::DoneProc(done)) => {
-                    return Poll::Ready(Some(Ok(done.done_rows)));
-                }
-                Some(ReceivedToken::DoneInProc(done)) => {
-                    return Poll::Ready(Some(Ok(done.done_rows)));
-                }
-                Some(ReceivedToken::Done(_)) => {
-                    return Poll::Ready(None);
-                }
-                _ => continue,
-            }
-        }
+impl IntoIterator for ExecuteResult {
+    type Item = u64;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.rows_affected.into_iter()
     }
 }
