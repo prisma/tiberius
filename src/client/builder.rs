@@ -1,7 +1,7 @@
 use super::{connection::*, AuthMethod};
 use crate::{tds::Context, Client, EncryptionLevel};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html

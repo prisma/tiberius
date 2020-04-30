@@ -210,30 +210,31 @@ impl Connection {
                 self.windows_auth(msg, sspi_client).await?;
             }
             #[cfg(windows)]
-            AuthMethod::Windows {
-                user,
-                password,
-                domain,
-            } => {
+            AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();
                 let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
-                let client = builder.build(domain, user, password);
+                let client = builder.build(auth.domain, auth.user, auth.password);
 
                 self.windows_auth(msg, client).await?;
             }
-            AuthMethod::None => panic!("No authentication method specified"), // TODO?
-            AuthMethod::SqlServer { user, password } => {
+            AuthMethod::None => {
                 if let Some(db) = db {
                     msg.db_name = db.into();
                 }
 
-                msg.username = user.into();
-                msg.password = password.into();
+                self.send(PacketHeader::login(&self.context), msg).await?;
+                TokenStream::new(self).flush_done().await?;
+            }
+            AuthMethod::SqlServer(auth) => {
+                if let Some(db) = db {
+                    msg.db_name = db.into();
+                }
+
+                msg.username = auth.user.into();
+                msg.password = auth.password.into();
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
-
-                let ts = TokenStream::new(self);
-                ts.flush_done().await?;
+                TokenStream::new(self).flush_done().await?;
             }
         }
 

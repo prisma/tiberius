@@ -15,6 +15,9 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+/// The amount of bytes a packet header consists of
+pub(crate) const HEADER_BYTES: usize = 8;
+
 uint_enum! {
     /// The configured encryption level specifying if encryption is required
     #[repr(u8)]
@@ -32,16 +35,16 @@ uint_enum! {
 
 /// Context, that might be required to make sure we understand and are understood by the server
 pub(crate) struct Context {
-    pub(crate) version: FeatureLevel,
-    pub(crate) packet_size: AtomicU32,
-    pub(crate) packet_id: AtomicU8,
-    pub(crate) last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
+    pub version: FeatureLevel,
+    pub packet_size: AtomicU32,
+    pub packet_id: AtomicU8,
+    pub last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
     #[cfg(windows)]
-    pub(crate) spn: Option<String>,
+    pub spn: Option<String>,
 }
 
 impl Context {
-    pub(crate) fn new() -> Context {
+    pub fn new() -> Context {
         Context {
             version: FeatureLevel::SqlServerN,
             packet_size: AtomicU32::new(4096),
@@ -52,24 +55,21 @@ impl Context {
         }
     }
 
-    pub(crate) fn new_header(&self, length: usize) -> PacketHeader {
+    pub fn new_header(&self, length: usize) -> PacketHeader {
         PacketHeader::new(length, self.packet_id.fetch_add(1, Ordering::SeqCst))
     }
 
-    pub(crate) async fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
+    pub async fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
         *self.last_meta.lock().await = Some(meta);
     }
 
     #[cfg(windows)]
-    pub(crate) fn set_spn(&mut self, host: impl AsRef<str>, port: u16) {
+    pub fn set_spn(&mut self, host: impl AsRef<str>, port: u16) {
         self.spn = Some(format!("MSSQLSvc/{}:{}", host.as_ref(), port));
     }
 
     #[cfg(windows)]
-    pub(crate) fn spn(&self) -> &str {
+    pub fn spn(&self) -> &str {
         self.spn.as_ref().map(|s| s.as_str()).unwrap_or("")
     }
 }
-
-/// The amount of bytes a packet header consists of
-pub const HEADER_BYTES: usize = 8;

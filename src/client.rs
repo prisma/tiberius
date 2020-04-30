@@ -16,46 +16,59 @@ use crate::{
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
 use std::borrow::Cow;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+pub struct SqlServerAuth {
+    pub(crate) user: String,
+    pub(crate) password: String,
+}
+
+#[derive(Clone)]
+pub struct WindowsAuth {
+    pub(crate) user: String,
+    pub(crate) password: String,
+    pub(crate) domain: Option<String>,
+}
+
+#[derive(Clone)]
 pub enum AuthMethod {
-    None,
-    /// SQL Server integrated authentication
-    SqlServer {
-        user: String,
-        password: String,
-    },
-    /// Windows authentication
-    #[cfg(windows)]
-    Windows {
-        user: String,
-        password: String,
-        domain: Option<String>,
-    },
-    /// Windows integrated authentication (current user)
-    #[cfg(windows)]
+    /// Authenticate directly with SQL Server. The only authentication method
+    /// that works on all platforms.
+    SqlServer(SqlServerAuth),
+    #[cfg(any(windows, doc))]
+    /// Authenticate with Windows credentials. Only available on Windows
+    /// platforms.
+    Windows(WindowsAuth),
+    #[cfg(any(windows, doc))]
+    /// Authenticate as the currently logged in user. Only available on Windows
+    /// platforms.
     WindowsIntegrated,
+    #[doc(hidden)]
+    None,
 }
 
 impl AuthMethod {
+    /// Construct a new SQL Server authentication configuration.
     pub fn sql_server(user: impl ToString, password: impl ToString) -> Self {
-        Self::SqlServer {
+        Self::SqlServer(SqlServerAuth {
             user: user.to_string(),
             password: password.to_string(),
-        }
+        })
     }
 
-    #[cfg(windows)]
+    /// Construct a new Windows authentication configuration. Only available on
+    /// Windows platforms.
+    #[cfg(any(windows, doc))]
     pub fn windows(user: impl AsRef<str>, password: impl ToString) -> Self {
         let (domain, user) = match user.as_ref().find("\\") {
             Some(idx) => (Some(&user.as_ref()[..idx]), &user.as_ref()[idx + 1..]),
             _ => (None, user.as_ref()),
         };
 
-        Self::Windows {
+        Self::Windows(WindowsAuth {
             user: user.to_string(),
             password: password.to_string(),
             domain: domain.map(|s| s.to_string()),
-        }
+        })
     }
 }
 
