@@ -1,6 +1,6 @@
 use crate::{
-    async_read_le_ext::AsyncReadLeExt,
     protocol::codec::{read_varchar, TypeInfo, VarLenType},
+    SqlReadBytes,
 };
 use bitflags::bitflags;
 use tokio::io::AsyncReadExt;
@@ -44,7 +44,7 @@ bitflags! {
 impl TokenColMetaData {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let column_count = src.read_u16_le().await?;
         let mut columns = Vec::with_capacity(column_count as usize);
@@ -76,7 +76,7 @@ impl TokenColMetaData {
 impl BaseMetaDataColumn {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let _user_ty = src.read_u32_le().await?;
         let raw_flags = src.read_u16_le().await?;

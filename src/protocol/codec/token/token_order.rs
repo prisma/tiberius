@@ -1,4 +1,4 @@
-use crate::async_read_le_ext::AsyncReadLeExt;
+use crate::SqlReadBytes;
 
 #[derive(Debug)]
 pub struct TokenOrder {
@@ -8,7 +8,7 @@ pub struct TokenOrder {
 impl TokenOrder {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let len = src.read_u16_le().await? / 2;
 

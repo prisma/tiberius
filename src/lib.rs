@@ -1,11 +1,9 @@
 //! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
 #![recursion_limit = "512"]
 
-use protocol::codec::*;
-
-mod async_read_le_ext;
 mod client;
 mod prepared;
+mod sql_read_bytes;
 
 mod collation;
 mod error;
@@ -21,6 +19,9 @@ pub use protocol::EncryptionLevel;
 pub use result::*;
 pub use row::{Column, Row};
 pub use uuid::Uuid;
+
+use protocol::codec::*;
+use sql_read_bytes::*;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

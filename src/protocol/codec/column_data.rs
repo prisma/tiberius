@@ -1,8 +1,7 @@
 use super::{read_varchar, Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::{
-    async_read_le_ext::AsyncReadLeExt,
     protocol::{self, types::Numeric},
-    Error,
+    Error, SqlReadBytes,
 };
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
@@ -104,7 +103,7 @@ impl VariableLengthContext {
 impl<'a> ColumnData<'a> {
     pub(crate) async fn decode<R>(src: &mut R, ctx: &TypeInfo) -> crate::Result<ColumnData<'a>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let res = match ctx {
             TypeInfo::FixedLen(fixed_ty) => Self::decode_fixed_len(src, &fixed_ty).await?,
@@ -125,7 +124,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_fixed_len<R>(src: &mut R, ty: &FixedLenType) -> crate::Result<ColumnData<'a>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let ret = match ty {
             FixedLenType::Null => ColumnData::None,
@@ -150,7 +149,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_var_len_precision<R>(src: &mut R, scale: u8) -> crate::Result<ColumnData<'a>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         fn decode_d128(buf: &[u8]) -> u128 {
             let low_part = LittleEndian::read_u64(&buf[0..]) as u128;
@@ -217,7 +216,7 @@ impl<'a> ColumnData<'a> {
         ctx: &VariableLengthContext,
     ) -> crate::Result<ColumnData<'a>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let ty = ctx.ty;
         let len = ctx.len;
@@ -424,7 +423,7 @@ impl<'a> ColumnData<'a> {
     #[cfg(feature = "tds73")]
     async fn decode_date<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let len = src.read_u8().await?;
 
@@ -443,7 +442,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_datetimen<R>(src: &mut R, len: u8) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let datetime = match len {
             0 => ColumnData::None,
@@ -461,7 +460,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_bit<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let recv_len = src.read_u8().await? as usize;
 
@@ -480,7 +479,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_int<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let recv_len = src.read_u8().await? as usize;
 
@@ -498,7 +497,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_float<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let len = src.read_u8().await? as usize;
 
@@ -518,7 +517,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_guid<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let len = src.read_u8().await? as usize;
 
@@ -545,7 +544,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_text<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let ptr_len = src.read_u8().await? as usize;
 
@@ -569,7 +568,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_ntext<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let ptr_len = src.read_u8().await? as usize;
 
@@ -594,7 +593,7 @@ impl<'a> ColumnData<'a> {
         len: usize,
     ) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let mode = if ty == VarLenType::NChar {
             ReadTyMode::FixedSize(len)
@@ -626,7 +625,7 @@ impl<'a> ColumnData<'a> {
         collation: Option<Collation>,
     ) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let mode = ReadTyMode::auto(len);
         let data = Self::decode_plp_type(src, mode).await?;
@@ -652,7 +651,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_money<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let len = src.read_u8().await?;
 
@@ -676,7 +675,7 @@ impl<'a> ColumnData<'a> {
 
     async fn decode_binary<R>(src: &mut R, len: usize) -> crate::Result<ColumnData<'static>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let mode = ReadTyMode::auto(len);
         let data = Self::decode_plp_type(src, mode).await?;
@@ -695,7 +694,7 @@ impl<'a> ColumnData<'a> {
         mode: ReadTyMode,
     ) -> crate::Result<Option<Vec<u8>>>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let mut read_state = ReadTyState::new(mode);
 

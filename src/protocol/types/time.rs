@@ -1,4 +1,4 @@
-use crate::{async_read_le_ext::AsyncReadLeExt, protocol::codec::Encode};
+use crate::{protocol::codec::Encode, SqlReadBytes};
 #[cfg(feature = "tds73")]
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
@@ -29,7 +29,7 @@ impl DateTime {
 
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         Ok(Self {
             days: src.read_i32_le().await?,
@@ -63,7 +63,7 @@ pub struct SmallDateTime {
 impl SmallDateTime {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         Ok(Self {
             days: src.read_u16_le().await?,
@@ -110,7 +110,7 @@ impl Date {
 
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let mut bytes = [0u8; 4];
         src.read_exact(&mut bytes[..3]).await?;
@@ -164,7 +164,7 @@ impl Time {
 
     pub(crate) async fn decode<R>(src: &mut R, n: usize, rlen: usize) -> crate::Result<Time>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let val = match (n, rlen) {
             (0..=2, 3) => src.read_u16_le().await? as u64 | (src.read_u8().await? as u64) << 16,
@@ -229,7 +229,7 @@ impl DateTime2 {
 
     pub(crate) async fn decode<R>(src: &mut R, n: usize, rlen: usize) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let time = Time::decode(src, n, rlen as usize).await?;
 
@@ -270,7 +270,7 @@ impl DateTimeOffset {
 
     pub(crate) async fn decode<R>(src: &mut R, n: usize) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let rlen = src.read_u8().await? - 5;
         let datetime2 = DateTime2::decode(src, n, rlen as usize).await?;

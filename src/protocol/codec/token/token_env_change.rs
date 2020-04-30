@@ -1,4 +1,4 @@
-use crate::{async_read_le_ext::AsyncReadLeExt, protocol::codec::read_varchar, uint_enum, Error};
+use crate::{protocol::codec::read_varchar, uint_enum, Error, SqlReadBytes};
 use std::{convert::TryFrom, fmt};
 use tokio::io::AsyncReadExt;
 
@@ -55,7 +55,7 @@ impl fmt::Display for TokenEnvChange {
 impl TokenEnvChange {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let _len = src.read_u16_le().await?;
         let ty_byte = src.read_u8().await?;

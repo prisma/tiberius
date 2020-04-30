@@ -1,4 +1,4 @@
-use crate::{async_read_le_ext::AsyncReadLeExt, protocol::Context, Error};
+use crate::{Error, SqlReadBytes};
 use bitflags::bitflags;
 use std::fmt;
 
@@ -23,15 +23,15 @@ bitflags! {
 }
 
 impl TokenDone {
-    pub(crate) async fn decode<R>(src: &mut R, ctx: &Context) -> crate::Result<Self>
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let status = DoneStatus::from_bits(src.read_u16_le().await?)
             .ok_or(Error::Protocol("done(variant): invalid status".into()))?;
 
         let cur_cmd = src.read_u16_le().await?;
-        let done_row_count_bytes = ctx.version.done_row_count_bytes();
+        let done_row_count_bytes = src.context().version.done_row_count_bytes();
 
         let done_rows = match done_row_count_bytes {
             8 => src.read_u64_le().await?,

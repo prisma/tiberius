@@ -1,9 +1,6 @@
 use crate::{
-    async_read_le_ext::AsyncReadLeExt,
-    protocol::{
-        codec::{ColumnData, TokenColMetaData},
-        Context,
-    },
+    protocol::codec::{ColumnData, TokenColMetaData},
+    SqlReadBytes,
 };
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
@@ -48,7 +45,7 @@ impl RowBitmap {
     /// type is `NbcRowToken`.
     async fn decode<R>(src: &mut R, columns: usize) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let size = (columns + 8 - 1) / 8;
         let mut data = vec![0; size];
@@ -61,11 +58,11 @@ impl RowBitmap {
 impl TokenRow {
     /// Normal row. We'll read the metadata what we've cached and parse columns
     /// based on that.
-    pub(crate) async fn decode<R>(src: &mut R, ctx: &Context) -> crate::Result<Self>
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
-        let col_meta = ctx.last_meta.lock().await.clone().unwrap();
+        let col_meta = src.context().last_meta.lock().await.clone().unwrap();
 
         let mut row = TokenRow {
             meta: col_meta.clone(),
@@ -83,11 +80,11 @@ impl TokenRow {
 
     /// SQL Server has packed nulls on this row type. We'll read what columns
     /// are null from the bitmap.
-    pub(crate) async fn decode_nbc<R>(src: &mut R, ctx: &Context) -> crate::Result<Self>
+    pub(crate) async fn decode_nbc<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
-        let col_meta = ctx.last_meta.lock().await.clone().unwrap();
+        let col_meta = src.context().last_meta.lock().await.clone().unwrap();
         let row_bitmap = RowBitmap::decode(src, col_meta.columns.len()).await?;
 
         let mut row = TokenRow {

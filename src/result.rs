@@ -3,12 +3,11 @@ use crate::{
     protocol::{
         codec::DoneStatus,
         stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
-        Context,
     },
     Row,
 };
 use futures::{ready, Stream, StreamExt, TryStream, TryStreamExt};
-use std::{pin::Pin, sync::Arc, task};
+use std::{pin::Pin, task};
 use task::Poll;
 
 /// A set of `Streams` of [`Rows`] resulting from a `SELECT` query. The
@@ -224,8 +223,8 @@ pub struct ExecuteResult<'a> {
 }
 
 impl<'a> ExecuteResult<'a> {
-    pub(crate) fn new(connection: &'a mut Connection, context: Arc<Context>) -> Self {
-        let token_stream = TokenStream::new(connection, context).try_unfold();
+    pub(crate) fn new(connection: &'a mut Connection) -> Self {
+        let token_stream = TokenStream::new(connection).try_unfold();
         Self { token_stream }
     }
 

@@ -2,18 +2,19 @@ mod builder;
 mod connection;
 
 pub use builder::*;
-pub use connection::*;
+pub(crate) use connection::*;
 
 use crate::{
     prepared,
     protocol::{
         codec::{self, RpcOptionFlags, RpcStatusFlags},
-        Context,
+        stream::TokenStream,
     },
     result::{ExecuteResult, QueryResult},
+    SqlReadBytes,
 };
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
 pub enum AuthMethod {
@@ -82,7 +83,6 @@ impl AuthMethod {
 /// [`ClientBuilder`]: struct.ClientBuilder.html
 pub struct Client {
     connection: Connection,
-    context: Arc<Context>,
 }
 
 impl Client {
@@ -130,10 +130,7 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(ExecuteResult::new(
-            &mut self.connection,
-            self.context.clone(),
-        ))
+        Ok(ExecuteResult::new(&mut self.connection))
     }
 
     /// Executes SQL statements in the SQL Server, returning resulting rows.
@@ -175,7 +172,9 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        let mut result = QueryResult::new(self.connection.token_stream());
+        let ts = TokenStream::new(&mut self.connection);
+        let mut result = QueryResult::new(ts.try_unfold());
+
         result.fetch_metadata().await?;
 
         Ok(result)
@@ -233,7 +232,7 @@ impl Client {
         };
 
         self.connection
-            .send(PacketHeader::rpc(&self.context), req)
+            .send(PacketHeader::rpc(self.connection.context()), req)
             .await?;
 
         Ok(())

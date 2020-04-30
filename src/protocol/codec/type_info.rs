@@ -1,4 +1,4 @@
-use crate::{async_read_le_ext::AsyncReadLeExt, protocol::types::Collation, uint_enum, Error};
+use crate::{protocol::types::Collation, uint_enum, Error, SqlReadBytes};
 use std::convert::TryFrom;
 use tokio::io::AsyncReadExt;
 
@@ -79,7 +79,7 @@ uint_enum! {
 impl TypeInfo {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let ty = src.read_u8().await?;
 

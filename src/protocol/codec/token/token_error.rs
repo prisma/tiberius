@@ -1,9 +1,6 @@
 use crate::{
-    async_read_le_ext::AsyncReadLeExt,
-    protocol::{
-        codec::{read_varchar, FeatureLevel},
-        Context,
-    },
+    protocol::codec::{read_varchar, FeatureLevel},
+    SqlReadBytes,
 };
 use std::fmt;
 use tokio::io::AsyncReadExt;
@@ -24,9 +21,9 @@ pub struct TokenError {
 }
 
 impl TokenError {
-    pub(crate) async fn decode<R>(src: &mut R, ctx: &Context) -> crate::Result<Self>
+    pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let _length = src.read_u16_le().await? as usize;
         let code = src.read_u32_le().await?;
@@ -42,7 +39,7 @@ impl TokenError {
         let procedure_len = src.read_u8().await?;
         let procedure = read_varchar(src, procedure_len).await?;
 
-        let line = if ctx.version > FeatureLevel::SqlServer2005 {
+        let line = if src.context().version > FeatureLevel::SqlServer2005 {
             src.read_u32_le().await?
         } else {
             src.read_u16_le().await? as u32

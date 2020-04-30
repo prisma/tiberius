@@ -1,3 +1,4 @@
+use crate::protocol::Context;
 use bytes::Buf;
 use pin_project_lite::pin_project;
 use std::io::ErrorKind::UnexpectedEof;
@@ -67,8 +68,10 @@ macro_rules! le_reader {
     };
 }
 
-pub trait AsyncReadLeExt: AsyncRead {
+pub(crate) trait SqlReadBytes: AsyncRead {
     fn debug_buffer(&self);
+
+    fn context(&self) -> &Context;
 
     fn read_f32<'a>(&'a mut self) -> ReadF32<&'a mut Self>
     where
