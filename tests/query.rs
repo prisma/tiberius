@@ -12,7 +12,8 @@ async fn connect() -> Result<Client> {
     });
 
     let mut builder = Client::builder();
-    builder.ssl(EncryptionLevel::Required);
+
+    builder.encryption(EncryptionLevel::NotSupported);
     builder.trust_cert();
 
     if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {

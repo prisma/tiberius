@@ -1,10 +1,9 @@
+#[cfg(feature = "tls")]
+use crate::client::tls::TlsPreloginWrapper;
 #[cfg(windows)]
 use crate::Error;
 use crate::{
-    client::{
-        tls::{MaybeTlsStream, TlsPreloginWrapper},
-        AuthMethod,
-    },
+    client::{tls::MaybeTlsStream, AuthMethod},
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -53,7 +52,7 @@ pub(crate) struct Connection {
 }
 
 pub(crate) struct ConnectOpts {
-    pub ssl: EncryptionLevel,
+    pub encryption: EncryptionLevel,
     pub trust_cert: bool,
     pub auth: AuthMethod,
     pub database: Option<String>,
@@ -90,13 +89,38 @@ impl Connection {
             buf: BytesMut::new(),
         };
 
-        let prelogin = connection.prelogin(opts.ssl).await?;
-        let ssl = prelogin.negotiated_encryption(opts.ssl);
+        let prelogin = connection.prelogin(opts.encryption).await?;
+        let encryption = prelogin.negotiated_encryption(opts.encryption);
 
-        let mut connection = connection.tls_handshake(ssl, opts.trust_cert).await?;
+        let mut connection = connection
+            .tls_handshake(encryption, opts.trust_cert)
+            .await?;
         connection.login(opts.auth, opts.database).await?;
 
+        let mut connection = connection.post_login_encryption(encryption);
+        TokenStream::new(&mut connection).flush_done().await?;
+
         Ok(connection)
+    }
+
+    #[cfg(feature = "tls")]
+    fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
+        if let EncryptionLevel::Off = encryption {
+            event!(
+                Level::WARN,
+                "Turning TLS off after a login. All traffic from here on is not encrypted.",
+            );
+
+            let tcp = self.transport.into_inner().into_inner();
+            self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
+        }
+
+        self
+    }
+
+    #[cfg(not(feature = "tls"))]
+    fn post_login_encryption(self, _: EncryptionLevel) -> Self {
+        self
     }
 
     /// Send an item to the wire. Header should define the item type and item should implement
@@ -136,7 +160,7 @@ impl Connection {
             self.transport.send(packet).await?;
         }
 
-        // Rai rai says the fish goodbye
+        // Rai rai says the turbofish goodbye
         SinkExt::<Packet>::flush(&mut self.transport).await?;
 
         Ok(())
@@ -182,13 +206,13 @@ impl Connection {
     /// responds to a client PRELOGIN message with a message of packet header
     /// type 0x04 and with the packet data containing a PRELOGIN structure.
     ///
-    /// This message stream is also used to wrap the SSL handshake payload if
+    /// This message stream is also used to wrap the TLS handshake payload if
     /// encryption is needed. In this scenario, where PRELOGIN message is
-    /// transporting the SSL handshake payload, the packet data is simply the
-    /// raw bytes of the SSL handshake payload.
-    async fn prelogin(&mut self, ssl: EncryptionLevel) -> crate::Result<PreloginMessage> {
+    /// transporting the TLS handshake payload, the packet data is simply the
+    /// raw bytes of the TLS handshake payload.
+    async fn prelogin(&mut self, encryption: EncryptionLevel) -> crate::Result<PreloginMessage> {
         let mut msg = PreloginMessage::new();
-        msg.encryption = ssl;
+        msg.encryption = encryption;
 
         self.send(PacketHeader::pre_login(&self.context), msg)
             .await?;
@@ -207,6 +231,7 @@ impl Connection {
                 let sspi_client = NtlmSspiBuilder::new()
                     .target_spn(self.context.spn())
                     .build()?;
+
                 self.windows_auth(msg, sspi_client).await?;
             }
             #[cfg(windows)]
@@ -223,7 +248,6 @@ impl Connection {
                 }
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
-                TokenStream::new(self).flush_done().await?;
             }
             AuthMethod::SqlServer(auth) => {
                 if let Some(db) = db {
@@ -234,7 +258,6 @@ impl Connection {
                 msg.password = auth.password.into();
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
-                TokenStream::new(self).flush_done().await?;
             }
         }
 
@@ -243,13 +266,22 @@ impl Connection {
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(feature = "tls")]
-    async fn tls_handshake(self, ssl: EncryptionLevel, trust_cert: bool) -> crate::Result<Self> {
-        if ssl != EncryptionLevel::NotSupported {
+    async fn tls_handshake(
+        self,
+        encryption: EncryptionLevel,
+        trust_cert: bool,
+    ) -> crate::Result<Self> {
+        if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
             let mut builder = native_tls::TlsConnector::builder();
 
             if trust_cert {
+                event!(
+                    Level::WARN,
+                    "Trusting the server certificate without validation."
+                );
+
                 builder.danger_accept_invalid_certs(true);
                 builder.danger_accept_invalid_hostnames(true);
                 builder.use_sni(false);
@@ -277,14 +309,18 @@ impl Connection {
                 buf: BytesMut::new(),
             })
         } else {
+            event!(
+                Level::WARN,
+                "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
+            );
+
             Ok(self)
         }
     }
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(not(feature = "tls"))]
-    async fn tls_handshake(self, ssl: EncryptionLevel, _: bool) -> crate::Result<Self> {
-        assert_eq!(ssl, EncryptionLevel::NotSupported);
+    async fn tls_handshake(self, _: EncryptionLevel, _: bool) -> crate::Result<Self> {
         Ok(self)
     }
 
@@ -308,9 +344,6 @@ impl Connection {
                 let header = PacketHeader::login(&self.context);
                 let token = TokenSSPI::new(sspi_response);
                 self.send(header, token).await?;
-
-                let ts = TokenStream::new(self, self.context.clone());
-                ts.flush_done().await?;
             }
             None => unreachable!(),
         }

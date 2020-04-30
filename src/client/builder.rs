@@ -11,7 +11,7 @@ pub struct ClientBuilder {
     database: Option<String>,
     #[cfg(windows)]
     instance_name: Option<String>,
-    ssl: EncryptionLevel,
+    encryption: EncryptionLevel,
     trust_cert: bool,
     auth: AuthMethod,
 }
@@ -24,7 +24,10 @@ impl Default for ClientBuilder {
             database: None,
             #[cfg(windows)]
             instance_name: None,
-            ssl: EncryptionLevel::NotSupported,
+            #[cfg(feature = "tls")]
+            encryption: EncryptionLevel::Required,
+            #[cfg(not(feature = "tls"))]
+            encryption: EncryptionLevel::NotSupported,
             trust_cert: false,
             auth: AuthMethod::None,
         }
@@ -41,30 +44,43 @@ impl ClientBuilder {
 
     /// The server port.
     ///
-    /// - Defaults to `1433`
+    /// - Defaults to `1433`.
     pub fn port(&mut self, port: u16) {
         self.port = Some(port);
     }
 
-    /// The database name to connect to.
+    /// The database to connect to.
+    ///
+    /// - Defaults to `master`.
     pub fn database(&mut self, database: impl ToString) {
         self.database = Some(database.to_string())
     }
 
-    #[cfg(windows)]
-    /// The instance name as defined in the SQL Browser.
+    /// The instance name as defined in the SQL Browser. Only available on
+    /// Windows platforms.
+    ///
+    /// If specified, the port is replaced with the value returned from the
+    /// browser.
+    #[cfg(any(windows, doc))]
     pub fn instance_name(&mut self, name: impl ToString) {
         self.instance_name = Some(name.to_string());
     }
 
-    pub fn ssl(&mut self, ssl: EncryptionLevel) {
-        self.ssl = ssl;
+    /// Set the preferred encryption level.
+    pub fn encryption(&mut self, encryption: EncryptionLevel) {
+        self.encryption = encryption;
     }
 
+    /// If set, the server certificate will not be validated and it is accepted
+    /// as-is.
+    ///
+    /// On production setting, the certificate should be added to the local key
+    /// storage, using this setting is potentially dangerous.
     pub fn trust_cert(&mut self) {
         self.trust_cert = true;
     }
 
+    /// Sets the authentication method.
     pub fn authentication(&mut self, auth: AuthMethod) {
         self.auth = auth;
     }
@@ -92,12 +108,13 @@ impl ClientBuilder {
         Context::new()
     }
 
+    /// Creates a new client and connects to the server.
     pub async fn build(self) -> crate::Result<Client> {
         let context = self.create_context();
         let addr = format!("{}:{}", self.get_host(), self.get_port());
 
         let opts = ConnectOpts {
-            ssl: self.ssl,
+            encryption: self.encryption,
             trust_cert: self.trust_cert,
             auth: self.auth,
             database: self.database,
