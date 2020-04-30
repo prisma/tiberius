@@ -224,13 +224,18 @@ impl AdoNetString {
                 return Err(crate::Error::Conversion("Server value faulty.".into()));
             }
 
-            let definition = if parts.len() == 1 {
-                // Connect using a host and an instance name, we first need to resolve to a port
+            let definition = if parts[0].contains('\\') {
+                let port = if parts.len() == 1 {
+                    1434
+                } else {
+                    parts[1].parse::<u16>()?
+                };
+
                 let parts: Vec<&str> = parts[0].split('\\').collect();
 
                 ServerDefinition {
                     host: Some(parts[0].into()),
-                    port: Some(1434),
+                    port: Some(port),
                     instance: Some(parts[1].into()),
                 }
             } else {
@@ -370,6 +375,19 @@ mod tests {
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
         assert_eq!(Some(1434), server.port);
+        assert_eq!(Some("TIBERIUS".to_string()), server.instance);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_server_parsing_with_browser_and_port() -> crate::Result<()> {
+        let test_str = "server=tcp:my-server.com\\TIBERIUS,666";
+        let ado = AdoNetString::parse(test_str)?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(666), server.port);
         assert_eq!(Some("TIBERIUS".to_string()), server.instance);
 
         Ok(())
