@@ -5,8 +5,6 @@ shopt -s globstar
 
 docker run -w /build -v $(pwd):/build prismagraphql/build:test cargo rustdoc --all-features
 
-git remote set-url origin https://${process.env.GITHUB_TOKEN}@github.com/prisma/tiberius.git
-
 rm -rf deploy_docs
 git clone --branch gh-pages "git@github.com:prisma/tiberius.git" deploy_docs > /dev/null 2>&1
 rm -rf deploy_docs/*
