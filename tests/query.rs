@@ -1,39 +1,26 @@
 use futures_util::{StreamExt, TryStreamExt};
+use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{AuthMethod, Client, EncryptionLevel, Result};
+use tiberius::{Client, ClientBuilder, Result};
 use uuid::Uuid;
 
 static LOGGER_SETUP: Once = Once::new();
+
+static CONN_STR: Lazy<String> = Lazy::new(|| {
+    env::var("TIBERIUS_TEST_CONNECTION_STRING")
+        .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned())
+});
 
 async fn connect() -> Result<Client> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
 
-    let mut builder = Client::builder();
-
-    builder.encryption(EncryptionLevel::NotSupported);
-    builder.trust_cert();
-
-    if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
-        builder.host(host);
-    };
-
-    if let Ok(port) = env::var("TIBERIUS_TEST_PORT") {
-        let port: u16 = port.parse().unwrap();
-        builder.port(port);
-    };
-
-    if let Ok(user) = env::var("TIBERIUS_TEST_USER") {
-        let pw = env::var("TIBERIUS_TEST_PW").unwrap();
-        builder.authentication(AuthMethod::sql_server(user, pw));
-    };
-
+    let builder = ClientBuilder::from_ado_string(&*CONN_STR)?;
     builder.build().await
 }
 
-/*
 #[cfg(feature = "tls")]
 #[tokio::test]
 async fn test_conn_full_encryption() -> Result<()> {
@@ -42,31 +29,15 @@ async fn test_conn_full_encryption() -> Result<()> {
     });
 
     let conn_str = format!("{};encrypt=true", *CONN_STR);
-    let conn = tiberius::connect(&conn_str).await?;
+    let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build().await?;
+
     let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
 
     let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
     assert_eq!(rows?, vec![-4i32]);
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_simple_query() -> Result<()> {
-    let conn = connect().await?;
-
-    let mut sum: i64 = 0;
-    let mut stream = conn.simple_query("SELECT TOP (1000) n = ROW_NUMBER() OVER (ORDER BY [object_id]) FROM sys.all_objects ORDER BY n;").await?;
-
-    while let Some(row) = stream.next().await {
-        sum += row?.get::<_, i64>(0);
-    }
-
-    assert_eq!(sum, (1000 * 1001) / 2);
 
     Ok(())
 }
-
-*/
 
 #[tokio::test]
 async fn test_kanji_varchars() -> Result<()> {

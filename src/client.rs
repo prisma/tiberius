@@ -16,20 +16,20 @@ use crate::{
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
 use std::borrow::Cow;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SqlServerAuth {
     pub(crate) user: String,
     pub(crate) password: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WindowsAuth {
     pub(crate) user: String,
     pub(crate) password: String,
     pub(crate) domain: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AuthMethod {
     /// Authenticate directly with SQL Server. The only authentication method
     /// that works on all platforms.

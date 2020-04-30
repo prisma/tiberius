@@ -95,6 +95,7 @@ impl Connection {
         let mut connection = connection
             .tls_handshake(encryption, opts.trust_cert)
             .await?;
+
         connection.login(opts.auth, opts.database).await?;
 
         let mut connection = connection.post_login_encryption(encryption);
