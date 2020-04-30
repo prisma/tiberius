@@ -1,28 +1,27 @@
 use crate::{
-    async_read_le_ext::AsyncReadLeExt,
     client::AuthMethod,
+    protocol::codec::PacketCodec,
     protocol::{
         codec::{self, Encode, LoginMessage, Packet, PacketHeader, PacketStatus, PreloginMessage},
-        stream::{ReceivedToken, TokenStream},
+        stream::TokenStream,
         Context, HEADER_BYTES,
     },
     tls::{MaybeTlsStream, TlsPreloginWrapper},
-    EncryptionLevel,
+    EncryptionLevel, Error, SqlReadBytes,
 };
+use ::std::str;
 use bytes::BytesMut;
-use codec::PacketCodec;
 #[cfg(windows)]
 use codec::TokenSSPI;
 use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
-use std::{
-    cmp, io,
-    pin::Pin,
-    sync::{atomic::Ordering, Arc},
-    task,
-};
+use std::{cmp, io, net::SocketAddr, pin::Pin, sync::atomic::Ordering, task, time::Duration};
 use task::Poll;
-use tokio::io::AsyncRead;
+use tokio::{
+    io::AsyncRead,
+    net::{TcpStream, ToSocketAddrs, UdpSocket},
+    time,
+};
 use tokio_util::codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
@@ -37,25 +36,58 @@ use winauth::{windows::NtlmSspiBuilder, NextBytes};
 ///
 /// [`Client`]: struct.Encode.html
 /// [`Packet`]: ../protocol/codec/struct.Packet.html
-pub struct Connection {
+pub(crate) struct Connection {
     transport: Framed<MaybeTlsStream, PacketCodec>,
     flushed: bool,
-    context: Arc<Context>,
+    context: Context,
     buf: BytesMut,
 }
 
+pub(crate) struct ConnectOpts {
+    pub ssl: EncryptionLevel,
+    pub trust_cert: bool,
+    pub auth: AuthMethod,
+    pub database: Option<String>,
+    pub instance_name: Option<String>,
+}
+
 impl Connection {
-    /// Creates a new connection.
-    pub(crate) fn new(
-        transport: Framed<MaybeTlsStream, PacketCodec>,
-        context: Arc<Context>,
-    ) -> Self {
-        Self {
+    /// Creates a new connection
+    pub async fn connect_tcp<T>(
+        addr: T,
+        context: Context,
+        opts: ConnectOpts,
+    ) -> crate::Result<Connection>
+    where
+        T: ToSocketAddrs,
+    {
+        let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+        })?;
+
+        if let Some(ref instance_name) = opts.instance_name {
+            addr = Self::find_tcp_port(addr, instance_name).await?;
+        };
+
+        let stream = TcpStream::connect(addr).await?;
+        stream.set_nodelay(true)?;
+
+        let transport = Framed::new(MaybeTlsStream::Raw(stream), PacketCodec);
+
+        let mut connection = Self {
             transport,
             context,
             flushed: false,
             buf: BytesMut::new(),
-        }
+        };
+
+        let prelogin = connection.prelogin(opts.ssl).await?;
+        let ssl = prelogin.negotiated_encryption(opts.ssl);
+
+        let mut connection = connection.tls_handshake(ssl, opts.trust_cert).await?;
+        connection.login(opts.auth, opts.database).await?;
+
+        Ok(connection)
     }
 
     /// Send an item to the wire. Header should define the item type and item should implement
@@ -65,7 +97,7 @@ impl Connection {
     /// the negotiated packet size, and handle flushing to the wire in an optimal way.
     ///
     /// [`Encode`]: ../protocol/codec/trait.Encode.html
-    pub(crate) async fn send<E>(&mut self, mut header: PacketHeader, item: E) -> crate::Result<()>
+    pub async fn send<E>(&mut self, mut header: PacketHeader, item: E) -> crate::Result<()>
     where
         E: Sized + Encode<BytesMut>,
     {
@@ -108,7 +140,7 @@ impl Connection {
     ///
     /// Calling this will slow down the queries if stream is still dirty if all
     /// results are not handled.
-    pub(crate) async fn flush_stream(&mut self) -> crate::Result<()> {
+    pub async fn flush_stream(&mut self) -> crate::Result<()> {
         self.buf.truncate(0);
 
         if self.flushed {
@@ -131,6 +163,12 @@ impl Connection {
         Ok(())
     }
 
+    /// True if the underlying stream has no more data and is consumed
+    /// completely.
+    pub fn is_eof(&self) -> bool {
+        self.flushed && self.buf.is_empty()
+    }
+
     /// A message sent by the client to set up context for login. The server
     /// responds to a client PRELOGIN message with a message of packet header
     /// type 0x04 and with the packet data containing a PRELOGIN structure.
@@ -139,10 +177,7 @@ impl Connection {
     /// encryption is needed. In this scenario, where PRELOGIN message is
     /// transporting the SSL handshake payload, the packet data is simply the
     /// raw bytes of the SSL handshake payload.
-    pub(crate) async fn prelogin(
-        &mut self,
-        ssl: EncryptionLevel,
-    ) -> crate::Result<PreloginMessage> {
+    async fn prelogin(&mut self, ssl: EncryptionLevel) -> crate::Result<PreloginMessage> {
         let mut msg = PreloginMessage::new();
         msg.encryption = ssl;
 
@@ -154,11 +189,7 @@ impl Connection {
 
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
-    pub(crate) async fn login(
-        &mut self,
-        auth: AuthMethod,
-        db: Option<String>,
-    ) -> crate::Result<()> {
+    async fn login(&mut self, auth: AuthMethod, db: Option<String>) -> crate::Result<()> {
         let mut msg = LoginMessage::new();
 
         match auth {
@@ -192,7 +223,7 @@ impl Connection {
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
 
-                let ts = TokenStream::new(self, self.context.clone());
+                let ts = TokenStream::new(self);
                 ts.flush_done().await?;
             }
         }
@@ -202,11 +233,7 @@ impl Connection {
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(feature = "tls")]
-    pub(crate) async fn tls_handshake(
-        self,
-        ssl: EncryptionLevel,
-        trust_cert: bool,
-    ) -> crate::Result<Self> {
+    async fn tls_handshake(self, ssl: EncryptionLevel, trust_cert: bool) -> crate::Result<Self> {
         if ssl != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
@@ -244,9 +271,16 @@ impl Connection {
         }
     }
 
-    #[cfg(windows)]
+    /// Implements the TLS handshake with the SQL Server.
+    #[cfg(not(feature = "tls"))]
+    async fn tls_handshake(self, ssl: EncryptionLevel, _: bool) -> crate::Result<Self> {
+        assert_eq!(ssl, EncryptionLevel::NotSupported);
+        Ok(self)
+    }
+
     /// Performs needed handshakes for Windows-based authentications.
-    async fn windows_auth<'a>(
+    #[cfg(windows)]
+    fn windows_auth<'a>(
         &'a mut self,
         mut msg: LoginMessage<'a>,
         mut client: impl NextBytes,
@@ -254,7 +288,7 @@ impl Connection {
         msg.integrated_security = client.next_bytes(None)?;
         self.send(PacketHeader::login(&self.context), msg).await?;
 
-        let ts = TokenStream::new(self, self.context.clone());
+        let ts = TokenStream::new(self);
         let sspi_bytes = ts.flush_sspi().await?;
 
         match client.next_bytes(Some(sspi_bytes.as_ref()))? {
@@ -274,21 +308,60 @@ impl Connection {
         Ok(())
     }
 
-    /// Implements the TLS handshake with the SQL Server.
-    #[cfg(not(feature = "tls"))]
-    pub(crate) async fn tls_handshake(self, ssl: EncryptionLevel, _: bool) -> crate::Result<Self> {
-        assert_eq!(ssl, EncryptionLevel::NotSupported);
-        Ok(self)
-    }
+    /// Use the SQL Browser to find the correct TCP port for the server
+    /// instance.
+    async fn find_tcp_port(mut addr: SocketAddr, instance_name: &str) -> crate::Result<SocketAddr> {
+        // First resolve the instance to a port via the
+        // SSRP protocol/MS-SQLR protocol [1]
+        // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
 
-    pub(crate) fn token_stream<'a>(
-        &'a mut self,
-    ) -> Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a> {
-        TokenStream::new(self, self.context.clone()).try_unfold()
-    }
+        let local_bind: SocketAddr = if addr.is_ipv4() {
+            "0.0.0.0:0".parse().unwrap()
+        } else {
+            "[::]:0".parse().unwrap()
+        };
 
-    pub(crate) fn is_eof(&self) -> bool {
-        self.flushed && self.buf.is_empty()
+        let msg = [&[4u8], instance_name.as_bytes()].concat();
+
+        let mut socket = UdpSocket::bind(&local_bind).await?;
+        socket.send_to(&msg, &addr).await?;
+
+        let mut buf = vec![0u8; 4096];
+        let timeout = Duration::from_millis(1000);
+
+        let len = time::timeout(timeout, socket.recv(&mut buf))
+            .await
+            .map_err(|_: time::Elapsed| {
+                Error::Conversion(
+                    format!(
+                        "SQL browser timeout during resolving instance {}",
+                        instance_name
+                    )
+                    .into(),
+                )
+            })??;
+
+        buf.truncate(len);
+
+        let err = Error::Conversion(
+            format!("Could not resolve SQL browser instance {}", instance_name).into(),
+        );
+
+        if len == 0 {
+            return Err(err);
+        }
+
+        let response = str::from_utf8(&buf[3..len])?;
+
+        let port: u16 = response
+            .find("tcp;")
+            .and_then(|pos| response[pos..].split(';').nth(1))
+            .ok_or(err)
+            .and_then(|val| Ok(val.parse()?))?;
+
+        addr.set_port(port);
+
+        Ok(addr)
     }
 }
 
@@ -349,8 +422,14 @@ impl AsyncRead for Connection {
     }
 }
 
-impl AsyncReadLeExt for Connection {
+impl SqlReadBytes for Connection {
+    /// Hex dump of the current buffer.
     fn debug_buffer(&self) {
         dbg!(self.buf.as_ref().hex_dump());
+    }
+
+    /// The current execution context.
+    fn context(&self) -> &Context {
+        &self.context
     }
 }

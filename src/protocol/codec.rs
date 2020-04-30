@@ -20,7 +20,7 @@ pub use rpc_request::*;
 pub use token::*;
 pub use type_info::*;
 
-use crate::async_read_le_ext::AsyncReadLeExt;
+use crate::SqlReadBytes;
 use bytes::BytesMut;
 use futures::{Stream, TryStreamExt};
 
@@ -60,7 +60,7 @@ where
 
 pub(crate) async fn read_varchar<R>(src: &mut R, len: impl Into<usize>) -> crate::Result<String>
 where
-    R: AsyncReadLeExt + Unpin,
+    R: SqlReadBytes + Unpin,
 {
     let len = len.into();
     let mut buf = vec![0u16; len];

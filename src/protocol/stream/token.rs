@@ -1,16 +1,12 @@
 #[cfg(windows)]
 use crate::protocol::codec::TokenSSPI;
 use crate::{
-    async_read_le_ext::AsyncReadLeExt,
     client::Connection,
-    protocol::{
-        codec::{
-            TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenInfo, TokenLoginAck,
-            TokenOrder, TokenReturnValue, TokenRow,
-        },
-        Context,
+    protocol::codec::{
+        TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenInfo, TokenLoginAck,
+        TokenOrder, TokenReturnValue, TokenRow,
     },
-    Error, TokenType,
+    Error, SqlReadBytes, TokenType,
 };
 use futures::{Stream, TryStreamExt};
 use std::{
@@ -40,12 +36,11 @@ pub enum ReceivedToken {
 
 pub(crate) struct TokenStream<'a> {
     conn: &'a mut Connection,
-    context: Arc<Context>,
 }
 
 impl<'a> TokenStream<'a> {
-    pub(crate) fn new(conn: &'a mut Connection, context: Arc<Context>) -> Self {
-        Self { conn, context }
+    pub(crate) fn new(conn: &'a mut Connection) -> Self {
+        Self { conn }
     }
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
@@ -77,7 +72,7 @@ impl<'a> TokenStream<'a> {
 
     async fn get_col_metadata(&mut self) -> crate::Result<ReceivedToken> {
         let meta = Arc::new(TokenColMetaData::decode(self.conn).await?);
-        self.context.set_last_meta(meta.clone()).await;
+        self.conn.context().set_last_meta(meta.clone()).await;
 
         event!(Level::TRACE, ?meta);
 
@@ -85,14 +80,14 @@ impl<'a> TokenStream<'a> {
     }
 
     async fn get_row(&mut self) -> crate::Result<ReceivedToken> {
-        let return_value = TokenRow::decode(self.conn, &self.context).await?;
+        let return_value = TokenRow::decode(self.conn).await?;
 
         event!(Level::TRACE, message = ?return_value);
         Ok(ReceivedToken::Row(return_value))
     }
 
     async fn get_nbc_row(&mut self) -> crate::Result<ReceivedToken> {
-        let return_value = TokenRow::decode_nbc(self.conn, &self.context).await?;
+        let return_value = TokenRow::decode_nbc(self.conn).await?;
 
         event!(Level::TRACE, message = ?return_value);
         Ok(ReceivedToken::Row(return_value))
@@ -110,7 +105,7 @@ impl<'a> TokenStream<'a> {
     }
 
     async fn get_error(&mut self) -> crate::Result<ReceivedToken> {
-        let err = TokenError::decode(self.conn, &self.context).await?;
+        let err = TokenError::decode(self.conn).await?;
         event!(Level::ERROR, message = %err.message, code = err.code);
         Err(Error::Server(err))
     }
@@ -122,19 +117,19 @@ impl<'a> TokenStream<'a> {
     }
 
     async fn get_done_value(&mut self) -> crate::Result<ReceivedToken> {
-        let done = TokenDone::decode(self.conn, &*self.context).await?;
+        let done = TokenDone::decode(self.conn).await?;
         event!(Level::TRACE, "{}", done);
         Ok(ReceivedToken::Done(done))
     }
 
     async fn get_done_proc_value(&mut self) -> crate::Result<ReceivedToken> {
-        let done = TokenDone::decode(self.conn, &*self.context).await?;
+        let done = TokenDone::decode(self.conn).await?;
         event!(Level::TRACE, "{}", done);
         Ok(ReceivedToken::DoneProc(done))
     }
 
     async fn get_done_in_proc_value(&mut self) -> crate::Result<ReceivedToken> {
-        let done = TokenDone::decode(self.conn, &*self.context).await?;
+        let done = TokenDone::decode(self.conn).await?;
         event!(Level::TRACE, "{}", done);
         Ok(ReceivedToken::DoneInProc(done))
     }
@@ -143,7 +138,10 @@ impl<'a> TokenStream<'a> {
         let change = TokenEnvChange::decode(self.conn).await?;
 
         if let TokenEnvChange::PacketSize(new_size, _) = change {
-            self.context.packet_size.store(new_size, Ordering::SeqCst);
+            self.conn
+                .context()
+                .packet_size
+                .store(new_size, Ordering::SeqCst);
         };
 
         event!(Level::INFO, "{}", change);

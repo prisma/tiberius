@@ -1,8 +1,7 @@
 use super::BaseMetaDataColumn;
 use crate::{
-    async_read_le_ext::AsyncReadLeExt,
     protocol::codec::{read_varchar, ColumnData},
-    Error,
+    Error, SqlReadBytes,
 };
 use tokio::io::AsyncReadExt;
 
@@ -19,7 +18,7 @@ pub struct TokenReturnValue {
 impl TokenReturnValue {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let param_ordinal = src.read_u16_le().await?;
         let param_name_len = src.read_u8().await? as usize;

@@ -1,4 +1,4 @@
-use crate::{async_read_le_ext::AsyncReadLeExt, protocol::codec::read_varchar};
+use crate::{protocol::codec::read_varchar, SqlReadBytes};
 use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ pub struct TokenInfo {
 impl TokenInfo {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let _length = src.read_u16_le().await?;
 

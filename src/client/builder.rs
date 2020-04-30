@@ -1,16 +1,5 @@
-use super::{connection::Connection, AuthMethod};
-use crate::{
-    protocol::{codec::PacketCodec, Context},
-    tls::MaybeTlsStream,
-    Client, EncryptionLevel, Error,
-};
-use ::std::str;
-use std::{io, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::{
-    net::{TcpStream, UdpSocket},
-    time,
-};
-use tokio_util::codec::Framed;
+use super::{connection::*, AuthMethod};
+use crate::{protocol::Context, Client, EncryptionLevel};
 
 #[derive(Debug, Clone)]
 pub struct ClientBuilder {
@@ -66,106 +55,43 @@ impl ClientBuilder {
         self.auth = auth;
     }
 
-    pub async fn build(self) -> crate::Result<Client> {
-        let host = self
-            .host
+    fn get_host(&self) -> &str {
+        self.host
             .as_ref()
             .map(|s| s.as_str())
-            .unwrap_or("127.0.0.1");
+            .unwrap_or("127.0.0.1")
+    }
 
-        let port = self.port.unwrap_or(1433);
+    fn get_port(&self) -> u16 {
+        self.port.unwrap_or(1433)
+    }
 
-        let mut addr = tokio::net::lookup_host(format!("{}:{}", host, port))
-            .await?
-            .next()
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
-            })?;
+    #[cfg(windows)]
+    fn create_context(&self) -> Context {
+        let mut context = Context::new();
+        context.set_spn(self.get_host(), self.get_port());
+        context
+    }
 
-        if let Some(ref instance_name) = self.instance_name {
-            addr = find_tcp_sql_browser_addr(addr, instance_name).await?;
+    #[cfg(not(windows))]
+    fn create_context(&self) -> Context {
+        Context::new()
+    }
+
+    pub async fn build(self) -> crate::Result<Client> {
+        let context = self.create_context();
+        let addr = format!("{}:{}", self.get_host(), self.get_port());
+
+        let opts = ConnectOpts {
+            ssl: self.ssl,
+            trust_cert: self.trust_cert,
+            auth: self.auth,
+            database: self.database,
+            instance_name: self.instance_name,
         };
 
-        let mut context = Context::new();
-        context.set_spn(host, port);
-        let context = Arc::new(context);
+        let connection = Connection::connect_tcp(addr, context, opts).await?;
 
-        let mut connection = connect_tcp(addr, context.clone()).await?;
-        let prelogin = connection.prelogin(self.ssl).await?;
-        let ssl = prelogin.negotiated_encryption(self.ssl);
-
-        let mut connection = connection.tls_handshake(ssl, self.trust_cert).await?;
-        connection.login(self.auth, self.database).await?;
-
-        Ok(Client {
-            connection,
-            context,
-        })
+        Ok(Client { connection })
     }
-}
-
-async fn connect_tcp(addr: SocketAddr, context: Arc<Context>) -> crate::Result<Connection> {
-    let stream = TcpStream::connect(addr).await?;
-    stream.set_nodelay(true)?;
-
-    let transport = Framed::new(MaybeTlsStream::Raw(stream), PacketCodec);
-
-    Ok(Connection::new(transport, context.clone()))
-}
-
-async fn find_tcp_sql_browser_addr(
-    mut addr: SocketAddr,
-    instance_name: &str,
-) -> crate::Result<SocketAddr> {
-    // First resolve the instance to a port via the
-    // SSRP protocol/MS-SQLR protocol [1]
-    // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
-
-    let local_bind: SocketAddr = if addr.is_ipv4() {
-        "0.0.0.0:0".parse().unwrap()
-    } else {
-        "[::]:0".parse().unwrap()
-    };
-
-    let msg = [&[4u8], instance_name.as_bytes()].concat();
-
-    let mut socket = UdpSocket::bind(&local_bind).await?;
-    socket.send_to(&msg, &addr).await?;
-
-    let mut buf = vec![0u8; 4096];
-    let timeout = Duration::from_millis(1000);
-
-    let len = time::timeout(timeout, socket.recv(&mut buf))
-        .await
-        .map_err(|_: time::Elapsed| {
-            Error::Conversion(
-                format!(
-                    "SQL browser timeout during resolving instance {}",
-                    instance_name
-                )
-                .into(),
-            )
-        })??;
-
-    buf.truncate(len);
-
-    let err = Error::Conversion(
-        format!("Could not resolve SQL browser instance {}", instance_name).into(),
-    );
-
-    if len == 0 {
-        return Err(err);
-    }
-
-    let response = str::from_utf8(&buf[3..len])?;
-
-    let port: u16 = response
-        .find("tcp;")
-        .and_then(|pos| response[pos..].split(';').nth(1))
-        .ok_or(err)
-        .and_then(|val| Ok(val.parse()?))?;
-
-    addr.set_port(port);
-
-    Ok(addr)
 }

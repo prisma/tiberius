@@ -1,6 +1,4 @@
-use crate::{
-    async_read_le_ext::AsyncReadLeExt, protocol::codec::read_varchar, Error, FeatureLevel,
-};
+use crate::{protocol::codec::read_varchar, Error, FeatureLevel, SqlReadBytes};
 use std::convert::TryFrom;
 use tokio::io::AsyncReadExt;
 
@@ -20,7 +18,7 @@ pub struct TokenLoginAck {
 impl TokenLoginAck {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let _length = src.read_u16_le().await?;
 

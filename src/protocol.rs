@@ -32,6 +32,7 @@ pub(crate) struct Context {
     pub(crate) packet_size: AtomicU32,
     pub(crate) packet_id: AtomicU8,
     pub(crate) last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
+    #[cfg(windows)]
     pub(crate) spn: Option<String>,
 }
 
@@ -42,6 +43,7 @@ impl Context {
             packet_size: AtomicU32::new(4096),
             packet_id: AtomicU8::new(0),
             last_meta: Mutex::new(None),
+            #[cfg(windows)]
             spn: None,
         }
     }
@@ -54,6 +56,7 @@ impl Context {
         *self.last_meta.lock().await = Some(meta);
     }
 
+    #[cfg(windows)]
     pub(crate) fn set_spn(&mut self, host: impl AsRef<str>, port: u16) {
         self.spn = Some(format!("MSSQLSvc/{}:{}", host.as_ref(), port));
     }
