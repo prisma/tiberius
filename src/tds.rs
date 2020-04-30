@@ -1,8 +1,8 @@
 pub mod codec;
 mod collation;
-pub(crate) mod numeric;
+pub mod numeric;
 pub mod stream;
-pub(crate) mod time;
+pub mod time;
 
 pub(crate) use collation::*;
 pub(crate) use numeric::*;

@@ -382,7 +382,7 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
             }
             #[cfg(feature = "tds73")]
             ColumnData::Time(time) => {
-                dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale, time.len()?]);
+                dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale(), time.len()?]);
 
                 time.encode(dst)?;
             }
@@ -393,9 +393,9 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
             }
             #[cfg(feature = "tds73")]
             ColumnData::DateTime2(dt) => {
-                let len = dt.time.len()? + 3;
+                let len = dt.time().len()? + 3;
 
-                dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time.scale, len]);
+                dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time().scale(), len]);
 
                 dt.encode(dst)?;
             }
@@ -403,8 +403,8 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
             ColumnData::DateTimeOffset(dto) => {
                 dst.extend_from_slice(&[
                     VarLenType::DatetimeOffsetn as u8,
-                    dto.datetime2.time.scale,
-                    dto.datetime2.time.len()? + 5,
+                    dto.datetime2().time().scale(),
+                    dto.datetime2().time().len()? + 5,
                 ]);
 
                 dto.encode(dst)?;

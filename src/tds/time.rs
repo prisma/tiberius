@@ -1,3 +1,15 @@
+//! Date and time handling.
+//!
+//! Wen using the `tds73` together with the `chrono` extension, the following
+//! `chrono` mappings to and from the database are available:
+//!
+//! - `crate::time::Time` -> `chrono::NaiveTime`
+//! - `crate::time::Date` -> `chrono::NaiveDate`
+//! - `crate::time::DateTime` -> `chrono::NaiveDateTime`
+//! - `crate::time::DateTime2` -> `chrono::NaiveDateTime`
+//! - `crate::time::SmallDateTime` -> `chrono::NaiveDateTime`
+//! - `crate::time::DateTimeOffset` -> `chrono::DateTime<Tz>`
+
 use crate::{tds::codec::Encode, SqlReadBytes};
 #[cfg(feature = "tds73")]
 use byteorder::{ByteOrder, LittleEndian};
@@ -5,26 +17,36 @@ use bytes::{BufMut, BytesMut};
 #[cfg(feature = "tds73")]
 use tokio::io::AsyncReadExt;
 
-/// # Warning
-/// It isn't recommended to use this
-/// If you want to deal with date types, use the chrono feature of this crate instead!
+/// A presentation of `datetime` type in the server.
 ///
-/// This is merely exported not to limit flexibility
+/// # Warning
+///
+/// It isn't recommended to use this type directly. For dealing with `datetime`,
+/// use the `chrono` feature of this crate and its `NaiveDateTime` type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct DateTime {
-    /// Days since 1.1.1900 (including the negative range until 1.1.1753)
-    pub days: i32,
-    /// 1/300 of a second, so a value of 300 equals 1 second [since 12 AM]
-    pub seconds_fragments: u32,
+    days: i32,
+    seconds_fragments: u32,
 }
 
 impl DateTime {
-    #[allow(dead_code)]
-    pub(crate) fn new(days: i32, seconds_fragments: u32) -> Self {
+    /// Construct a new `DateTime` instance.
+    pub fn new(days: i32, seconds_fragments: u32) -> Self {
         Self {
             days,
             seconds_fragments,
         }
+    }
+
+    /// Days since 1st of January, 1900 (including the negative range until 1st
+    /// of January, 1753).
+    pub fn days(&self) -> i32 {
+        self.days
+    }
+
+    /// 1/300 of a second, so a value of 300 equals 1 second (since midnight).
+    pub fn seconds_fragments(&self) -> u32 {
+        self.seconds_fragments
     }
 
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
@@ -47,20 +69,37 @@ impl Encode<BytesMut> for DateTime {
     }
 }
 
-/// # Warning
-/// It isn't recommended to use this
-/// If you want to deal with date types, use the chrono feature of this crate instead!
+/// A presentation of `smalldatetime` type in the server.
 ///
-/// This is merely exported not to limit flexibility
+/// # Warning
+///
+/// It isn't recommended to use this type directly. For dealing with
+/// `smalldatetime`, use the `chrono` feature of this crate and its
+/// `NaiveDateTime` type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct SmallDateTime {
-    /// Days since 1.1.1900 (including the negative range until 1.1.1753)
-    pub days: u16,
-    /// 1/300 of a second, so a value of 300 equals 1 second [since 12 AM]
-    pub seconds_fragments: u16,
+    days: u16,
+    seconds_fragments: u16,
 }
 
 impl SmallDateTime {
+    /// Construct a new `SmallDateTime` instance.
+    pub fn new(days: u16, seconds_fragments: u16) -> Self {
+        Self {
+            days,
+            seconds_fragments,
+        }
+    }
+    /// Days since 1st of January, 1900.
+    pub fn days(&self) -> u16 {
+        self.days
+    }
+
+    /// 1/300 of a second, so a value of 300 equals 1 second (since midnight)
+    pub fn seconds_fragments(&self) -> u16 {
+        self.seconds_fragments
+    }
+
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
         R: SqlReadBytes + Unpin,
@@ -81,16 +120,12 @@ impl Encode<BytesMut> for SmallDateTime {
     }
 }
 
-/// Number of days since January 1 in year 1, with
-///
-/// # Panics
-/// max value of 3 bytes (u32::max_value() > 8)
+/// A presentation of `date` type in the server.
 ///
 /// # Warning
-/// It isn't recommended to use this
-/// If you want to deal with date types, use the chrono feature of this crate instead!
 ///
-/// This is merely exported not to limit flexibility
+/// It isn't recommended to use this type directly. If you want to deal with
+/// `date`, use the chrono feature of this crate and its `NaiveDate` type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg(feature = "tds73")]
 pub struct Date(u32);
@@ -98,12 +133,17 @@ pub struct Date(u32);
 #[cfg(feature = "tds73")]
 impl Date {
     #[inline]
+    /// Construct a new `Date`
+    ///
+    /// # Panics
+    /// max value of 3 bytes (`u32::max_value() > 8`)
     pub fn new(days: u32) -> Date {
         assert_eq!(days >> 24, 0);
         Date(days)
     }
 
     #[inline]
+    /// The number of days from 1st of January, year 1.
     pub fn days(&self) -> u32 {
         self.0
     }
@@ -130,12 +170,17 @@ impl Encode<BytesMut> for Date {
     }
 }
 
-/// Number of 10^-n second increments since 12AM
+/// A presentation of `time` type in the server.
+///
+/// # Warning
+///
+/// It isn't recommended to use this type directly. If you want to deal with
+/// `time`, use the chrono feature of this crate and its `NaiveTime` type.
 #[derive(Copy, Clone, Debug)]
 #[cfg(feature = "tds73")]
 pub struct Time {
-    pub increments: u64,
-    pub scale: u8,
+    increments: u64,
+    scale: u8,
 }
 
 #[cfg(feature = "tds73")]
@@ -148,8 +193,29 @@ impl PartialEq for Time {
 
 #[cfg(feature = "tds73")]
 impl Time {
+    /// Construct a new `Time`
+    pub fn new(increments: u64, scale: u8) -> Self {
+        Self { increments, scale }
+    }
+
     #[inline]
-    pub fn len(&self) -> crate::Result<u8> {
+    /// Number of 10^-n second increments since midnight, where `n` is defined
+    /// in [`scale`].
+    ///
+    /// [`scale`]: #method.scale
+    pub fn increments(&self) -> u64 {
+        self.increments
+    }
+
+    #[inline]
+    /// The accuracy of the increments.
+    pub fn scale(&self) -> u8 {
+        self.scale
+    }
+
+    #[inline]
+    /// Length of the field in number of bytes.
+    pub(crate) fn len(&self) -> crate::Result<u8> {
         Ok(match self.scale {
             0..=2 => 3,
             3..=4 => 4,
@@ -211,20 +277,33 @@ impl Encode<BytesMut> for Time {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg(feature = "tds73")]
+/// A presentation of `datetime2` type in the server.
+///
+/// # Warning
+///
+/// It isn't recommended to use this type directly. For dealing with
+/// `datetime2`, use the `chrono` feature of this crate and its `NaiveDateTime`
+/// type.
 pub struct DateTime2 {
-    pub date: Date,
-    pub time: Time,
-    pub offset: Option<i16>,
+    date: Date,
+    time: Time,
 }
 
 #[cfg(feature = "tds73")]
 impl DateTime2 {
-    pub(crate) fn new(date: Date, time: Time) -> Self {
-        Self {
-            date,
-            time,
-            offset: None,
-        }
+    /// Construct a new `DateTime2` from the date and time components.
+    pub fn new(date: Date, time: Time) -> Self {
+        Self { date, time }
+    }
+
+    /// The date component.
+    pub fn date(&self) -> Date {
+        self.date
+    }
+
+    /// The time component.
+    pub fn time(&self) -> Time {
+        self.time
     }
 
     pub(crate) async fn decode<R>(src: &mut R, n: usize, rlen: usize) -> crate::Result<Self>
@@ -257,15 +336,34 @@ impl Encode<BytesMut> for DateTime2 {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg(feature = "tds73")]
+/// A presentation of `datetimeoffset` type in the server.
+///
+/// # Warning
+///
+/// It isn't recommended to use this type directly. For dealing with
+/// `datetimeoffset`, use the `chrono` feature of this crate and its `DateTime`
+/// type with the correct timezone.
 pub struct DateTimeOffset {
-    pub datetime2: DateTime2,
-    pub offset: i16,
+    datetime2: DateTime2,
+    offset: i16,
 }
 
 #[cfg(feature = "tds73")]
 impl DateTimeOffset {
-    pub(crate) fn new(datetime2: DateTime2, offset: i16) -> Self {
+    /// Construct a new `DateTimeOffset` from a `datetime2`, offset marking
+    /// number of minutes from UTC.
+    pub fn new(datetime2: DateTime2, offset: i16) -> Self {
         Self { datetime2, offset }
+    }
+
+    /// The date and time part.
+    pub fn datetime2(&self) -> DateTime2 {
+        self.datetime2
+    }
+
+    /// Number of minutes from UTC.
+    pub fn offset(&self) -> i16 {
+        self.offset
     }
 
     pub(crate) async fn decode<R>(src: &mut R, n: usize) -> crate::Result<Self>

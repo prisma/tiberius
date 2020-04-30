@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use crate::Error;
 use crate::{
     client::{
         tls::{MaybeTlsStream, TlsPreloginWrapper},
@@ -11,7 +13,7 @@ use crate::{
         stream::TokenStream,
         Context, HEADER_BYTES,
     },
-    EncryptionLevel, Error, SqlReadBytes,
+    EncryptionLevel, SqlReadBytes,
 };
 use ::std::str;
 use bytes::BytesMut;
@@ -19,13 +21,16 @@ use bytes::BytesMut;
 use codec::TokenSSPI;
 use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
-use std::{cmp, io, net::SocketAddr, pin::Pin, sync::atomic::Ordering, task, time::Duration};
+#[cfg(windows)]
+use std::time::Duration;
+use std::{cmp, io, net::SocketAddr, pin::Pin, sync::atomic::Ordering, task};
 use task::Poll;
 use tokio::{
     io::AsyncRead,
-    net::{TcpStream, ToSocketAddrs, UdpSocket},
-    time,
+    net::{TcpStream, ToSocketAddrs},
 };
+#[cfg(windows)]
+use tokio::{net::UdpSocket, time};
 use tokio_util::codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
@@ -312,8 +317,14 @@ impl Connection {
         Ok(())
     }
 
+    #[cfg(not(windows))]
+    async fn find_tcp_port(addr: SocketAddr, _: &str) -> crate::Result<SocketAddr> {
+        Ok(addr)
+    }
+
     /// Use the SQL Browser to find the correct TCP port for the server
     /// instance.
+    #[cfg(windows)]
     async fn find_tcp_port(mut addr: SocketAddr, instance_name: &str) -> crate::Result<SocketAddr> {
         // First resolve the instance to a port via the
         // SSRP protocol/MS-SQLR protocol [1]

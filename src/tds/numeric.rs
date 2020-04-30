@@ -1,3 +1,5 @@
+//! Representations of numeric types.
+
 use std::cmp::PartialEq;
 use std::fmt::{self, Debug, Display, Formatter};
 

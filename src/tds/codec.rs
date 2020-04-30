@@ -9,9 +9,12 @@ mod rpc_request;
 mod token;
 mod type_info;
 
+use crate::SqlReadBytes;
+use bytes::BytesMut;
 pub use column_data::*;
 pub use decode::*;
-pub use encode::*;
+pub(crate) use encode::*;
+use futures::{Stream, TryStreamExt};
 pub use header::*;
 pub use login::*;
 pub use packet::*;
@@ -19,10 +22,6 @@ pub use pre_login::*;
 pub use rpc_request::*;
 pub use token::*;
 pub use type_info::*;
-
-use crate::SqlReadBytes;
-use bytes::BytesMut;
-use futures::{Stream, TryStreamExt};
 
 const HEADER_BYTES: usize = 8;
 const ALL_HEADERS_LEN_TX: usize = 22;

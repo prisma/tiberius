@@ -2,7 +2,7 @@ use super::{Packet, PacketCodec};
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::Encoder;
 
-pub trait Encode<B: BufMut> {
+pub(crate) trait Encode<B: BufMut> {
     fn encode(self, dst: &mut B) -> crate::Result<()>;
 }
 
