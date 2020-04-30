@@ -5,7 +5,6 @@
 ///!
 ///! [1] https://github.com/Microsoft/mssql-jdbc/blob/eb14f63077c47ef1fc1c690deb8cfab602baeb85/src/main/java/com/microsoft/sqlserver/jdbc/SQLCollation.java
 ///! [2] https://github.com/lifthrasiir/rust-encoding/blob/496823171f15d9b9446b2ec3fb7765f22346256b/src/label.rs#L282
-
 use encoding::{self, Encoding};
 
 #[derive(Debug, Clone, Copy)]
