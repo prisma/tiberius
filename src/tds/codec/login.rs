@@ -1,5 +1,4 @@
 use super::Encode;
-use crate::uint_enum;
 use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::BytesMut;

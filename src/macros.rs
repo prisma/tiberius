@@ -1,4 +1,3 @@
-#[macro_export]
 macro_rules! uint_enum {
     ($( #[$gattr:meta] )* pub enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
         uint_enum!($( #[$gattr ])* (pub) enum $ty { $( $( #[$attr] )* $variant = $val, )* });
@@ -36,7 +35,6 @@ macro_rules! uint_enum {
     }
 }
 
-#[macro_export]
 macro_rules! to_sql {
     ($target:ident, $( $ty:ty: ($name:expr, $val:expr) ;)* ) => {
         $(
@@ -64,7 +62,6 @@ macro_rules! to_sql {
     };
 }
 
-#[macro_export]
 macro_rules! from_column_data {
     ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
         $(

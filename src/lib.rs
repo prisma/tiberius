@@ -1,12 +1,13 @@
 //! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
 #![recursion_limit = "512"]
+#[macro_use]
+mod macros;
 
 mod client;
 mod sql_read_bytes;
 mod to_sql;
 
 mod error;
-mod macros;
 mod result;
 mod row;
 mod tds;

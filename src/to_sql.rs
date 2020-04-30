@@ -1,5 +1,4 @@
 use crate::tds::codec::ColumnData;
-use crate::to_sql;
 use std::borrow::Cow;
 use uuid::Uuid;
 

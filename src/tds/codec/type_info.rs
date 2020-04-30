@@ -1,4 +1,4 @@
-use crate::{tds::Collation, uint_enum, Error, SqlReadBytes};
+use crate::{tds::Collation, Error, SqlReadBytes};
 use std::convert::TryFrom;
 use tokio::io::AsyncReadExt;
 
