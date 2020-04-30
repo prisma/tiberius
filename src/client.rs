@@ -1,17 +1,17 @@
 mod builder;
 mod connection;
+mod tls;
 
 pub use builder::*;
 pub(crate) use connection::*;
 
 use crate::{
-    prepared,
     result::{ExecuteResult, QueryResult},
     tds::{
         codec::{self, RpcOptionFlags, RpcStatusFlags},
         stream::TokenStream,
     },
-    SqlReadBytes,
+    SqlReadBytes, ToSql,
 };
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
 use std::borrow::Cow;
@@ -122,7 +122,7 @@ impl Client {
     pub async fn execute<'b, 'a: 'b>(
         &'a mut self,
         query: impl Into<Cow<'_, str>>,
-        params: &'b [&'b dyn prepared::ToSql],
+        params: &'b [&'b dyn ToSql],
     ) -> crate::Result<ExecuteResult<'a>> {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
@@ -161,7 +161,7 @@ impl Client {
     pub async fn query<'a, 'b>(
         &'a mut self,
         query: impl Into<Cow<'a, str>>,
-        params: &'b [&'b dyn prepared::ToSql],
+        params: &'b [&'b dyn ToSql],
     ) -> crate::Result<QueryResult<'a>>
     where
         'a: 'b,
@@ -199,7 +199,7 @@ impl Client {
         &'a mut self,
         proc_id: RpcProcId,
         mut rpc_params: Vec<RpcParam<'b>>,
-        params: &'b [&'b dyn prepared::ToSql],
+        params: &'b [&'b dyn ToSql],
     ) -> crate::Result<()>
     where
         'a: 'b,

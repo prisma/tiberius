@@ -1,5 +1,8 @@
 use crate::{
-    client::AuthMethod,
+    client::{
+        tls::{MaybeTlsStream, TlsPreloginWrapper},
+        AuthMethod,
+    },
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -8,7 +11,6 @@ use crate::{
         stream::TokenStream,
         Context, HEADER_BYTES,
     },
-    tls::{MaybeTlsStream, TlsPreloginWrapper},
     EncryptionLevel, Error, SqlReadBytes,
 };
 use ::std::str;
