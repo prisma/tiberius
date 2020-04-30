@@ -9,6 +9,7 @@ async fn main() -> anyhow::Result<()> {
     builder.port(1433);
     builder.database("master");
     builder.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
+    builder.trust_cert();
 
     let mut conn = builder.build().await?;
     let stream = conn.query("SELECT 1", &[]).await?;

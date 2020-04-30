@@ -1,11 +1,15 @@
-use crate::tds::{
-    codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType},
-    HEADER_BYTES,
-};
+#[cfg(feature = "tls")]
+use crate::tds::codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType};
+#[cfg(feature = "tls")]
+use crate::tds::HEADER_BYTES;
+#[cfg(feature = "tls")]
 use bytes::BytesMut;
+#[cfg(feature = "tls")]
 use futures::ready;
+#[cfg(feature = "tls")]
+use std::cmp;
 use std::{
-    cmp, io,
+    io,
     mem::MaybeUninit,
     pin::Pin,
     task::{self, Poll},
@@ -16,13 +20,24 @@ use tokio::{
 };
 #[cfg(feature = "tls")]
 use tokio_tls::TlsStream;
-use tracing::{self, event, Level};
+#[cfg(feature = "tls")]
+use tracing::{event, Level};
 
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream {
     Raw(TcpStream),
     #[cfg(feature = "tls")]
     Tls(TlsStream<TlsPreloginWrapper<TcpStream>>),
+}
+
+impl MaybeTlsStream {
+    #[cfg(feature = "tls")]
+    pub fn into_inner(self) -> TcpStream {
+        match self {
+            Self::Raw(s) => s,
+            Self::Tls(mut tls) => tls.get_mut().stream.take().unwrap(),
+        }
+    }
 }
 
 impl AsyncRead for MaybeTlsStream {
@@ -83,6 +98,7 @@ impl AsyncWrite for MaybeTlsStream {
 ///
 /// What it does is it interferes on handshake for TDS packet handling,
 /// and when complete, just passes the calls to the underlying connection.
+#[cfg(feature = "tls")]
 pub(crate) struct TlsPreloginWrapper<S> {
     stream: Option<S>,
     pending_handshake: bool,
@@ -95,8 +111,9 @@ pub(crate) struct TlsPreloginWrapper<S> {
     header_written: bool,
 }
 
+#[cfg(feature = "tls")]
 impl<S> TlsPreloginWrapper<S> {
-    pub(crate) fn new(stream: S) -> Self {
+    pub fn new(stream: S) -> Self {
         TlsPreloginWrapper {
             stream: Some(stream),
             pending_handshake: true,
@@ -109,11 +126,12 @@ impl<S> TlsPreloginWrapper<S> {
         }
     }
 
-    pub(crate) fn handshake_complete(&mut self) {
+    pub fn handshake_complete(&mut self) {
         self.pending_handshake = false;
     }
 }
 
+#[cfg(feature = "tls")]
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsPreloginWrapper<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -176,6 +194,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsPreloginWrapper<S> {
     }
 }
 
+#[cfg(feature = "tls")]
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,

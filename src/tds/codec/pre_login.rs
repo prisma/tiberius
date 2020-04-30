@@ -38,11 +38,14 @@ impl PreloginMessage {
             (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
                 EncryptionLevel::NotSupported
             }
+            #[cfg(feature = "tls")]
             (EncryptionLevel::Off, EncryptionLevel::Off) => EncryptionLevel::Off,
+            #[cfg(feature = "tls")]
             (EncryptionLevel::On, EncryptionLevel::Off)
             | (EncryptionLevel::On, EncryptionLevel::NotSupported) => {
-                panic!("todo: terminate connection, invalid encryption")
+                panic!("Server does not allow the requested encryption level.")
             }
+            #[cfg(feature = "tls")]
             (_, _) => EncryptionLevel::On,
         }
     }
