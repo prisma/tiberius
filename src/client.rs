@@ -136,14 +136,14 @@ impl Client {
         &'a mut self,
         query: impl Into<Cow<'_, str>>,
         params: &'b [&'b dyn ToSql],
-    ) -> crate::Result<ExecuteResult<'a>> {
+    ) -> crate::Result<ExecuteResult> {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(ExecuteResult::new(&mut self.connection))
+        Ok(ExecuteResult::try_new(&mut self.connection).await?)
     }
 
     /// Executes SQL statements in the SQL Server, returning resulting rows.

@@ -56,7 +56,7 @@ async fn test_kanji_varchars() -> Result<()> {
         )
         .await?;
 
-    assert_eq!(2, res.total().await?);
+    assert_eq!(2, res.total());
 
     let stream = conn.query("SELECT content FROM ##TestKanji", &[]).await?;
 
@@ -86,7 +86,7 @@ async fn test_finnish_varchars() -> Result<()> {
         )
         .await?;
 
-    assert_eq!(1, res.total().await?);
+    assert_eq!(1, res.total());
 
     let stream = conn.query("SELECT content FROM ##TestFinnish", &[]).await?;
 
@@ -113,8 +113,7 @@ async fn test_execute() -> Result<()> {
             &[&1i32, &2i32, &3i32],
         )
         .await?
-        .total()
-        .await?;
+        .total();
 
     assert_eq!(3, insert_count);
 
@@ -124,16 +123,14 @@ async fn test_execute() -> Result<()> {
             &[&2i32, &1i32],
         )
         .await?
-        .total()
-        .await?;
+        .total();
 
     assert_eq!(1, update_count);
 
     let delete_count = conn
         .execute("DELETE ##TestExecute WHERE id <> @P1", &[&3i32])
         .await?
-        .total()
-        .await?;
+        .total();
 
     assert_eq!(2, delete_count);
 
@@ -154,7 +151,7 @@ async fn test_execute_multiple_separate_results() -> Result<()> {
         )
         .await?;
 
-    let result: Vec<_> = insert_count.try_collect().await?;
+    let result: Vec<_> = insert_count.into_iter().collect();
     assert_eq!(vec![1, 2], result);
 
     Ok(())
@@ -174,7 +171,7 @@ async fn test_execute_multiple_total() -> Result<()> {
         )
         .await?;
 
-    let result = insert_count.total().await?;
+    let result = insert_count.total();
     assert_eq!(3, result);
 
     Ok(())
@@ -606,8 +603,7 @@ async fn test_varbinary_empty() -> Result<()> {
             &[&Option::<Vec<u8>>::None],
         )
         .await?
-        .total()
-        .await?;
+        .total();
 
     assert_eq!(1, total);
 
@@ -643,8 +639,7 @@ async fn test_binary() -> Result<()> {
             &[&binary.as_slice()],
         )
         .await?
-        .total()
-        .await?;
+        .total();
 
     assert_eq!(1, inserted);
 
@@ -678,8 +673,7 @@ async fn test_var_binary() -> Result<()> {
             &[&binary.as_slice()],
         )
         .await?
-        .total()
-        .await?;
+        .total();
 
     assert_eq!(1, inserted);
 
@@ -727,8 +721,7 @@ async fn test_max_binary() -> Result<()> {
             &[&binary.as_slice()],
         )
         .await?
-        .total()
-        .await?;
+        .total();
 
     assert_eq!(1, inserted);
 
@@ -759,8 +752,7 @@ async fn test_naive_small_date_time_tds73() -> Result<()> {
 
     conn.execute("INSERT INTO ##TestSmallDt (date) VALUES (@P1)", &[&dt])
         .await?
-        .total()
-        .await?;
+        .total();
 
     let stream = conn.query("SELECT date FROM ##TestSmallDt", &[]).await?;
 
@@ -786,8 +778,7 @@ async fn test_naive_date_time2_tds73() -> Result<()> {
 
     conn.execute("INSERT INTO ##NaiveDateTime2 (date) VALUES (@P1)", &[&dt])
         .await?
-        .total()
-        .await?;
+        .total();
 
     let stream = conn.query("SELECT date FROM ##NaiveDateTime2", &[]).await?;
 
