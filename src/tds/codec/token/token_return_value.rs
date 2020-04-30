@@ -1,6 +1,6 @@
 use super::BaseMetaDataColumn;
 use crate::{
-    protocol::codec::{read_varchar, ColumnData},
+    tds::codec::{read_varchar, ColumnData},
     Error, SqlReadBytes,
 };
 use tokio::io::AsyncReadExt;

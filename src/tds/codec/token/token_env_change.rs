@@ -1,4 +1,4 @@
-use crate::{protocol::codec::read_varchar, uint_enum, Error, SqlReadBytes};
+use crate::{tds::codec::read_varchar, uint_enum, Error, SqlReadBytes};
 use std::{convert::TryFrom, fmt};
 use tokio::io::AsyncReadExt;
 

@@ -1,8 +1,10 @@
 use crate::{
     client::AuthMethod,
-    protocol::codec::PacketCodec,
-    protocol::{
-        codec::{self, Encode, LoginMessage, Packet, PacketHeader, PacketStatus, PreloginMessage},
+    tds::{
+        codec::{
+            self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
+            PreloginMessage,
+        },
         stream::TokenStream,
         Context, HEADER_BYTES,
     },

@@ -1,6 +1,6 @@
 use crate::{
     client::Connection,
-    protocol::{
+    tds::{
         codec::DoneStatus,
         stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
     },

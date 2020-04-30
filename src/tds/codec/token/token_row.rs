@@ -1,5 +1,5 @@
 use crate::{
-    protocol::codec::{ColumnData, TokenColMetaData},
+    tds::codec::{ColumnData, TokenColMetaData},
     SqlReadBytes,
 };
 use std::sync::Arc;

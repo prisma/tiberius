@@ -1,8 +1,8 @@
 #[cfg(windows)]
-use crate::protocol::codec::TokenSSPI;
+use crate::tds::codec::TokenSSPI;
 use crate::{
     client::Connection,
-    protocol::codec::{
+    tds::codec::{
         TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenInfo, TokenLoginAck,
         TokenOrder, TokenReturnValue, TokenRow,
     },

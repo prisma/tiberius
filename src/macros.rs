@@ -41,16 +41,16 @@ macro_rules! to_sql {
     ($target:ident, $( $ty:ty: ($name:expr, $val:expr) ;)* ) => {
         $(
             impl crate::prepared::ToSql for $ty {
-                fn to_sql(&self) -> (&'static str, crate::protocol::codec::ColumnData) {
+                fn to_sql(&self) -> (&'static str, crate::tds::codec::ColumnData) {
                     let $target = self;
                     ($name, $val)
                 }
             }
 
             impl crate::prepared::ToSql for Option<$ty> {
-                fn to_sql(&self) -> (&'static str, crate::protocol::codec::ColumnData) {
+                fn to_sql(&self) -> (&'static str, crate::tds::codec::ColumnData) {
                     let val = match self {
-                        None => crate::protocol::codec::ColumnData::None,
+                        None => crate::tds::codec::ColumnData::None,
                         Some(item) => {
                             let $target = item;
                             $val

@@ -1,4 +1,4 @@
-use crate::protocol::{
+use crate::tds::{
     codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType},
     HEADER_BYTES,
 };

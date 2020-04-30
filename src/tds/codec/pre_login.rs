@@ -1,10 +1,10 @@
 use super::{Decode, Encode};
-use crate::{protocol, Error, Result};
+use crate::{tds, Error, Result};
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BufMut, BytesMut};
-use protocol::EncryptionLevel;
 use std::convert::TryFrom;
 use std::io::{self, Cursor};
+use tds::EncryptionLevel;
 
 /// The prelogin packet used to initialize a connection
 #[derive(Debug)]
@@ -120,10 +120,9 @@ impl Decode<BytesMut> for PreloginMessage {
                 // encryption
                 1 => {
                     let encrypt = cursor.read_u8()?;
-                    ret.encryption =
-                        protocol::EncryptionLevel::try_from(encrypt).map_err(|_| {
-                            Error::Protocol(format!("invalid encryption value: {}", encrypt).into())
-                        })?;
+                    ret.encryption = tds::EncryptionLevel::try_from(encrypt).map_err(|_| {
+                        Error::Protocol(format!("invalid encryption value: {}", encrypt).into())
+                    })?;
                 }
                 3 => debug_assert_eq!(length, 0), // threadid
                 4 => debug_assert_eq!(length, 1), // mars

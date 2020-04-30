@@ -1,4 +1,4 @@
-use crate::{protocol::codec::Encode, SqlReadBytes};
+use crate::{tds::codec::Encode, SqlReadBytes};
 #[cfg(feature = "tds73")]
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
@@ -296,7 +296,7 @@ mod chrono {
     use super::DateTime;
     #[cfg(feature = "tds73")]
     use super::{Date, DateTime2, DateTimeOffset, Time};
-    use crate::{from_column_data, protocol::codec::ColumnData, to_sql};
+    use crate::{from_column_data, tds::codec::ColumnData, to_sql};
     #[cfg(feature = "tds73")]
     use chrono::offset::{FixedOffset, Utc};
     use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
