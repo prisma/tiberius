@@ -1,5 +1,5 @@
 use super::{connection::*, AuthMethod};
-use crate::{protocol::Context, Client, EncryptionLevel};
+use crate::{tds::Context, Client, EncryptionLevel};
 
 #[derive(Debug, Clone)]
 pub struct ClientBuilder {

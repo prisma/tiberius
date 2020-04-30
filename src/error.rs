@@ -1,5 +1,4 @@
-use crate::protocol;
-use protocol::codec::TokenError;
+use crate::tds::codec::TokenError;
 use std::{borrow::Cow, convert::Infallible, io};
 use thiserror::Error;
 

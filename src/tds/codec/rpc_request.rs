@@ -1,5 +1,5 @@
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
-use crate::{protocol::codec::ColumnData, Result};
+use crate::{tds::codec::ColumnData, Result};
 use bitflags::bitflags;
 use bytes::{BufMut, BytesMut};
 use std::borrow::Cow;

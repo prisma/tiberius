@@ -1,5 +1,5 @@
 use crate::{
-    protocol::codec::{read_varchar, FeatureLevel},
+    tds::codec::{read_varchar, FeatureLevel},
     SqlReadBytes,
 };
 use std::fmt;

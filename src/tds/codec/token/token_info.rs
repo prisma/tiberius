@@ -1,4 +1,4 @@
-use crate::{protocol::codec::read_varchar, SqlReadBytes};
+use crate::{tds::codec::read_varchar, SqlReadBytes};
 use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]

@@ -1,14 +1,11 @@
 use super::{read_varchar, Encode, FixedLenType, TypeInfo, VarLenType};
-use crate::{
-    protocol::{self, types::Numeric},
-    Error, SqlReadBytes,
-};
+use crate::tds::types::{Collation, DateTime, SmallDateTime};
+#[cfg(feature = "tds73")]
+use crate::tds::types::{Date, DateTime2, DateTimeOffset, Time};
+use crate::{tds::types::Numeric, Error, SqlReadBytes};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
-use protocol::types::{Collation, DateTime, SmallDateTime};
-#[cfg(feature = "tds73")]
-use protocol::types::{Date, DateTime2, DateTimeOffset, Time};
 use std::borrow::Cow;
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;

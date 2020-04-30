@@ -1,4 +1,4 @@
-use crate::protocol::{
+use crate::tds::{
     codec::DoneStatus,
     stream::{prepared::PreparedStream, ReceivedToken},
 };

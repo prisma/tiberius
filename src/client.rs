@@ -6,11 +6,11 @@ pub(crate) use connection::*;
 
 use crate::{
     prepared,
-    protocol::{
+    result::{ExecuteResult, QueryResult},
+    tds::{
         codec::{self, RpcOptionFlags, RpcStatusFlags},
         stream::TokenStream,
     },
-    result::{ExecuteResult, QueryResult},
     SqlReadBytes,
 };
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};

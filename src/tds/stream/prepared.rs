@@ -1,5 +1,5 @@
 use super::ReceivedToken;
-use crate::protocol::codec::DoneStatus;
+use crate::tds::codec::DoneStatus;
 use futures::{ready, Stream};
 use std::{
     pin::Pin,

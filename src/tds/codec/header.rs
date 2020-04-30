@@ -1,5 +1,5 @@
 use super::{Decode, Encode};
-use crate::{protocol::Context, uint_enum, Error};
+use crate::{tds::Context, uint_enum, Error};
 use bytes::{Buf, BufMut, BytesMut};
 use std::convert::TryFrom;
 

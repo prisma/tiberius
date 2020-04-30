@@ -1,5 +1,5 @@
 use crate::{
-    protocol::codec::{read_varchar, TypeInfo, VarLenType},
+    tds::codec::{read_varchar, TypeInfo, VarLenType},
     SqlReadBytes,
 };
 use bitflags::bitflags;

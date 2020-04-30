@@ -1,10 +1,9 @@
-use crate::protocol;
-use crate::protocol::codec::ColumnData;
-use std::convert::TryFrom;
-use std::sync::Arc;
-
-use crate::{error::Error, from_column_data};
-use protocol::codec::TokenRow;
+use crate::{
+    error::Error,
+    from_column_data,
+    tds::codec::{ColumnData, TokenRow},
+};
+use std::{convert::TryFrom, sync::Arc};
 use uuid::Uuid;
 
 impl<'a> TryFrom<&'a ColumnData<'a>> for &'a str {
