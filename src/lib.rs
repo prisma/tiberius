@@ -15,7 +15,7 @@ pub use client::{AuthMethod, Client, ClientBuilder};
 pub use error::Error;
 pub use result::*;
 pub use row::{Column, Row};
-pub use tds::EncryptionLevel;
+pub use tds::{numeric::*, time::*, EncryptionLevel};
 pub use to_sql::ToSql;
 pub use uuid::Uuid;
 

@@ -1,8 +1,8 @@
 use super::{read_varchar, Encode, FixedLenType, TypeInfo, VarLenType};
-use crate::tds::types::{Collation, DateTime, SmallDateTime};
+use crate::tds::{Collation, DateTime, SmallDateTime};
 #[cfg(feature = "tds73")]
-use crate::tds::types::{Date, DateTime2, DateTimeOffset, Time};
-use crate::{tds::types::Numeric, Error, SqlReadBytes};
+use crate::tds::{Date, DateTime2, DateTimeOffset, Time};
+use crate::{tds::Numeric, Error, SqlReadBytes};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
