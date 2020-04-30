@@ -8,7 +8,6 @@ pub(crate) use collation::*;
 pub(crate) use numeric::*;
 pub(crate) use time::*;
 
-use crate::uint_enum;
 use codec::*;
 use std::{
     sync::atomic::{AtomicU32, AtomicU8, Ordering},

@@ -1,5 +1,3 @@
-use crate::uint_enum;
-
 uint_enum! {
     /// Types of tokens in a token stream. Read from the first byte of the stream.
     pub enum TokenType {

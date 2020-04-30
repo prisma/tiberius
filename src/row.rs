@@ -1,6 +1,5 @@
 use crate::{
     error::Error,
-    from_column_data,
     tds::codec::{ColumnData, TokenRow},
 };
 use std::{convert::TryFrom, sync::Arc};
