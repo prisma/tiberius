@@ -83,7 +83,7 @@ pub struct QueryResult<'a> {
 
 impl<'a> QueryResult<'a> {
     pub(crate) fn new(
-        token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>,
+        token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
     ) -> Self {
         let stream = QueryStream::new(token_stream);
         Self { stream }
@@ -224,9 +224,10 @@ pub struct ExecuteResult {
 
 impl<'a> ExecuteResult {
     pub(crate) async fn try_new(connection: &'a mut Connection) -> crate::Result<Self> {
-        let mut token_stream = TokenStream::new(connection).try_unfold();
-        let stream = unsafe { Pin::new_unchecked(&mut *token_stream) };
-        let rows_affected = stream.try_fold(Vec::new(), |mut acc, token| async move {
+        let token_stream = TokenStream::new(connection).try_unfold();
+        //let mut stream = Pin::new(&mut *token_stream);
+        //let stream = unsafe { Pin::new_unchecked(&mut *token_stream) };
+        let rows_affected = token_stream.try_fold(Vec::new(), |mut acc, token| async move {
             match token {
                 ReceivedToken::DoneProc(done) if done.status.contains(DoneStatus::FINAL) => (),
                 ReceivedToken::DoneProc(done) => acc.push(done.done_rows),

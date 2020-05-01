@@ -27,7 +27,7 @@ pub struct QueryStream<'a> {
 
 impl<'a> QueryStream<'a> {
     pub(crate) fn new(
-        token_stream: Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>,
+        token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
     ) -> Self {
         let prepared_stream = PreparedStream::new(token_stream);
 

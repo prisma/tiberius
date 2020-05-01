@@ -1,5 +1,4 @@
-#[cfg(windows)]
-use crate::tds::codec::TokenSSPI;
+#[cfg(windows)] use crate::tds::codec::TokenSSPI;
 use crate::{
     client::Connection,
     tds::codec::{
@@ -45,7 +44,7 @@ impl<'a> TokenStream<'a> {
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
         let mut stream = self.try_unfold();
-        let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
+        //let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
 
         loop {
             match stream.try_next().await? {
@@ -59,7 +58,7 @@ impl<'a> TokenStream<'a> {
     #[cfg(windows)]
     pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSSPI> {
         let mut stream = self.try_unfold();
-        let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
+        //let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
 
         loop {
             match stream.try_next().await? {
@@ -168,7 +167,7 @@ impl<'a> TokenStream<'a> {
         Ok(ReceivedToken::SSPI(sspi))
     }
 
-    pub fn try_unfold(self) -> Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a> {
+    pub fn try_unfold(self) -> Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>> {
         let s = futures::stream::try_unfold(self, |mut this| async move {
             if this.conn.is_eof() {
                 return Ok(None);
@@ -201,6 +200,6 @@ impl<'a> TokenStream<'a> {
             Ok(Some((token, this)))
         });
 
-        Box::new(s)
+        Box::pin(s)
     }
 }
