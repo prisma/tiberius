@@ -1,6 +1,7 @@
 use super::ReceivedToken;
 use crate::tds::codec::DoneStatus;
 use futures::{ready, Stream};
+use futures_util::StreamExt;
 use std::{
     pin::Pin,
     task::{self, Poll},
@@ -30,10 +31,7 @@ impl<'a> Stream for PreparedStream<'a> {
                 return Poll::Ready(Some(Ok(this.read_ahead.take().unwrap())));
             }
 
-            use futures_util::StreamExt;
-            //let mut stream = unsafe { Pin::new_unchecked(&mut self.token_stream) };
             let stream = &mut this.token_stream;
-            //let mut stream = Pin::new(&mut *self.get_mut().token_stream);
             let item = match ready!(stream.poll_next_unpin(cx)) {
                 Some(res) => res?,
                 None => return Poll::Ready(None),
