@@ -44,7 +44,6 @@ impl<'a> TokenStream<'a> {
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
         let mut stream = self.try_unfold();
-        //let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
 
         loop {
             match stream.try_next().await? {
@@ -58,7 +57,6 @@ impl<'a> TokenStream<'a> {
     #[cfg(windows)]
     pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSSPI> {
         let mut stream = self.try_unfold();
-        //let mut stream = unsafe { Pin::new_unchecked(&mut *stream) };
 
         loop {
             match stream.try_next().await? {

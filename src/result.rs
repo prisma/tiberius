@@ -6,7 +6,7 @@ use crate::{
     },
     Row,
 };
-use futures::{ready, Stream, StreamExt, TryStream, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use std::{pin::Pin, task};
 use task::Poll;
 
@@ -223,10 +223,8 @@ pub struct ExecuteResult {
 }
 
 impl<'a> ExecuteResult {
-    pub(crate) async fn try_new(connection: &'a mut Connection) -> crate::Result<Self> {
+    pub(crate) async fn new(connection: &'a mut Connection) -> crate::Result<Self> {
         let token_stream = TokenStream::new(connection).try_unfold();
-        //let mut stream = Pin::new(&mut *token_stream);
-        //let stream = unsafe { Pin::new_unchecked(&mut *token_stream) };
         let rows_affected = token_stream.try_fold(Vec::new(), |mut acc, token| async move {
             match token {
                 ReceivedToken::DoneProc(done) if done.status.contains(DoneStatus::FINAL) => (),
@@ -242,22 +240,13 @@ impl<'a> ExecuteResult {
     /// Aggregates all resulting row counts into a sum.
     ///
     /// ```no_run
-    /// # use tiberius::{Client, AuthMethod};
+    ///  use tiberius::{Client, AuthMethod, ClientBuilder};
     /// # use std::env;
-    /// use futures::{StreamExt, TryStreamExt};
+    /// # use futures::{StreamExt, TryStreamExt};
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let mut builder = Client::builder();
-    /// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
-    /// #     builder.host(host);
-    /// # };
-    /// # if let Ok(port) = env::var("TIBERIUS_TEST_PORT") {
-    /// #     let port: u16 = port.parse().unwrap();
-    /// #     builder.port(port);
-    /// # };
-    /// # if let Ok(user) = env::var("TIBERIUS_TEST_USER") {
-    /// #     let pw = env::var("TIBERIUS_TEST_PW").unwrap();
-    /// #     builder.authentication(AuthMethod::sql_server(user, pw));
-    /// # };
+    /// # let conn_str = env::var("TIBERIUS_TEST_CONNECTION_STRING")
+    /// #    .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned());
+    /// # let builder = ClientBuilder::from_ado_string(&conn_str)?;
     /// # let mut conn = builder.build().await?;
     ///
     /// let rows_affected = conn
@@ -272,7 +261,6 @@ impl<'a> ExecuteResult {
     /// # }
     pub fn total(self) -> u64 {
         self.rows_affected.into_iter().sum()
-        //self.try_fold(0, |acc, x| async move { Ok(acc + x) }).await
     }
 }
 

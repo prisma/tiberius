@@ -143,7 +143,7 @@ impl Client {
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(ExecuteResult::try_new(&mut self.connection).await?)
+        Ok(ExecuteResult::new(&mut self.connection).await?)
     }
 
     /// Executes SQL statements in the SQL Server, returning resulting rows.
