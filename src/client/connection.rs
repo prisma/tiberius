@@ -30,7 +30,9 @@ use tokio::{
 };
 #[cfg(windows)]
 use tokio::{net::UdpSocket, time};
-use tokio_util::codec::Framed;
+use futures_codec::Framed;
+use futures_sink::Sink;
+use tokio_util::compat::{Tokio02AsyncReadCompatExt, self, Tokio02AsyncWriteCompatExt};
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
@@ -45,7 +47,7 @@ use winauth::{windows::NtlmSspiBuilder, NextBytes};
 /// [`Client`]: struct.Encode.html
 /// [`Packet`]: ../protocol/codec/struct.Packet.html
 pub(crate) struct Connection {
-    transport: Framed<MaybeTlsStream, PacketCodec>,
+    transport: Framed<compat::Compat<MaybeTlsStream>, PacketCodec>,
     flushed: bool,
     context: Context,
     buf: BytesMut,
@@ -97,7 +99,7 @@ impl Connection {
         let stream = TcpStream::connect(addr).await?;
         stream.set_nodelay(true)?;
 
-        let transport = Framed::new(MaybeTlsStream::Raw(stream), PacketCodec);
+        let transport = Framed::new(MaybeTlsStream::Raw(stream).compat_write(), PacketCodec);
 
         let mut connection = Self {
             transport,
@@ -148,8 +150,10 @@ impl Connection {
                 "Turning TLS off after a login. All traffic from here on is not encrypted.",
             );
 
-            let tcp = self.transport.into_inner().into_inner();
-            self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
+            //let tcp = self.transport.into_inner().into_inner();
+            let Self { transport, .. } = self;
+            let tcp = transport.release().0.into_inner().into_inner();
+            self.transport = Framed::new(MaybeTlsStream::Raw(tcp).compat_write(), PacketCodec);
         }
 
         self
@@ -335,7 +339,8 @@ impl Connection {
             let cx = builder.build().unwrap();
             let connector = tokio_tls::TlsConnector::from(cx);
 
-            let mut stream = match self.transport.into_inner() {
+            let Self { transport, context, .. } = self;
+            let mut stream = match transport.release().0.into_inner() {
                 MaybeTlsStream::Raw(tcp) => {
                     connector.connect("", TlsPreloginWrapper::new(tcp)).await?
                 }
@@ -345,11 +350,11 @@ impl Connection {
             stream.get_mut().handshake_complete();
             event!(Level::INFO, "TLS handshake successful");
 
-            let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
+            let transport = Framed::new(MaybeTlsStream::Tls(stream).compat_write(), PacketCodec);
 
             Ok(Self {
                 transport,
-                context: self.context,
+                context,
                 flushed: false,
                 buf: BytesMut::new(),
             })

@@ -20,6 +20,8 @@ thiserror = "1.0"
 bytes = "0.5"
 pretty-hex = "0.1"
 pin-project-lite = "0.1"
+futures_codec = "0.4"
+futures-sink = "0.3"
 
 [dependencies.chrono]
 version = "0.4"
@@ -31,7 +33,7 @@ features = ["v1", "v3", "v4"]
 
 [dependencies.tokio-util]
 version = "0.3"
-features = ["codec"]
+features = ["codec", "compat"]
 
 [dependencies.futures]
 version = "0.3"
