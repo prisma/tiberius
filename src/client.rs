@@ -186,7 +186,6 @@ impl Client {
             .await?;
 
         let ts = TokenStream::new(&mut self.connection);
-        //let mut stream = std::pin::Pin::new(&mut ts);
         let mut result = QueryResult::new(ts.try_unfold());
 
         result.fetch_metadata().await?;
