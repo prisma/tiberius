@@ -1,4 +1,4 @@
-use crate::{async_read_le_ext::AsyncReadLeExt, protocol::codec::Encode};
+use crate::{tds::codec::Encode, sql_read_bytes::SqlReadBytes};
 use bytes::BytesMut;
 use tokio::io::AsyncReadExt;
 
@@ -18,7 +18,7 @@ impl TokenSSPI {
 
     pub(crate) async fn decode_async<R>(src: &mut R) -> crate::Result<Self>
     where
-        R: AsyncReadLeExt + Unpin,
+        R: SqlReadBytes + Unpin,
     {
         let len = src.read_u16_le().await? as usize;
         let mut bytes = vec![0; len];

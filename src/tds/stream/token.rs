@@ -161,7 +161,7 @@ impl<'a> TokenStream<'a> {
     #[cfg(windows)]
     async fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
         let sspi = TokenSSPI::decode_async(self.conn).await?;
-        event!(Level::INFO, "SSPI response");
+        event!(Level::TRACE, "SSPI response");
         Ok(ReceivedToken::SSPI(sspi))
     }
 

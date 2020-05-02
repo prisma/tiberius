@@ -327,7 +327,7 @@ impl Connection {
 
     /// Performs needed handshakes for Windows-based authentications.
     #[cfg(windows)]
-    fn windows_auth<'a>(
+    async fn windows_auth<'a>(
         &'a mut self,
         mut msg: LoginMessage<'a>,
         mut client: impl NextBytes,
