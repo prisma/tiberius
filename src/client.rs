@@ -6,6 +6,7 @@ mod auth;
 pub use builder::*;
 pub use auth::*;
 pub(crate) use connection::*;
+pub use connection::{GenericTcpStream, find_tcp_port};
 
 use crate::{
     result::{ExecuteResult, QueryResult},
@@ -46,11 +47,11 @@ use std::{borrow::Cow, fmt::Debug};
 ///
 /// [`ClientBuilder`]: struct.ClientBuilder.html
 #[derive(Debug)]
-pub struct Client {
-    connection: Connection,
+pub struct Client<S: futures::AsyncRead + futures::AsyncWrite + Unpin> {
+    connection: Connection<S>,
 }
 
-impl Client {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Client<S> {
     /// Starts an instance of [`ClientBuilder`] for specifying the connect
     /// options.
     ///

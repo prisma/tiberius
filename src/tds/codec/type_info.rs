@@ -1,6 +1,6 @@
 use crate::{tds::Collation, xml::XmlSchema, Error, SqlReadBytes};
 use std::{convert::TryFrom, sync::Arc};
-use tokio::io::AsyncReadExt;
+use futures::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub enum TypeInfo {
@@ -117,7 +117,7 @@ impl TypeInfo {
     where
         R: SqlReadBytes + Unpin,
     {
-        let ty = src.read_u8().await?;
+        let ty = read_u8(src).await?;
 
         if let Ok(ty) = FixedLenType::try_from(ty) {
             return Ok(TypeInfo::FixedLen(ty));
@@ -187,7 +187,7 @@ impl TypeInfo {
                     | VarLenType::NVarchar
                     | VarLenType::BigVarChar => Some(Collation::new(
                         src.read_u32_le().await?,
-                        src.read_u8().await?,
+                        read_u8(src).await?,
                     )),
                     _ => None,
                 };
@@ -196,8 +196,8 @@ impl TypeInfo {
                     VarLenType::Decimaln | VarLenType::Numericn => TypeInfo::VarLenSizedPrecision {
                         ty,
                         size: len,
-                        precision: src.read_u8().await?,
-                        scale: src.read_u8().await?,
+                        precision: read_u8(src).await?,
+                        scale: read_u8(src).await?,
                     },
                     _ => TypeInfo::VarLenSized(ty, len, collation),
                 };

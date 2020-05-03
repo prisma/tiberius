@@ -110,7 +110,11 @@ impl ClientBuilder {
     }
 
     /// Creates a new client and connects to the server.
-    pub async fn build(self) -> crate::Result<Client> {
+    pub async fn build<C, TCP>(self, connector: C) -> crate::Result<Client<TCP>> 
+        where C: GenericTcpStream<TCP>,
+              TCP: futures::AsyncRead + futures::AsyncWrite + Unpin,
+
+    {
         let context = self.create_context();
         let addr = format!("{}:{}", self.get_host(), self.get_port());
 
@@ -125,7 +129,7 @@ impl ClientBuilder {
             instance_name: None,
         };
 
-        let connection = Connection::connect_tcp(addr, context, opts).await?;
+        let connection = Connection::connect_tcp(addr, context, opts, connector).await?;
 
         Ok(Client { connection })
     }

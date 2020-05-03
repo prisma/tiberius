@@ -1,5 +1,4 @@
-use crate::{tds::codec::read_varchar, SqlReadBytes};
-use tokio::io::AsyncReadExt;
+use crate::{tds::codec::read_varchar, SqlReadBytes, read_u8};
 
 #[derive(Debug)]
 pub struct TokenInfo {
@@ -24,18 +23,18 @@ impl TokenInfo {
 
         let token = TokenInfo {
             number: src.read_u32_le().await?,
-            state: src.read_u8().await?,
-            class: src.read_u8().await?,
+            state: read_u8(src).await?,
+            class: read_u8(src).await?,
             message: {
                 let len = src.read_u16_le().await?;
                 read_varchar(src, len).await?
             },
             server: {
-                let len = src.read_u8().await?;
+                let len = read_u8(src).await?;
                 read_varchar(src, len).await?
             },
             procedure: {
-                let len = src.read_u8().await?;
+                let len = read_u8(src).await?;
                 read_varchar(src, len).await?
             },
             line: src.read_u32_le().await?,

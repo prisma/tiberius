@@ -223,7 +223,8 @@ pub struct ExecuteResult {
 }
 
 impl<'a> ExecuteResult {
-    pub(crate) async fn new(connection: &'a mut Connection) -> crate::Result<Self> {
+    pub(crate) async fn new<S: futures::AsyncRead + futures::AsyncWrite + Unpin>(connection: &'a mut Connection<S>) -> crate::Result<Self>
+    {
         let token_stream = TokenStream::new(connection).try_unfold();
 
         let rows_affected = token_stream

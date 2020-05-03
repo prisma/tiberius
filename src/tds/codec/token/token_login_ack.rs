@@ -1,6 +1,5 @@
-use crate::{tds::codec::read_varchar, Error, FeatureLevel, SqlReadBytes};
+use crate::{tds::codec::read_varchar, Error, FeatureLevel, SqlReadBytes, read_u8, read_u32};
 use std::convert::TryFrom;
-use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenLoginAck {
@@ -22,13 +21,13 @@ impl TokenLoginAck {
     {
         let _length = src.read_u16_le().await?;
 
-        let interface = src.read_u8().await?;
+        let interface = read_u8(src).await?;
 
-        let tds_version = FeatureLevel::try_from(src.read_u32().await?)
+        let tds_version = FeatureLevel::try_from(read_u32(src).await?)
             .map_err(|_| Error::Protocol("Login ACK: Invalid TDS version".into()))?;
 
         let prog_name = {
-            let len = src.read_u8().await?;
+            let len = read_u8(src).await?;
             read_varchar(src, len).await?
         };
 

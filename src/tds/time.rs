@@ -10,12 +10,12 @@
 //! - `crate::time::SmallDateTime` -> `chrono::NaiveDateTime`
 //! - `crate::time::DateTimeOffset` -> `chrono::DateTime<Tz>`
 
-use crate::{tds::codec::Encode, SqlReadBytes};
+use crate::{tds::codec::Encode, SqlReadBytes, read_u8};
 #[cfg(feature = "tds73")]
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 #[cfg(feature = "tds73")]
-use tokio::io::AsyncReadExt;
+use futures::io::AsyncReadExt;
 
 /// A presentation of `datetime` type in the server.
 ///
@@ -40,12 +40,12 @@ impl DateTime {
 
     /// Days since 1st of January, 1900 (including the negative range until 1st
     /// of January, 1753).
-    pub fn days(&self) -> i32 {
+    pub fn days(self) -> i32 {
         self.days
     }
 
     /// 1/300 of a second, so a value of 300 equals 1 second (since midnight).
-    pub fn seconds_fragments(&self) -> u32 {
+    pub fn seconds_fragments(self) -> u32 {
         self.seconds_fragments
     }
 
@@ -91,12 +91,12 @@ impl SmallDateTime {
         }
     }
     /// Days since 1st of January, 1900.
-    pub fn days(&self) -> u16 {
+    pub fn days(self) -> u16 {
         self.days
     }
 
     /// 1/300 of a second, so a value of 300 equals 1 second (since midnight)
-    pub fn seconds_fragments(&self) -> u16 {
+    pub fn seconds_fragments(self) -> u16 {
         self.seconds_fragments
     }
 
@@ -144,7 +144,7 @@ impl Date {
 
     #[inline]
     /// The number of days from 1st of January, year 1.
-    pub fn days(&self) -> u32 {
+    pub fn days(self) -> u32 {
         self.0
     }
 
@@ -203,19 +203,19 @@ impl Time {
     /// in [`scale`].
     ///
     /// [`scale`]: #method.scale
-    pub fn increments(&self) -> u64 {
+    pub fn increments(self) -> u64 {
         self.increments
     }
 
     #[inline]
     /// The accuracy of the increments.
-    pub fn scale(&self) -> u8 {
+    pub fn scale(self) -> u8 {
         self.scale
     }
 
     #[inline]
     /// Length of the field in number of bytes.
-    pub(crate) fn len(&self) -> crate::Result<u8> {
+    pub(crate) fn len(self) -> crate::Result<u8> {
         Ok(match self.scale {
             0..=2 => 3,
             3..=4 => 4,
@@ -233,9 +233,9 @@ impl Time {
         R: SqlReadBytes + Unpin,
     {
         let val = match (n, rlen) {
-            (0..=2, 3) => src.read_u16_le().await? as u64 | (src.read_u8().await? as u64) << 16,
+            (0..=2, 3) => src.read_u16_le().await? as u64 | (read_u8(src).await? as u64) << 16,
             (3..=4, 4) => src.read_u32_le().await? as u64,
-            (5..=7, 5) => src.read_u32_le().await? as u64 | (src.read_u8().await? as u64) << 32,
+            (5..=7, 5) => src.read_u32_le().await? as u64 | (read_u8(src).await? as u64) << 32,
             _ => {
                 return Err(crate::Error::Protocol(
                     format!("timen: invalid length {}", n).into(),
@@ -297,12 +297,12 @@ impl DateTime2 {
     }
 
     /// The date component.
-    pub fn date(&self) -> Date {
+    pub fn date(self) -> Date {
         self.date
     }
 
     /// The time component.
-    pub fn time(&self) -> Time {
+    pub fn time(self) -> Time {
         self.time
     }
 
@@ -357,12 +357,12 @@ impl DateTimeOffset {
     }
 
     /// The date and time part.
-    pub fn datetime2(&self) -> DateTime2 {
+    pub fn datetime2(self) -> DateTime2 {
         self.datetime2
     }
 
     /// Number of minutes from UTC.
-    pub fn offset(&self) -> i16 {
+    pub fn offset(self) -> i16 {
         self.offset
     }
 
@@ -370,7 +370,7 @@ impl DateTimeOffset {
     where
         R: SqlReadBytes + Unpin,
     {
-        let rlen = src.read_u8().await? - 5;
+        let rlen = read_u8(src).await? - 5;
         let datetime2 = DateTime2::decode(src, n, rlen as usize).await?;
         let offset = src.read_i16_le().await?;
 
@@ -416,14 +416,14 @@ mod chrono {
     }
 
     #[inline]
-    fn to_days(date: &NaiveDate, start_year: i32) -> i64 {
+    fn to_days(date: NaiveDate, start_year: i32) -> i64 {
         date.signed_duration_since(NaiveDate::from_ymd(start_year, 1, 1))
             .num_days()
     }
 
     #[inline]
     #[cfg(not(feature = "tds73"))]
-    fn to_sec_fragments(time: &NaiveTime) -> i64 {
+    fn to_sec_fragments(time: NaiveTime) -> i64 {
         time.signed_duration_since(NaiveTime::from_hms(0, 0, 0))
             .num_nanoseconds()
             .unwrap()
@@ -477,7 +477,6 @@ mod chrono {
 
     #[cfg(feature = "tds73")]
     to_sql!(self_,
-            NaiveDate: (ColumnData::Date, Date::new(to_days(self_, 1) as u32));
             NaiveTime: (ColumnData::Time, {
                 use chrono::Timelike;
 
@@ -493,7 +492,7 @@ mod chrono {
                 let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
                 let increments = nanos / 100;
 
-                let date = Date::new(to_days(&self_.date(), 1) as u32);
+                let date = Date::new(to_days(self_.date(), 1) as u32);
                 let time = Time {increments, scale: 7};
 
                 DateTime2::new(date, time)
@@ -505,7 +504,7 @@ mod chrono {
                 let time = naive.time();
                 let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
 
-                let date = Date::new(to_days(&naive.date(), 1) as u32);
+                let date = Date::new(to_days(naive.date(), 1) as u32);
                 let time = Time {increments: nanos / 100, scale: 7};
 
                 DateTimeOffset::new(DateTime2::new(date, time), 0)
@@ -517,7 +516,7 @@ mod chrono {
                 let time = naive.time();
                 let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
 
-                let date = Date::new(to_days(&naive.date(), 1) as u32);
+                let date = Date::new(to_days(naive.date(), 1) as u32);
                 let time = Time { increments: nanos / 100, scale: 7 };
 
                 let tz = self_.timezone();

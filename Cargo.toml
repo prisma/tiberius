@@ -22,6 +22,9 @@ pretty-hex = "0.1"
 pin-project-lite = "0.1"
 futures_codec = "0.4"
 futures-sink = "0.3"
+async-trait = "0.1"
+serde = "1"
+serde_json = "1"
 
 [dependencies.chrono]
 version = "0.4"
@@ -31,9 +34,6 @@ optional = true
 version = "0.8"
 features = ["v1", "v3", "v4"]
 
-[dependencies.tokio-util]
-version = "0.3"
-features = ["codec", "compat"]
 
 [dependencies.futures]
 version = "0.3"
@@ -41,17 +41,10 @@ version = "0.3"
 [dependencies.futures-util]
 version = "0.3"
 
-[dependencies.native-tls]
-optional = true
-version = "0.2.1"
-
-[dependencies.tokio]
-features = ["sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
-version = "0.2"
-
-[dependencies.tokio-tls]
+[dependencies.async-native-tls]
 optional = true
 version = "0.3"
+
 
 [dependencies.tracing]
 features = ["log"]
@@ -67,14 +60,25 @@ version = "0.0.4"
 [dev-dependencies]
 env_logger = "0.7"
 
+[dev-dependencies.tokio-util]
+version = "0.3"
+features = ["compat"]
+
 [dev-dependencies.tokio]
-features = ["macros"]
+features = ["macros", "sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
 version = "0.2"
+
+[dev-dependencies.smol]
+version = "0.1"
+
+[dev-dependencies.async-std]
+features = ["attributes"]
+version = "1"
 
 [dev-dependencies.anyhow]
 version = "1"
 
 [features]
 default = ["tls", "chrono", "tds73"]
-tls = ["native-tls", "tokio-tls"]
+tls = ["async-native-tls"]
 tds73 = []

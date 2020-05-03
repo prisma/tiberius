@@ -10,29 +10,33 @@ use futures::ready;
 use std::cmp;
 use std::{
     io,
-    mem::MaybeUninit,
     pin::Pin,
     task::{self, Poll},
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
 #[cfg(feature = "tls")]
-use tokio_tls::TlsStream;
+use async_native_tls::TlsStream;
 #[cfg(feature = "tls")]
 use tracing::{event, Level};
 
+/*
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream {
     Raw(TcpStream),
     #[cfg(feature = "tls")]
     Tls(TlsStream<TlsPreloginWrapper<TcpStream>>),
 }
+*/
 
-impl MaybeTlsStream {
+/// A wrapper to handle either TLS or bare connections.
+pub(crate) enum MaybeTlsStream<S: futures::AsyncRead + futures::AsyncWrite + Unpin> {
+    Raw(S),
     #[cfg(feature = "tls")]
-    pub fn into_inner(self) -> TcpStream {
+    Tls(TlsStream<TlsPreloginWrapper<S>>),
+}
+
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> MaybeTlsStream<S> {
+    #[cfg(feature = "tls")]
+    pub fn into_inner(self) -> S {
         match self {
             Self::Raw(s) => s,
             Self::Tls(mut tls) => tls.get_mut().stream.take().unwrap(),
@@ -40,15 +44,7 @@ impl MaybeTlsStream {
     }
 }
 
-impl AsyncRead for MaybeTlsStream {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
-        match self {
-            MaybeTlsStream::Raw(s) => s.prepare_uninitialized_buffer(buf),
-            #[cfg(feature = "tls")]
-            MaybeTlsStream::Tls(s) => s.prepare_uninitialized_buffer(buf),
-        }
-    }
-
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> futures::AsyncRead for MaybeTlsStream<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -62,7 +58,7 @@ impl AsyncRead for MaybeTlsStream {
     }
 }
 
-impl AsyncWrite for MaybeTlsStream {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> futures::AsyncWrite for MaybeTlsStream<S> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -83,11 +79,11 @@ impl AsyncWrite for MaybeTlsStream {
         }
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
         match self.get_mut() {
-            MaybeTlsStream::Raw(s) => Pin::new(s).poll_shutdown(cx),
+            MaybeTlsStream::Raw(s) => Pin::new(s).poll_close(cx),
             #[cfg(feature = "tls")]
-            MaybeTlsStream::Tls(s) => Pin::new(s).poll_shutdown(cx),
+            MaybeTlsStream::Tls(s) => Pin::new(s).poll_close(cx),
         }
     }
 }
@@ -132,7 +128,7 @@ impl<S> TlsPreloginWrapper<S> {
 }
 
 #[cfg(feature = "tls")]
-impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsPreloginWrapper<S> {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> futures::AsyncRead for TlsPreloginWrapper<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -195,7 +191,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsPreloginWrapper<S> {
 }
 
 #[cfg(feature = "tls")]
-impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> futures::AsyncWrite for TlsPreloginWrapper<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -254,7 +250,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
         Pin::new(&mut inner.stream.as_mut().unwrap()).poll_flush(cx)
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.stream.as_mut().unwrap()).poll_shutdown(cx)
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stream.as_mut().unwrap()).poll_close(cx)
     }
 }

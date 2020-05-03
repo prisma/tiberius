@@ -4,7 +4,7 @@ use pin_project_lite::pin_project;
 use std::io::ErrorKind::UnexpectedEof;
 use std::{future::Future, io, mem::size_of, pin::Pin, task};
 use task::Poll;
-use tokio::io::AsyncRead;
+use futures::io::AsyncRead;
 
 macro_rules! le_reader {
     ($name:ident, $ty:ty, $reader:ident) => {
@@ -68,7 +68,26 @@ macro_rules! le_reader {
     };
 }
 
-pub(crate) trait SqlReadBytes: AsyncRead {
+pub async fn read_u8<'a, IO: futures::AsyncReadExt + Unpin>(io: &mut IO) -> std::io::Result<u8> {
+    let mut buf = [0u8; 1];
+    io.read_exact(&mut buf).await?;
+    Ok(buf[0])
+}
+
+pub async fn read_i8<'a, IO: futures::AsyncReadExt + Unpin>(io: &mut IO) -> std::io::Result<i8> {
+    let mut buf = [0u8; 1];
+    io.read_exact(&mut buf).await?;
+    Ok(i8::from_be_bytes(buf))
+}
+
+pub async fn read_u32<'a, IO: futures::AsyncReadExt + Unpin>(io: &mut IO) -> std::io::Result<u32> {
+    let mut buf = [0u8; 4];
+    io.read_exact(&mut buf).await?;
+    Ok(u32::from_be_bytes(buf))
+}
+
+
+pub(crate) trait SqlReadBytes: futures::AsyncRead + Unpin {
     fn debug_buffer(&self);
 
     fn context(&self) -> &Context;

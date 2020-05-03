@@ -24,18 +24,34 @@ use pretty_hex::*;
 use std::time::Duration;
 use std::{cmp, fmt::Debug, io, net::SocketAddr, pin::Pin, task};
 use task::Poll;
-use tokio::{
-    io::AsyncRead,
-    net::{TcpStream, ToSocketAddrs},
-};
-#[cfg(windows)]
-use tokio::{net::UdpSocket, time};
 use futures_codec::Framed;
-use futures_sink::Sink;
-use tokio_util::compat::{Tokio02AsyncReadCompatExt, self, Tokio02AsyncWriteCompatExt};
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
+use async_trait::async_trait;
+
+
+/*
+#[async_trait]
+pub trait GenericTcpStream<A> {
+    type Stream: futures::AsyncRead + futures::AsyncWrite + Unpin;
+    async fn connect(addr: A) -> io::Result<Self::Stream> where A: 'async_trait;
+}
+
+#[async_trait]
+impl<A: net::ToSocketAddrs + Sync + Send> GenericTcpStream<A> for net::TcpStream {
+    type Stream = compat::Compat<net::TcpStream>;
+    async fn connect(addr: A) -> io::Result<Self::Stream> where A: 'async_trait {
+        net::TcpStream::connect(addr).await.map(|s| s.compat_write())
+    }
+}
+*/
+
+#[async_trait]
+pub trait GenericTcpStream<TCP: futures::AsyncRead + futures::AsyncWrite + Unpin> {
+    async fn connect(&self, addr: String, instance_name: &Option<String>) -> crate::Result<TCP>;
+}
+
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
@@ -46,8 +62,8 @@ use winauth::{windows::NtlmSspiBuilder, NextBytes};
 ///
 /// [`Client`]: struct.Encode.html
 /// [`Packet`]: ../protocol/codec/struct.Packet.html
-pub(crate) struct Connection {
-    transport: Framed<compat::Compat<MaybeTlsStream>, PacketCodec>,
+pub(crate) struct Connection<S: futures::AsyncRead + futures::AsyncWrite + Unpin> {
+    transport: Framed<MaybeTlsStream<S>, PacketCodec>,
     flushed: bool,
     context: Context,
     buf: BytesMut,
@@ -78,16 +94,19 @@ enum LoginResult {
     Windows(Box<dyn NextBytes>),
 }
 
-impl Connection {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Connection<S> {
     /// Creates a new connection
-    pub async fn connect_tcp<T>(
-        addr: T,
+    pub async fn connect_tcp<C>(
+        addr: String,
         context: Context,
         opts: ConnectOpts,
-    ) -> crate::Result<Connection>
+        conntr: C,
+    ) -> crate::Result<Connection<S>>
     where
-        T: ToSocketAddrs,
+        //T: ToSocketAddrs,
+        C: GenericTcpStream<S>,
     {
+        /*
         let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
         })?;
@@ -95,11 +114,13 @@ impl Connection {
         if let Some(ref instance_name) = opts.instance_name {
             addr = Self::find_tcp_port(addr, instance_name).await?;
         };
+        */
 
-        let stream = TcpStream::connect(addr).await?;
-        stream.set_nodelay(true)?;
+        let stream = conntr.connect(addr, &opts.instance_name).await?;
+        //let stream = net::TcpStream::connect(addr).await?;
+        //stream.set_nodelay(true)?;
 
-        let transport = Framed::new(MaybeTlsStream::Raw(stream).compat_write(), PacketCodec);
+        let transport = Framed::new(MaybeTlsStream::Raw(stream), PacketCodec);
 
         let mut connection = Self {
             transport,
@@ -150,10 +171,9 @@ impl Connection {
                 "Turning TLS off after a login. All traffic from here on is not encrypted.",
             );
 
-            //let tcp = self.transport.into_inner().into_inner();
             let Self { transport, .. } = self;
-            let tcp = transport.release().0.into_inner().into_inner();
-            self.transport = Framed::new(MaybeTlsStream::Raw(tcp).compat_write(), PacketCodec);
+            let tcp = transport.release().0.into_inner();
+            self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
         }
 
         self
@@ -323,7 +343,8 @@ impl Connection {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            let mut builder = native_tls::TlsConnector::builder();
+            //let mut builder = native_tls::TlsConnector::builder();
+            let mut builder = async_native_tls::TlsConnector::new();
 
             if trust_cert {
                 event!(
@@ -331,18 +352,18 @@ impl Connection {
                     "Trusting the server certificate without validation."
                 );
 
-                builder.danger_accept_invalid_certs(true);
-                builder.danger_accept_invalid_hostnames(true);
-                builder.use_sni(false);
+                builder = builder.danger_accept_invalid_certs(true);
+                builder = builder.danger_accept_invalid_hostnames(true);
+                builder = builder.use_sni(false);
             }
 
-            let cx = builder.build().unwrap();
-            let connector = tokio_tls::TlsConnector::from(cx);
+            //let cx = builder.build().unwrap();
+            //let builder = async_native_tls::TlsConnector::from(cx);
 
             let Self { transport, context, .. } = self;
-            let mut stream = match transport.release().0.into_inner() {
+            let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
-                    connector.connect("", TlsPreloginWrapper::new(tcp)).await?
+                    builder.connect("", TlsPreloginWrapper::new(tcp)).await?
                 }
                 _ => unreachable!(),
             };
@@ -350,7 +371,7 @@ impl Connection {
             stream.get_mut().handshake_complete();
             event!(Level::INFO, "TLS handshake successful");
 
-            let transport = Framed::new(MaybeTlsStream::Tls(stream).compat_write(), PacketCodec);
+            let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
 
             Ok(Self {
                 transport,
@@ -393,70 +414,70 @@ impl Connection {
         Ok(())
     }
 
-    #[cfg(not(windows))]
-    async fn find_tcp_port(addr: SocketAddr, _: &str) -> crate::Result<SocketAddr> {
-        Ok(addr)
-    }
-
-    /// Use the SQL Browser to find the correct TCP port for the server
-    /// instance.
-    #[cfg(windows)]
-    async fn find_tcp_port(mut addr: SocketAddr, instance_name: &str) -> crate::Result<SocketAddr> {
-        // First resolve the instance to a port via the
-        // SSRP protocol/MS-SQLR protocol [1]
-        // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
-
-        let local_bind: SocketAddr = if addr.is_ipv4() {
-            "0.0.0.0:0".parse().unwrap()
-        } else {
-            "[::]:0".parse().unwrap()
-        };
-
-        let msg = [&[4u8], instance_name.as_bytes()].concat();
-
-        let mut socket = UdpSocket::bind(&local_bind).await?;
-        socket.send_to(&msg, &addr).await?;
-
-        let mut buf = vec![0u8; 4096];
-        let timeout = Duration::from_millis(1000);
-
-        let len = time::timeout(timeout, socket.recv(&mut buf))
-            .await
-            .map_err(|_: time::Elapsed| {
-                Error::Conversion(
-                    format!(
-                        "SQL browser timeout during resolving instance {}",
-                        instance_name
-                    )
-                    .into(),
-                )
-            })??;
-
-        buf.truncate(len);
-
-        let err = Error::Conversion(
-            format!("Could not resolve SQL browser instance {}", instance_name).into(),
-        );
-
-        if len == 0 {
-            return Err(err);
-        }
-
-        let response = str::from_utf8(&buf[3..len])?;
-
-        let port: u16 = response
-            .find("tcp;")
-            .and_then(|pos| response[pos..].split(';').nth(1))
-            .ok_or(err)
-            .and_then(|val| Ok(val.parse()?))?;
-
-        addr.set_port(port);
-
-        Ok(addr)
-    }
 }
 
-impl Stream for Connection {
+#[cfg(not(windows))]
+pub async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> crate::Result<std::net::SocketAddr> {
+    Ok(addr)
+}
+
+/// Use the SQL Browser to find the correct TCP port for the server
+/// instance.
+#[cfg(windows)]
+pub async fn find_tcp_port(mut addr: std::net::SocketAddr, instance_name: &str) -> crate::Result<std::net::SocketAddr> {
+    // First resolve the instance to a port via the
+    // SSRP protocol/MS-SQLR protocol [1]
+    // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
+
+    let local_bind: std::net::SocketAddr = if addr.is_ipv4() {
+        "0.0.0.0:0".parse().unwrap()
+    } else {
+        "[::]:0".parse().unwrap()
+    };
+
+    let msg = [&[4u8], instance_name.as_bytes()].concat();
+
+    let mut socket = std::net::UdpSocket::bind(&local_bind)?;
+    socket.send_to(&msg, &addr)?;
+
+    let mut buf = vec![0u8; 4096];
+    let timeout = Duration::from_millis(1000);
+
+    let len = time::timeout(timeout, socket.recv(&mut buf))
+        .map_err(|_: time::Elapsed| {
+            Error::Conversion(
+                format!(
+                    "SQL browser timeout during resolving instance {}",
+                    instance_name
+                )
+                .into(),
+            )
+        })??;
+
+    buf.truncate(len);
+
+    let err = Error::Conversion(
+        format!("Could not resolve SQL browser instance {}", instance_name).into(),
+    );
+
+    if len == 0 {
+        return Err(err);
+    }
+
+    let response = str::from_utf8(&buf[3..len])?;
+
+    let port: u16 = response
+        .find("tcp;")
+        .and_then(|pos| response[pos..].split(';').nth(1))
+        .ok_or(err)
+        .and_then(|val| Ok(val.parse()?))?;
+
+    addr.set_port(port);
+
+    Ok(addr)
+}
+
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Stream for Connection<S> {
     type Item = crate::Result<Packet>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
@@ -473,7 +494,7 @@ impl Stream for Connection {
     }
 }
 
-impl AsyncRead for Connection {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> futures::AsyncRead for Connection<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -513,7 +534,7 @@ impl AsyncRead for Connection {
     }
 }
 
-impl SqlReadBytes for Connection {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> SqlReadBytes for Connection<S> {
     /// Hex dump of the current buffer.
     fn debug_buffer(&self) {
         dbg!(self.buf.as_ref().hex_dump());

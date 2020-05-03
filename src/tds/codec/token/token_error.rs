@@ -1,9 +1,8 @@
 use crate::{
     tds::codec::{read_varchar, FeatureLevel},
-    SqlReadBytes,
+    SqlReadBytes, read_u8,
 };
 use std::fmt;
-use tokio::io::AsyncReadExt;
 
 #[derive(Clone, Debug, thiserror::Error)]
 /// An error token returned from the server.
@@ -28,16 +27,16 @@ impl TokenError {
     {
         let _length = src.read_u16_le().await? as usize;
         let code = src.read_u32_le().await?;
-        let state = src.read_u8().await?;
-        let class = src.read_u8().await?;
+        let state = read_u8(src).await?;
+        let class = read_u8(src).await?;
 
         let message_len = src.read_u16_le().await?;
         let message = read_varchar(src, message_len).await?;
 
-        let server_len = src.read_u8().await?;
+        let server_len = read_u8(src).await?;
         let server = read_varchar(src, server_len).await?;
 
-        let procedure_len = src.read_u8().await?;
+        let procedure_len = read_u8(src).await?;
         let procedure = read_varchar(src, procedure_len).await?;
 
         let line = if src.context().version > FeatureLevel::SqlServer2005 {

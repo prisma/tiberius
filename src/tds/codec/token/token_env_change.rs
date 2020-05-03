@@ -5,7 +5,7 @@ use crate::{
 use encoding::Encoding;
 use fmt::Debug;
 use std::{convert::TryFrom, fmt};
-use tokio::io::AsyncReadExt;
+use futures::io::AsyncReadExt;
 
 uint_enum! {
     #[repr(u8)]
@@ -105,36 +105,36 @@ impl TokenEnvChange {
         R: SqlReadBytes + Unpin,
     {
         let _len = src.read_u16_le().await?;
-        let ty_byte = src.read_u8().await?;
+        let ty_byte = read_u8(src).await?;
 
         let ty = EnvChangeTy::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid envchange type {:x}", ty_byte).into()))?;
 
         let token = match ty {
             EnvChangeTy::Database => {
-                let len = src.read_u8().await?;
+                let len = read_u8(src).await?;
                 let new_value = read_varchar(src, len).await?;
 
-                let len = src.read_u8().await?;
+                let len = read_u8(src).await?;
                 let old_value = read_varchar(src, len).await?;
 
                 TokenEnvChange::Database(new_value, old_value)
             }
             EnvChangeTy::PacketSize => {
-                let len = src.read_u8().await?;
+                let len = read_u8(src).await?;
                 let new_value = read_varchar(src, len).await?;
 
-                let len = src.read_u8().await?;
+                let len = read_u8(src).await?;
                 let old_value = read_varchar(src, len).await?;
 
                 TokenEnvChange::PacketSize(new_value.parse()?, old_value.parse()?)
             }
             EnvChangeTy::SqlCollation => {
-                let len = src.read_u8().await? as usize;
+                let len = read_u8(src).await? as usize;
                 let mut new_value = vec![0; len];
                 src.read_exact(&mut new_value[0..len]).await?;
 
-                let len = src.read_u8().await? as usize;
+                let len = read_u8(src).await? as usize;
                 let mut old_value = vec![0; len];
                 src.read_exact(&mut old_value[0..len]).await?;
 

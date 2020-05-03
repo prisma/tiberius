@@ -3,7 +3,6 @@ use crate::{
     ColumnData, SqlReadBytes,
 };
 use bitflags::bitflags;
-use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenColMetaData {
@@ -140,7 +139,7 @@ impl TokenColMetaData {
             // read all metadata for each column
             for _ in 0..column_count {
                 let base = BaseMetaDataColumn::decode(src).await?;
-                let col_name_len = src.read_u8().await?;
+                let col_name_len = read_u8(src).await?;
 
                 let meta = MetaDataColumn {
                     base,
@@ -177,7 +176,6 @@ impl BaseMetaDataColumn {
             }
             TypeInfo::VarLenSized(VarLenType::NText, _, _) => {
                 src.read_u8().await?;
-
                 // table name
                 let len = src.read_u16_le().await?;
                 read_varchar(src, len as usize).await?;
