@@ -15,7 +15,7 @@ We also have our [Discord server](https://discord.gg/jxC2vH) for dev chat.
 ### Supported SQL Server versions
 
 | Version | Support level | Notes                               |
-|---------+---------------+-------------------------------------|
+|---------|---------------|-------------------------------------|
 |    2019 | Tested on CI  |                                     |
 |    2017 | Tested on CI  |                                     |
 |    2016 | Should work   |                                     |
