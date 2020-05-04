@@ -44,7 +44,7 @@ async fn test_conn_full_encryption() -> Result<()> {
 async fn connect_to_named_instance() -> Result<()> {
     let instance_name = env::var("TIBERIUS_TEST_INSTANCE").unwrap_or("MSSQLSERVER".to_owned());
 
-    let conn_str = CONN_STR.replace(",1433", &instance_name);
+    let conn_str = CONN_STR.replace(",1433", &format!("\\{},1433", instance_name));
     let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build().await?;
 
     let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
