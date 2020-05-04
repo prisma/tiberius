@@ -27,7 +27,6 @@ impl GenericTcpStream<compat::Compat<net::TcpStream>> for TokioTcpStreamWrapper 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
-    let mut builder = Client::builder();
     let mut builder = Client::<compat::Compat<net::TcpStream>>::builder();
     builder.host("localhost");
     builder.port(1433);
