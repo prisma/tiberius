@@ -1,29 +1,25 @@
 environment:
   matrix:
   - TARGET: x86_64-pc-windows-msvc
-    CHANNEL: stable
     MSSQL:  SQL2016
     INSTANCE: MSSQL13.SQL2016
     TIBERIUS_TEST_INSTANCE: SQL2016
   - TARGET: i686-pc-windows-msvc
-    CHANNEL: stable
     MSSQL:  SQL2014
     INSTANCE: MSSQL12.SQL2014
     TIBERIUS_TEST_INSTANCE: SQL2014
   - TARGET: i686-pc-windows-gnu
-    CHANNEL: stable
     MSSQL:  SQL2012SP1
     INSTANCE: MSSQL11.SQL2012SP1
     TIBERIUS_TEST_INSTANCE: SQL2012SP1
   - TARGET: x86_64-pc-windows-gnu
-    CHANNEL: stable
     MSSQL:  SQL2008R2SP2
     INSTANCE: MSSQL10_50.SQL2008R2SP2
     TIBERIUS_TEST_INSTANCE: SQL2008R2SP2
 
 install:
   - appveyor DownloadFile https://win.rustup.rs/ -FileName rustup-init.exe
-  - rustup-init -yv --default-toolchain %CHANNEL% --default-host %TARGET%
+  - rustup-init -yv --default-toolchain stable --default-host %TARGET%
   - set PATH=%PATH%;%USERPROFILE%\.cargo\bin
   - rustc -V
   - cargo -V
