@@ -8,8 +8,9 @@ use uuid::Uuid;
 static LOGGER_SETUP: Once = Once::new();
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
-    env::var("TIBERIUS_TEST_CONNECTION_STRING")
-        .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned())
+    env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+        "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    )
 });
 
 async fn connect() -> Result<Client> {
@@ -29,6 +30,21 @@ async fn test_conn_full_encryption() -> Result<()> {
     });
 
     let conn_str = format!("{};encrypt=true", *CONN_STR);
+    let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build().await?;
+
+    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+
+    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![-4i32]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn connect_to_named_instance() {
+    let instance_name = env::var("TIBERIUS_TEST_INSTANCE").unwrap_or("MSSQLSERVER".to_owned());
+
+    let conn_str = CONN_STR.replace(",1433", instance_name);
     let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build().await?;
 
     let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
