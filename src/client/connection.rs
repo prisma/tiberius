@@ -59,6 +59,12 @@ pub(crate) struct ConnectOpts {
     pub instance_name: Option<String>,
 }
 
+enum LoginResult {
+    Ok,
+    #[cfg(windows)]
+    Windows(Box<dyn NextBytes>),
+}
+
 impl Connection {
     /// Creates a new connection
     pub async fn connect_tcp<T>(
@@ -96,9 +102,17 @@ impl Connection {
             .tls_handshake(encryption, opts.trust_cert)
             .await?;
 
-        connection.login(opts.auth, opts.database).await?;
+        let login_result = connection.login(opts.auth, opts.database).await?;
+        connection = connection.post_login_encryption(encryption);
 
-        let mut connection = connection.post_login_encryption(encryption);
+        match login_result {
+            LoginResult::Ok => (),
+            #[cfg(windows)]
+            LoginResult::Windows(client) => {
+                connection.windows_auth(client).await?;
+            }
+        }
+
         TokenStream::new(&mut connection).flush_done().await?;
 
         Ok(connection)
@@ -223,46 +237,54 @@ impl Connection {
 
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
-    async fn login(&mut self, auth: AuthMethod, db: Option<String>) -> crate::Result<()> {
+    async fn login<'a>(
+        &'a mut self,
+        auth: AuthMethod,
+        db: Option<String>,
+    ) -> crate::Result<LoginResult> {
         let mut msg = LoginMessage::new();
+
+        if let Some(db) = db {
+            msg.db_name = db.into();
+        }
 
         match auth {
             #[cfg(windows)]
             AuthMethod::WindowsIntegrated => {
-                let sspi_client = NtlmSspiBuilder::new()
+                let mut client = NtlmSspiBuilder::new()
                     .target_spn(self.context.spn())
                     .build()?;
 
-                self.windows_auth(msg, sspi_client).await?;
+                msg.integrated_security = client.next_bytes(None)?;
+                self.send(PacketHeader::login(&self.context), msg).await?;
+
+                Ok(LoginResult::Windows(Box::new(client)))
             }
             #[cfg(windows)]
             AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();
                 let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
-                let client = builder.build(auth.domain, auth.user, auth.password);
+                let mut client = builder.build(auth.domain, auth.user, auth.password);
 
-                self.windows_auth(msg, client).await?;
+                msg.integrated_security = client.next_bytes(None)?;
+                self.send(PacketHeader::login(&self.context), msg).await?;
+
+                Ok(LoginResult::Windows(Box::new(client)))
             }
             AuthMethod::None => {
-                if let Some(db) = db {
-                    msg.db_name = db.into();
-                }
-
                 self.send(PacketHeader::login(&self.context), msg).await?;
+
+                Ok(LoginResult::Ok)
             }
             AuthMethod::SqlServer(auth) => {
-                if let Some(db) = db {
-                    msg.db_name = db.into();
-                }
-
                 msg.username = auth.user.into();
                 msg.password = auth.password.into();
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
+
+                Ok(LoginResult::Ok)
             }
         }
-
-        Ok(())
     }
 
     /// Implements the TLS handshake with the SQL Server.
@@ -327,16 +349,8 @@ impl Connection {
 
     /// Performs needed handshakes for Windows-based authentications.
     #[cfg(windows)]
-    async fn windows_auth<'a>(
-        &'a mut self,
-        mut msg: LoginMessage<'a>,
-        mut client: impl NextBytes,
-    ) -> crate::Result<()> {
-        msg.integrated_security = client.next_bytes(None)?;
-        self.send(PacketHeader::login(&self.context), msg).await?;
-
-        let ts = TokenStream::new(self);
-        let sspi_bytes = ts.flush_sspi().await?;
+    async fn windows_auth<'a>(&'a mut self, mut client: Box<dyn NextBytes>) -> crate::Result<()> {
+        let sspi_bytes = TokenStream::new(self).flush_sspi().await?;
 
         match client.next_bytes(Some(sspi_bytes.as_ref()))? {
             Some(sspi_response) => {
