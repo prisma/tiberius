@@ -94,7 +94,7 @@ Not every parameter is supported yet. Below is a list of all parameters
 supported.
 
 | Parameters             | Description                                                                                                                            |
-|------------------------+----------------------------------------------------------------------------------------------------------------------------------------|
+|------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | server                 | The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. |
 | integratedsecurity     | Toggle between Windows authentication and SQL authentication.                                                                          |
 | uid, username, user    | The SQL Server login account.                                                                                                          |
