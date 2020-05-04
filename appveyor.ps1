@@ -8,16 +8,18 @@ $smo = 'Microsoft.SqlServer.Management.Smo.'
 $wmi = new-object ($smo + 'Wmi.ManagedComputer')
 
 # Enable TCP/IP
-$uri = "ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']"
+$uri = "ManagedComputer[@Name='$serverName']/ ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']"
 $Tcp = $wmi.GetSmoObject($uri)
 $Tcp.IsEnabled = $true
-$TCP.alter()
+$Tcp.alter()
+$Tcp
 
 # Enable named pipes
 $uri = "ManagedComputer[@Name='$serverName']/ ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Np']"
 $Np = $wmi.GetSmoObject($uri)
 $Np.IsEnabled = $true
 $Np.Alter()
+$Np
 
 # Set Alias
 New-Item HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client -Name ConnectTo | Out-Null
