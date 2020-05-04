@@ -6,7 +6,7 @@ use crate::{
         TokenColMetaData, TokenDone, TokenEnvChange, TokenError, TokenInfo, TokenLoginAck,
         TokenOrder, TokenReturnValue, TokenRow,
     },
-    Error, SqlReadBytes, TokenType, read_u8,
+    Error, SqlReadBytes, TokenType,
 };
 use futures::{stream::BoxStream, TryStreamExt};
 use std::{
@@ -173,7 +173,7 @@ impl<'a, S> TokenStream<'a, S>
                 return Ok(None);
             }
 
-            let ty_byte = read_u8(this.conn).await?;
+            let ty_byte = this.conn.read_u8().await?;
 
             let ty = TokenType::try_from(ty_byte)
                 .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;

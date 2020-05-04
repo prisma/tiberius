@@ -68,31 +68,33 @@ macro_rules! le_reader {
     };
 }
 
-pub async fn read_u8<'a, IO: futures::AsyncReadExt + Unpin>(io: &mut IO) -> std::io::Result<u8> {
-    let mut buf = [0u8; 1];
-    io.read_exact(&mut buf).await?;
-    Ok(buf[0])
-}
-
-pub async fn read_i8<'a, IO: futures::AsyncReadExt + Unpin>(io: &mut IO) -> std::io::Result<i8> {
-    let mut buf = [0u8; 1];
-    io.read_exact(&mut buf).await?;
-    Ok(i8::from_be_bytes(buf))
-}
-
-pub async fn read_u32<'a, IO: futures::AsyncReadExt + Unpin>(io: &mut IO) -> std::io::Result<u32> {
-    let mut buf = [0u8; 4];
-    io.read_exact(&mut buf).await?;
-    Ok(u32::from_be_bytes(buf))
-}
-
-
 pub(crate) trait SqlReadBytes: futures::AsyncRead + Unpin {
     fn debug_buffer(&self);
 
     fn context(&self) -> &Context;
 
     fn context_mut(&mut self) -> &mut Context;
+
+    fn read_i8<'a>(&'a mut self) -> ReadI8<&'a mut Self>
+    where
+        Self: Unpin,
+    {
+        ReadI8::new(self)
+    }
+
+    fn read_u8<'a>(&'a mut self) -> ReadU8<&'a mut Self>
+    where
+        Self: Unpin,
+    {
+        ReadU8::new(self)
+    }
+
+    fn read_u32<'a>(&'a mut self) -> ReadU32Be<&'a mut Self>
+    where
+        Self: Unpin,
+    {
+        ReadU32Be::new(self)
+    }
 
     fn read_f32<'a>(&'a mut self) -> ReadF32<&'a mut Self>
     where
@@ -178,6 +180,10 @@ pub(crate) trait SqlReadBytes: futures::AsyncRead + Unpin {
         ReadI128Le::new(self)
     }
 }
+
+le_reader!(ReadI8, i8, get_i8);
+le_reader!(ReadU8, u8, get_u8);
+le_reader!(ReadU32Be, u32, get_u32);
 
 le_reader!(ReadU16Le, u16, get_u16_le);
 le_reader!(ReadU32Le, u32, get_u32_le);

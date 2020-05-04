@@ -10,11 +10,13 @@ use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
 use tokio::{io, net};
 use async_trait::async_trait;
 
+//use smol;
+
 pub struct TokioTcpStreamWrapper();
 
 #[async_trait]
-impl GenericTcpStream<compat::Compat<net::TcpStream>> for TokioTcpStreamWrapper {
-    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<compat::Compat<net::TcpStream>> 
+impl GenericTcpStream<smol::Async<std::net::TcpStream>> for TokioTcpStreamWrapper {
+    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<smol::Async<std::net::TcpStream>> 
     {
         let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
@@ -23,9 +25,25 @@ impl GenericTcpStream<compat::Compat<net::TcpStream>> for TokioTcpStreamWrapper 
         if let Some(ref instance_name) = instance_name {
             addr = tiberius::find_tcp_port(addr, instance_name).await?;
         };
-        Ok(net::TcpStream::connect(addr).await.map(|s| s.compat_write())?)
+        Ok(smol::Async::<std::net::TcpStream>::connect(addr).await?)
     }
 }
+
+
+//#[async_trait]
+//impl GenericTcpStream<compat::Compat<net::TcpStream>> for TokioTcpStreamWrapper {
+//    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<compat::Compat<net::TcpStream>> 
+//    {
+//        let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
+//            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+//        })?;
+//
+//        if let Some(ref instance_name) = instance_name {
+//            addr = tiberius::find_tcp_port(addr, instance_name).await?;
+//        };
+//        Ok(net::TcpStream::connect(addr).await.map(|s| s.compat_write())?)
+//    }
+//}
 
 static LOGGER_SETUP: Once = Once::new();
 
@@ -35,7 +53,7 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
     )
 });
 
-async fn connect() -> Result<Client<compat::Compat<net::TcpStream>>> {
+async fn connect() -> Result<Client<smol::Async<std::net::TcpStream>>> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });

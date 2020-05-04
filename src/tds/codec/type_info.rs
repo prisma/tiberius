@@ -117,7 +117,7 @@ impl TypeInfo {
     where
         R: SqlReadBytes + Unpin,
     {
-        let ty = read_u8(src).await?;
+        let ty = src.read_u8().await?;
 
         if let Ok(ty) = FixedLenType::try_from(ty) {
             return Ok(TypeInfo::FixedLen(ty));
@@ -187,7 +187,7 @@ impl TypeInfo {
                     | VarLenType::NVarchar
                     | VarLenType::BigVarChar => Some(Collation::new(
                         src.read_u32_le().await?,
-                        read_u8(src).await?,
+                        src.read_u8().await?,
                     )),
                     _ => None,
                 };
@@ -196,8 +196,8 @@ impl TypeInfo {
                     VarLenType::Decimaln | VarLenType::Numericn => TypeInfo::VarLenSizedPrecision {
                         ty,
                         size: len,
-                        precision: read_u8(src).await?,
-                        scale: read_u8(src).await?,
+                        precision: src.read_u8().await?,
+                        scale: src.read_u8().await?,
                     },
                     _ => TypeInfo::VarLenSized(ty, len, collation),
                 };

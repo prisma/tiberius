@@ -139,7 +139,7 @@ impl TokenColMetaData {
             // read all metadata for each column
             for _ in 0..column_count {
                 let base = BaseMetaDataColumn::decode(src).await?;
-                let col_name_len = read_u8(src).await?;
+                let col_name_len = src.read_u8().await?;
 
                 let meta = MetaDataColumn {
                     base,

@@ -10,7 +10,7 @@
 //! - `crate::time::SmallDateTime` -> `chrono::NaiveDateTime`
 //! - `crate::time::DateTimeOffset` -> `chrono::DateTime<Tz>`
 
-use crate::{tds::codec::Encode, SqlReadBytes, read_u8};
+use crate::{tds::codec::Encode, SqlReadBytes};
 #[cfg(feature = "tds73")]
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
@@ -233,9 +233,9 @@ impl Time {
         R: SqlReadBytes + Unpin,
     {
         let val = match (n, rlen) {
-            (0..=2, 3) => src.read_u16_le().await? as u64 | (read_u8(src).await? as u64) << 16,
+            (0..=2, 3) => src.read_u16_le().await? as u64 | (src.read_u8().await? as u64) << 16,
             (3..=4, 4) => src.read_u32_le().await? as u64,
-            (5..=7, 5) => src.read_u32_le().await? as u64 | (read_u8(src).await? as u64) << 32,
+            (5..=7, 5) => src.read_u32_le().await? as u64 | (src.read_u8().await? as u64) << 32,
             _ => {
                 return Err(crate::Error::Protocol(
                     format!("timen: invalid length {}", n).into(),
@@ -370,7 +370,7 @@ impl DateTimeOffset {
     where
         R: SqlReadBytes + Unpin,
     {
-        let rlen = read_u8(src).await? - 5;
+        let rlen = src.read_u8().await? - 5;
         let datetime2 = DateTime2::decode(src, n, rlen as usize).await?;
         let offset = src.read_i16_le().await?;
 
