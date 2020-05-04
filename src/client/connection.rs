@@ -7,7 +7,7 @@ use crate::{
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
-            PreloginMessage,
+            PreloginMessage, TokenDone
         },
         stream::TokenStream,
         Context, HEADER_BYTES,
@@ -109,13 +109,24 @@ impl Connection {
             LoginResult::Ok => (),
             #[cfg(windows)]
             LoginResult::Windows(client) => {
-                connection.windows_auth(client).await?;
+                connection.windows_postlogin(client).await?;
             }
         }
 
-        TokenStream::new(&mut connection).flush_done().await?;
+        connection.flush_done().await?;
 
         Ok(connection)
+    }
+
+    /// Flush the incoming token stream until receiving `DONE` token.
+    async fn flush_done(&mut self) -> crate::Result<TokenDone> {
+        TokenStream::new(self).flush_done().await
+    }
+
+    #[cfg(windows)]
+    /// Flush the incoming token stream until receiving `SSPI` token.
+    async fn flush_sspi(&mut self) -> crate::Result<TokenSSPI> {
+        TokenStream::new(self).flush_sspi().await
     }
 
     #[cfg(feature = "tls")]
@@ -349,8 +360,8 @@ impl Connection {
 
     /// Performs needed handshakes for Windows-based authentications.
     #[cfg(windows)]
-    async fn windows_auth<'a>(&'a mut self, mut client: Box<dyn NextBytes>) -> crate::Result<()> {
-        let sspi_bytes = TokenStream::new(self).flush_sspi().await?;
+    async fn windows_postlogin(&mut self, mut client: Box<dyn NextBytes>) -> crate::Result<()> {
+        let sspi_bytes = self.flush_sspi().await?;
 
         match client.next_bytes(Some(sspi_bytes.as_ref()))? {
             Some(sspi_response) => {
