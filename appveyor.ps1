@@ -1,3 +1,5 @@
+Import-Module 'sqlps'
+
 [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
 [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.SqlWmiManagement") | Out-Null
 
