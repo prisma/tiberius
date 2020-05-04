@@ -9,10 +9,12 @@ $regInstance = $args[1]
 
 $smo = 'Microsoft.SqlServer.Management.Smo.'
 $wmi = new-object ($smo + 'Wmi.ManagedComputer')
+$wmi
 
 # Enable TCP/IP
 echo "Enabling TCP/IP"
 $uri = "ManagedComputer[@Name='$serverName']/ ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']"
+$uri
 $Tcp = $wmi.GetSmoObject($uri)
 $Tcp.IsEnabled = $true
 $Tcp.alter()
