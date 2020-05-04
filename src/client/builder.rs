@@ -494,7 +494,7 @@ mod tests {
         let ado = AdoNetString::parse(test_str)?;
 
         assert_eq!(
-            AuthMethod::::windows("Musti", "Naukio"),
+            AuthMethod::windows("Musti", "Naukio"),
             ado.authentication()?
         );
 
