@@ -103,37 +103,42 @@ impl PartialEq for Numeric {
     }
 }
 
-#[test]
-fn test_numeric_eq() {
-    assert_eq!(
-        Numeric {
-            value: 100501,
-            scale: 2
-        },
-        Numeric {
-            value: 1005010,
-            scale: 3
-        }
-    );
-    assert!(
-        Numeric {
-            value: 100501,
-            scale: 2
-        } != Numeric {
-            value: 10050,
-            scale: 1
-        }
-    );
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_numeric_to_f64() {
-    assert_eq!(f64::from(Numeric::new_with_scale(57705, 2)), 577.05);
-}
+    #[test]
+    fn numeric_eq() {
+        assert_eq!(
+            Numeric {
+                value: 100501,
+                scale: 2
+            },
+            Numeric {
+                value: 1005010,
+                scale: 3
+            }
+        );
+        assert!(
+            Numeric {
+                value: 100501,
+                scale: 2
+            } != Numeric {
+                value: 10050,
+                scale: 1
+            }
+        );
+    }
 
-#[test]
-fn test_numeric_to_int_dec_part() {
-    let n = Numeric::new_with_scale(57705, 2);
-    assert_eq!(n.int_part(), 577);
-    assert_eq!(n.dec_part(), 05);
+    #[test]
+    fn numeric_to_f64() {
+        assert_eq!(f64::from(Numeric::new_with_scale(57705, 2)), 577.05);
+    }
+
+    #[test]
+    fn numeric_to_int_dec_part() {
+        let n = Numeric::new_with_scale(57705, 2);
+        assert_eq!(n.int_part(), 577);
+        assert_eq!(n.dec_part(), 05);
+    }
 }

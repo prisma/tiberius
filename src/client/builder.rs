@@ -342,7 +342,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_server_parsing_no_browser() -> crate::Result<()> {
+    fn server_parsing_no_browser() -> crate::Result<()> {
         let test_str = "server=tcp:my-server.com,4200";
         let ado = AdoNetString::parse(test_str)?;
         let server = ado.server()?;
@@ -355,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn test_server_parsing_no_tcp() -> crate::Result<()> {
+    fn server_parsing_no_tcp() -> crate::Result<()> {
         let test_str = "server=my-server.com,4200";
         let ado = AdoNetString::parse(test_str)?;
         let server = ado.server()?;
@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn test_server_parsing_with_browser() -> crate::Result<()> {
+    fn server_parsing_with_browser() -> crate::Result<()> {
         let test_str = "server=tcp:my-server.com\\TIBERIUS";
         let ado = AdoNetString::parse(test_str)?;
         let server = ado.server()?;
@@ -381,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn test_server_parsing_with_browser_and_port() -> crate::Result<()> {
+    fn server_parsing_with_browser_and_port() -> crate::Result<()> {
         let test_str = "server=tcp:my-server.com\\TIBERIUS,666";
         let ado = AdoNetString::parse(test_str)?;
         let server = ado.server()?;
@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn test_database_parsing() -> crate::Result<()> {
+    fn database_parsing() -> crate::Result<()> {
         let test_str = "database=Foo";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -404,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trust_cert_parsing_true() -> crate::Result<()> {
+    fn trust_cert_parsing_true() -> crate::Result<()> {
         let test_str = "TrustServerCertificate=true";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -414,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trust_cert_parsing_false() -> crate::Result<()> {
+    fn trust_cert_parsing_false() -> crate::Result<()> {
         let test_str = "TrustServerCertificate=false";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -424,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trust_cert_parsing_yes() -> crate::Result<()> {
+    fn trust_cert_parsing_yes() -> crate::Result<()> {
         let test_str = "TrustServerCertificate=yes";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trust_cert_parsing_no() -> crate::Result<()> {
+    fn trust_cert_parsing_no() -> crate::Result<()> {
         let test_str = "TrustServerCertificate=no";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -444,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trust_cert_parsing_missing() -> crate::Result<()> {
+    fn trust_cert_parsing_missing() -> crate::Result<()> {
         let test_str = "Something=foo;";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -454,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trust_cert_parsing_faulty() -> crate::Result<()> {
+    fn trust_cert_parsing_faulty() -> crate::Result<()> {
         let test_str = "TrustServerCertificate=musti;";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -464,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_sql_server_authentication() -> crate::Result<()> {
+    fn parsing_sql_server_authentication() -> crate::Result<()> {
         let test_str = "uid=Musti; pwd=Naukio;";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
-    fn test_parsing_sspi_authentication() -> crate::Result<()> {
+    fn parsing_sspi_authentication() -> crate::Result<()> {
         let test_str = "IntegratedSecurity=SSPI";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
-    fn test_parsing_windows_authentication() -> crate::Result<()> {
+    fn parsing_windows_authentication() -> crate::Result<()> {
         let test_str = "uid=Musti;pwd=Naukio; IntegratedSecurity=SSPI;";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -502,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_database() -> crate::Result<()> {
+    fn parsing_database() -> crate::Result<()> {
         let test_str = "database=Cats";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "tls")]
-    fn test_encryption_parsing_on() -> crate::Result<()> {
+    fn encryption_parsing_on() -> crate::Result<()> {
         let test_str = "encrypt=true";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "tls")]
-    fn test_encryption_parsing_off() -> crate::Result<()> {
+    fn encryption_parsing_off() -> crate::Result<()> {
         let test_str = "encrypt=false";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "tls")]
-    fn test_encryption_parsing_missing() -> crate::Result<()> {
+    fn encryption_parsing_missing() -> crate::Result<()> {
         let test_str = "";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "tls"))]
-    fn test_encryption_parsing_on() -> crate::Result<()> {
+    fn encryption_parsing_on() -> crate::Result<()> {
         let test_str = "encrypt=true";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "tls"))]
-    fn test_encryption_parsing_off() -> crate::Result<()> {
+    fn encryption_parsing_off() -> crate::Result<()> {
         let test_str = "encrypt=false";
         let ado = AdoNetString::parse(test_str)?;
 
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "tls"))]
-    fn test_encryption_parsing_missing() -> crate::Result<()> {
+    fn encryption_parsing_missing() -> crate::Result<()> {
         let test_str = "";
         let ado = AdoNetString::parse(test_str)?;
 

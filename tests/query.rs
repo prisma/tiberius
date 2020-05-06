@@ -24,7 +24,7 @@ async fn connect() -> Result<Client> {
 
 #[cfg(feature = "tls")]
 #[tokio::test]
-async fn test_conn_full_encryption() -> Result<()> {
+async fn connect_with_full_encryption() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
@@ -57,7 +57,7 @@ async fn connect_to_named_instance() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_kanji_varchars() -> Result<()> {
+async fn read_and_write_kanji_varchars() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestKanji (content NVARCHAR(max))", &[])
@@ -88,7 +88,7 @@ async fn test_kanji_varchars() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_finnish_varchars() -> Result<()> {
+async fn read_and_write_finnish_varchars() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestFinnish (content NVARCHAR(max))", &[])
@@ -118,7 +118,7 @@ async fn test_finnish_varchars() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_execute() -> Result<()> {
+async fn execute_insert_update_delete() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestExecute (id int)", &[])
@@ -155,7 +155,7 @@ async fn test_execute() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_execute_multiple_separate_results() -> Result<()> {
+async fn execute_with_multiple_separate_results() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestExecuteMultiple1 (id int)", &[])
@@ -175,7 +175,7 @@ async fn test_execute_multiple_separate_results() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_execute_multiple_total() -> Result<()> {
+async fn execute_multiple_count_total() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestExecuteMultiple2 (id int)", &[])
@@ -195,7 +195,7 @@ async fn test_execute_multiple_total() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_correct_row_handling_when_not_enough_data() -> Result<()> {
+async fn correct_row_handling_when_not_enough_data() -> Result<()> {
     let mut conn = connect().await?;
 
     let mut stream = conn
@@ -226,7 +226,7 @@ async fn test_correct_row_handling_when_not_enough_data() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_stored_procedure_multiple_sp() -> Result<()> {
+async fn multiple_stored_procedure_functions() -> Result<()> {
     let mut conn = connect().await?;
     let mut stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'; EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1'", &[]).await?;
 
@@ -246,7 +246,7 @@ async fn test_stored_procedure_multiple_sp() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_stored_procedure_multiple() -> Result<()> {
+async fn multiple_queries() -> Result<()> {
     let mut conn = connect().await?;
 
     let mut stream = conn
@@ -280,7 +280,7 @@ async fn test_stored_procedure_multiple() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_bool() -> Result<()> {
+async fn bool_type() -> Result<()> {
     let mut conn = connect().await?;
     let mut stream = conn.query("SELECT @P1, @P2", &[&false, &false]).await?;
     let mut rows: Vec<bool> = Vec::with_capacity(2);
@@ -296,7 +296,7 @@ async fn test_type_bool() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_i8() -> Result<()> {
+async fn i8_token() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&-4i8]).await?;
 
@@ -306,7 +306,7 @@ async fn test_type_i8() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_i16() -> Result<()> {
+async fn i16_token() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&-4i16]).await?;
 
@@ -316,7 +316,7 @@ async fn test_type_i16() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_i32() -> Result<()> {
+async fn i32_token() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
 
@@ -326,7 +326,7 @@ async fn test_type_i32() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_i64() -> Result<()> {
+async fn i64_token() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&-4i64]).await?;
 
@@ -336,7 +336,7 @@ async fn test_type_i64() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_f32() -> Result<()> {
+async fn f32_token() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&4.20f32]).await?;
 
@@ -346,7 +346,7 @@ async fn test_type_f32() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_f64() -> Result<()> {
+async fn f64_token() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&4.20f64]).await?;
 
@@ -356,7 +356,7 @@ async fn test_type_f64() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_short_string() -> Result<()> {
+async fn short_strings() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn.query("SELECT @P1", &[&"Hallo"]).await?;
 
@@ -366,7 +366,7 @@ async fn test_type_short_string() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_type_long_string() -> Result<()> {
+async fn long_strings() -> Result<()> {
     let mut conn = connect().await?;
     let string = "a".repeat(4001);
     let stream = conn.query("SELECT @P1", &[&string.as_str()]).await?;
@@ -376,41 +376,8 @@ async fn test_type_long_string() -> Result<()> {
     Ok(())
 }
 
-// TODO: Flaky
-/*
 #[tokio::test]
-async fn test_prepared_select_reexecute() -> Result<()> {
-    let conn = connect().await?;
-
-    let sql = (0..10).map(|_| "").collect::<Vec<_>>().join(" UNION ALL ");
-
-    let stmt = conn.prepare(&sql).await?;
-    for _ in 0..3 {
-        let stream = conn.query(&stmt, &[]).await?;
-        let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
-        assert_eq!(rows?, vec![1; 10]);
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_unprepare() -> Result<()> {
-    let conn = connect().await?;
-    // This forces the statement to be dropped, which leads to a reprepare
-    for _ in 0..20 {
-        let stmt = conn.prepare("SELECT 42").await?;
-        for _ in 0..3 {
-            let stream = conn.query(&stmt, &[]).await?;
-            let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
-            assert_eq!(rows?, vec![42]);
-        }
-    }
-    Ok(())
-}
-*/
-
-#[tokio::test]
-async fn test_stored_procedure() -> Result<()> {
+async fn stored_procedures() -> Result<()> {
     let mut conn = connect().await?;
     let stream = conn
         .query(
@@ -424,7 +391,7 @@ async fn test_stored_procedure() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_drop_stream_before_handling_all_results() -> Result<()> {
+async fn drop_stream_before_handling_all_results_should_not_cause_weird_things() -> Result<()> {
     let mut conn = connect().await?;
 
     {
@@ -453,7 +420,7 @@ async fn test_drop_stream_before_handling_all_results() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_nbc_row() -> Result<()> {
+async fn nbc_rows() -> Result<()> {
     let mut conn = connect().await?;
 
     let mut stream = conn
@@ -493,7 +460,7 @@ async fn test_nbc_row() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_ntext() -> Result<()> {
+async fn ntext_type() -> Result<()> {
     let mut conn = connect().await?;
 
     let string = r#"Hääpuhetta voi värittää kertomalla vitsejä, aforismeja,
@@ -520,7 +487,7 @@ async fn test_ntext() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_ntext_empty() -> Result<()> {
+async fn ntext_empty() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestNTextEmpty (content NTEXT)", &[])
@@ -549,7 +516,7 @@ async fn test_ntext_empty() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_text() -> Result<()> {
+async fn text_type() -> Result<()> {
     let mut conn = connect().await?;
 
     let string = "a".repeat(10000);
@@ -576,7 +543,7 @@ async fn test_text() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_text_empty() -> Result<()> {
+async fn text_empty() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestTextEmpty (content TEXT)", &[])
@@ -605,7 +572,7 @@ async fn test_text_empty() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_varbinary_empty() -> Result<()> {
+async fn varbinary_empty() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute(
@@ -641,7 +608,7 @@ async fn test_varbinary_empty() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_binary() -> Result<()> {
+async fn binary_type() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##TestBinary (content BINARY(8000))", &[])
@@ -675,7 +642,7 @@ async fn test_binary() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_var_binary() -> Result<()> {
+async fn varbinary_type() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##VarBinary (content VARBINARY(8000))", &[])
@@ -709,7 +676,7 @@ async fn test_var_binary() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_guid() -> Result<()> {
+async fn guid_type() -> Result<()> {
     let mut conn = connect().await?;
 
     let id = Uuid::new_v4();
@@ -723,7 +690,7 @@ async fn test_guid() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_max_binary() -> Result<()> {
+async fn varbinary_max() -> Result<()> {
     let mut conn = connect().await?;
 
     conn.execute("CREATE TABLE ##MaxBinary (content VARBINARY(max))", &[])
@@ -758,7 +725,7 @@ async fn test_max_binary() -> Result<()> {
 
 #[tokio::test]
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn test_naive_small_date_time_tds73() -> Result<()> {
+async fn naive_small_date_time_tds73() -> Result<()> {
     use chrono::{NaiveDate, NaiveDateTime};
 
     let mut conn = connect().await?;
@@ -784,7 +751,7 @@ async fn test_naive_small_date_time_tds73() -> Result<()> {
 
 #[tokio::test]
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn test_naive_date_time2_tds73() -> Result<()> {
+async fn naive_date_time2_tds73() -> Result<()> {
     use chrono::{NaiveDate, NaiveDateTime};
 
     let mut conn = connect().await?;
@@ -810,7 +777,7 @@ async fn test_naive_date_time2_tds73() -> Result<()> {
 
 #[tokio::test]
 #[cfg(all(feature = "chrono", not(feature = "tds73")))]
-async fn test_naive_date_time_tds72() -> Result<()> {
+async fn naive_date_time_tds72() -> Result<()> {
     use chrono::{NaiveDate, NaiveDateTime};
 
     let mut conn = connect().await?;
@@ -829,7 +796,7 @@ async fn test_naive_date_time_tds72() -> Result<()> {
 
 #[tokio::test]
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn test_naive_time() -> Result<()> {
+async fn naive_time() -> Result<()> {
     use chrono::NaiveTime;
 
     let mut conn = connect().await?;
@@ -848,7 +815,7 @@ async fn test_naive_time() -> Result<()> {
 
 #[tokio::test]
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn test_naive_date() -> Result<()> {
+async fn naive_date() -> Result<()> {
     use chrono::NaiveDate;
 
     let mut conn = connect().await?;
@@ -867,7 +834,7 @@ async fn test_naive_date() -> Result<()> {
 
 #[tokio::test]
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn test_date_time_utc() -> Result<()> {
+async fn date_time_utc() -> Result<()> {
     use chrono::{offset::Utc, DateTime, NaiveDate};
 
     let mut conn = connect().await?;
@@ -887,7 +854,7 @@ async fn test_date_time_utc() -> Result<()> {
 
 #[tokio::test]
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn test_date_time_fixed() -> Result<()> {
+async fn date_time_fixed() -> Result<()> {
     use chrono::{offset::FixedOffset, DateTime, NaiveDate};
 
     let mut conn = connect().await?;
