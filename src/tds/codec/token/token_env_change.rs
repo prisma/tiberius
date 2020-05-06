@@ -1,4 +1,9 @@
-use crate::{tds::codec::read_varchar, Error, SqlReadBytes};
+use crate::{
+    tds::{codec::read_varchar, lcid_to_encoding, sortid_to_encoding},
+    Error, SqlReadBytes,
+};
+use encoding::Encoding;
+use fmt::Debug;
 use std::{convert::TryFrom, fmt};
 use tokio::io::AsyncReadExt;
 
@@ -29,24 +34,66 @@ uint_enum! {
     }
 }
 
+pub struct CollationInfo {
+    lcid_encoding: Option<&'static dyn Encoding>,
+    sortid_encoding: Option<&'static dyn Encoding>,
+}
+
+impl CollationInfo {
+    pub fn new(bytes: &[u8]) -> Self {
+        let lcid_encoding = match (bytes.get(0), bytes.get(1)) {
+            (Some(fst), Some(snd)) => lcid_to_encoding(u16::from_le_bytes([*fst, *snd])),
+            _ => None,
+        };
+
+        let sortid_encoding = match bytes.get(4) {
+            Some(byte) => sortid_to_encoding(*byte),
+            _ => None,
+        };
+
+        Self {
+            lcid_encoding,
+            sortid_encoding,
+        }
+    }
+}
+
+impl Debug for CollationInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+impl fmt::Display for CollationInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (self.lcid_encoding, self.sortid_encoding) {
+            (Some(lcid), Some(sortid)) => write!(f, "{}/{}", lcid.name(), sortid.name()),
+            _ => write!(f, "None"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum TokenEnvChange {
     Database(String, String),
     PacketSize(u32, u32),
-    SqlCollation(Vec<u8>, Vec<u8>),
+    SqlCollation {
+        old: CollationInfo,
+        new: CollationInfo,
+    },
 }
 
 impl fmt::Display for TokenEnvChange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Database(ref old, ref new) => {
-                write!(f, "Database change from '{}' to '{}'", new, old)
+                write!(f, "Database change from '{}' to '{}'", old, new)
             }
             Self::PacketSize(old, new) => {
-                write!(f, "Packet size change from '{}' to '{}'", new, old)
+                write!(f, "Packet size change from '{}' to '{}'", old, new)
             }
-            Self::SqlCollation(ref old, ref new) => {
-                write!(f, "SQL collation change from '{:?}' to '{:?}'", new, old)
+            Self::SqlCollation { old, new } => {
+                write!(f, "SQL collation change from {} to {}", old, new)
             }
         }
     }
@@ -91,7 +138,10 @@ impl TokenEnvChange {
                 let mut old_value = vec![0; len];
                 src.read_exact(&mut old_value[0..len]).await?;
 
-                TokenEnvChange::SqlCollation(new_value, old_value)
+                TokenEnvChange::SqlCollation {
+                    new: CollationInfo::new(new_value.as_slice()),
+                    old: CollationInfo::new(old_value.as_slice()),
+                }
             }
             ty => panic!("skipping env change type {:?}", ty),
         };
