@@ -95,9 +95,17 @@ impl BaseMetaDataColumn {
             }
             TypeInfo::VarLenSized(VarLenType::NText, _, _) => {
                 src.read_u8().await?;
+
                 // table name
                 let len = src.read_u16_le().await?;
                 read_varchar(src, len as usize).await?;
+            }
+            TypeInfo::VarLenSized(VarLenType::Image, _, _) => {
+                src.read_u8().await?;
+
+                // table name
+                let len = src.read_u16_le().await?;
+                read_varchar(src, len).await?;
             }
             _ => (),
         }

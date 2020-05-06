@@ -676,6 +676,40 @@ async fn varbinary_type() -> Result<()> {
 }
 
 #[tokio::test]
+async fn image_type() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.execute("CREATE TABLE ##ImageType (content IMAGE)", &[])
+        .await?;
+
+    let mut binary = vec![0; 79];
+    binary.push(5);
+
+    let inserted = conn
+        .execute(
+            "INSERT INTO ##ImageType (content) VALUES (@P1)",
+            &[&binary.as_slice()],
+        )
+        .await?
+        .total();
+
+    assert_eq!(1, inserted);
+
+    let mut stream = conn.query("SELECT content FROM ##ImageType", &[]).await?;
+
+    let mut rows: Vec<Vec<u8>> = Vec::new();
+    while let Some(row) = stream.try_next().await? {
+        let s: Vec<u8> = row.get::<_, Vec<u8>>(0);
+        rows.push(s);
+    }
+
+    assert_eq!(80, rows[0].len());
+    assert_eq!(binary, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn guid_type() -> Result<()> {
     let mut conn = connect().await?;
 
