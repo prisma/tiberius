@@ -7,7 +7,7 @@ use crate::{
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
-            PreloginMessage, TokenDone
+            PreloginMessage, TokenDone,
         },
         stream::TokenStream,
         Context, HEADER_BYTES,

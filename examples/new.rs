@@ -1,5 +1,5 @@
 use futures::TryStreamExt;
-use tiberius::{AuthMethod, Client};
+use tiberius::{xml::XmlData, AuthMethod, Client};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,10 +12,15 @@ async fn main() -> anyhow::Result<()> {
     builder.trust_cert();
 
     let mut conn = builder.build().await?;
-    let stream = conn.query("SELECT 1", &[]).await?;
 
-    let rows: Vec<_> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await?;
-    assert_eq!(1i32, rows[0]);
+    let xml = XmlData::new("<root><child attr = \"attr-value\"/></root>");
+    let stream = conn.query("SELECT @P1", &[&xml]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, XmlData>(0))
+        .try_collect()
+        .await?;
+
     dbg!(rows);
 
     Ok(())

@@ -1,4 +1,5 @@
-#[cfg(windows)] use crate::tds::codec::TokenSSPI;
+#[cfg(windows)]
+use crate::tds::codec::TokenSSPI;
 use crate::{
     client::Connection,
     tds::codec::{

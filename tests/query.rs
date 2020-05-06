@@ -2,7 +2,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{Client, ClientBuilder, Result};
+use tiberius::{xml::XmlData, Client, ClientBuilder, Result};
 use uuid::Uuid;
 
 static LOGGER_SETUP: Once = Once::new();
@@ -407,7 +407,7 @@ async fn drop_stream_before_handling_all_results_should_not_cause_weird_things()
             .try_collect()
             .await?;
 
-        assert_eq!("a".repeat(8000), res[0]);
+        assert_eq!(vec!["a".repeat(8000)], res);
     }
 
     {
@@ -870,5 +870,38 @@ async fn date_time_fixed() -> Result<()> {
         .await?;
 
     assert_eq!(dt, rows[0]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn xml_read_write() -> Result<()> {
+    let mut conn = connect().await?;
+
+    let xml = XmlData::new("<root><child attr=\"attr-value\"/></root>");
+    let stream = conn.query("SELECT @P1", &[&xml]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, XmlData>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(xml, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn xml_read_null_xml() -> Result<()> {
+    let mut conn = connect().await?;
+    let mut stream = conn.query("SELECT CAST(NULL AS XML)", &[]).await?;
+    let mut rows: Vec<Option<XmlData>> = Vec::new();
+
+    while let Some(row) = stream.try_next().await? {
+        let s: Option<XmlData> = row.try_get(0)?;
+        rows.push(s);
+    }
+
+    assert_eq!(None, rows[0]);
+
     Ok(())
 }

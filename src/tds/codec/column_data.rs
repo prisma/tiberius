@@ -2,11 +2,17 @@ use super::{read_varchar, Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::tds::{Collation, DateTime, SmallDateTime};
 #[cfg(feature = "tds73")]
 use crate::tds::{Date, DateTime2, DateTimeOffset, Time};
-use crate::{tds::Numeric, Error, SqlReadBytes};
+use crate::{
+    tds::{
+        xml::{XmlData, XmlSchema},
+        Numeric,
+    },
+    Error, SqlReadBytes,
+};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
@@ -24,6 +30,7 @@ pub enum ColumnData<'a> {
     Guid(Uuid),
     Binary(Cow<'a, [u8]>),
     Numeric(Numeric),
+    Xml(Cow<'a, XmlData>),
     DateTime(DateTime),
     SmallDateTime(SmallDateTime),
     #[cfg(feature = "tds73")]
@@ -114,6 +121,7 @@ impl<'a> ColumnData<'a> {
                 }
                 _ => todo!(),
             },
+            TypeInfo::Xml { schema, size } => Self::decode_xml(src, *size, schema.clone()).await?,
         };
 
         Ok(res)
@@ -226,10 +234,14 @@ impl<'a> ColumnData<'a> {
             VarLenType::Floatn => Self::decode_float(src).await?,
             VarLenType::Guid => Self::decode_guid(src).await?,
             VarLenType::NChar | VarLenType::NVarchar => {
-                Self::decode_variable_string(src, ty, len).await?
+                match Self::decode_variable_string(src, ty, len).await? {
+                    Some(s) => ColumnData::String(s.into()),
+                    None => ColumnData::None,
+                }
             }
             VarLenType::BigVarChar => Self::decode_big_varchar(src, len, collation).await?,
             VarLenType::Money => Self::decode_money(src).await?,
+
             VarLenType::Datetimen => {
                 let len = src.read_u8().await?;
                 Self::decode_datetimen(src, len).await?
@@ -265,158 +277,31 @@ impl<'a> ColumnData<'a> {
 
         Ok(res)
     }
-}
 
-impl<'a> Encode<BytesMut> for ColumnData<'a> {
-    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        match self {
-            ColumnData::Bit(val) => {
-                let header = [&[VarLenType::Bitn as u8, 1, 1][..]].concat();
+    async fn decode_xml<R>(
+        src: &mut R,
+        len: usize,
+        schema: Option<Arc<XmlSchema>>,
+    ) -> crate::Result<ColumnData<'a>>
+    where
+        R: SqlReadBytes + Unpin,
+    {
+        let res = match Self::decode_variable_string(src, VarLenType::Xml, len).await? {
+            Some(data) => {
+                let mut data = XmlData::new(data);
 
-                dst.extend_from_slice(&header);
-                dst.put_u8(val as u8);
-            }
-            ColumnData::I8(val) => {
-                let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
-
-                dst.extend_from_slice(&header);
-                dst.put_i8(val);
-            }
-            ColumnData::I16(val) => {
-                let header = [&[VarLenType::Intn as u8, 2, 2][..]].concat();
-
-                dst.extend_from_slice(&header);
-                dst.put_i16_le(val);
-            }
-            ColumnData::I32(val) => {
-                let header = [&[VarLenType::Intn as u8, 4, 4][..]].concat();
-
-                dst.extend_from_slice(&header);
-                dst.put_i32_le(val);
-            }
-            ColumnData::I64(val) => {
-                let header = [&[VarLenType::Intn as u8, 8, 8][..]].concat();
-
-                dst.extend_from_slice(&header);
-                dst.put_i64_le(val);
-            }
-            ColumnData::F32(val) => {
-                let header = [&[VarLenType::Floatn as u8, 4, 4][..]].concat();
-
-                dst.extend_from_slice(&header);
-                dst.put_f32_le(val);
-            }
-            ColumnData::F64(val) => {
-                let header = [&[VarLenType::Floatn as u8, 8, 8][..]].concat();
-
-                dst.extend_from_slice(&header);
-                dst.put_f64_le(val);
-            }
-            ColumnData::Guid(uuid) => {
-                let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
-
-                dst.extend_from_slice(&header);
-                dst.extend_from_slice(uuid.as_bytes());
-            }
-            ColumnData::String(ref s) if s.len() <= 4000 => {
-                dst.put_u8(VarLenType::NVarchar as u8);
-                dst.put_u16_le(8000);
-                dst.extend_from_slice(&[0u8; 5][..]);
-
-                dst.put_u16_le(2 * s.encode_utf16().count() as u16);
-
-                for chr in s.encode_utf16() {
-                    dst.put_u16_le(chr);
-                }
-            }
-            ColumnData::String(ref s) => {
-                // length: 0xffff and raw collation
-                dst.put_u8(VarLenType::NVarchar as u8);
-                dst.extend_from_slice(&[0xff as u8; 2][..]);
-                dst.extend_from_slice(&[0u8; 5][..]);
-
-                // we cannot cheaply predetermine the length of the UCS2 string beforehand
-                // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
-                dst.put_u64_le(0xfffffffffffffffe as u64);
-
-                // Write the varchar length
-                dst.put_u32_le(2 * s.encode_utf16().count() as u32);
-
-                // And the PLP data
-                for chr in s.encode_utf16() {
-                    dst.put_u16_le(chr);
+                if let Some(schema) = schema {
+                    data.set_schema(schema);
                 }
 
-                // PLP_TERMINATOR
-                dst.put_u32_le(0);
+                ColumnData::Xml(Cow::Owned(data))
             }
-            ColumnData::None => {
-                dst.put_u8(FixedLenType::Null as u8);
-            }
-            ColumnData::Binary(bytes) if bytes.len() <= 8000 => {
-                dst.put_u8(VarLenType::BigVarBin as u8);
-                dst.put_u16_le(8000);
-                dst.put_u16_le(bytes.len() as u16);
-                dst.extend(bytes.into_owned());
-            }
-            ColumnData::Binary(bytes) => {
-                dst.put_u8(VarLenType::BigVarBin as u8);
-                // Max length
-                dst.put_u16_le(0xffff as u16);
-                // Also the length is unknown
-                dst.put_u64_le(0xfffffffffffffffe as u64);
-                // We'll write in one chunk, length is the whole bytes length
-                dst.put_u32_le(bytes.len() as u32);
-                // Payload
-                dst.extend(bytes.into_owned());
-                // PLP_TERMINATOR
-                dst.put_u32_le(0);
-            }
-            ColumnData::DateTime(dt) => {
-                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 8, 8]);
-                dt.encode(dst)?;
-            }
-            ColumnData::SmallDateTime(dt) => {
-                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 4, 4]);
-                dt.encode(dst)?;
-            }
-            #[cfg(feature = "tds73")]
-            ColumnData::Time(time) => {
-                dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale(), time.len()?]);
+            None => ColumnData::None,
+        };
 
-                time.encode(dst)?;
-            }
-            #[cfg(feature = "tds73")]
-            ColumnData::Date(date) => {
-                dst.extend_from_slice(&[VarLenType::Daten as u8, 3]);
-                date.encode(dst)?;
-            }
-            #[cfg(feature = "tds73")]
-            ColumnData::DateTime2(dt) => {
-                let len = dt.time().len()? + 3;
-
-                dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time().scale(), len]);
-
-                dt.encode(dst)?;
-            }
-            #[cfg(feature = "tds73")]
-            ColumnData::DateTimeOffset(dto) => {
-                dst.extend_from_slice(&[
-                    VarLenType::DatetimeOffsetn as u8,
-                    dto.datetime2().time().scale(),
-                    dto.datetime2().time().len()? + 5,
-                ]);
-
-                dto.encode(dst)?;
-            }
-            ColumnData::Numeric(_) => todo!(),
-        }
-
-        Ok(())
+        Ok(res)
     }
-}
 
-impl<'a> ColumnData<'a> {
     #[cfg(feature = "tds73")]
     async fn decode_date<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
     where
@@ -588,7 +473,7 @@ impl<'a> ColumnData<'a> {
         src: &mut R,
         ty: VarLenType,
         len: usize,
-    ) -> crate::Result<ColumnData<'static>>
+    ) -> crate::Result<Option<String>>
     where
         R: SqlReadBytes + Unpin,
     {
@@ -606,11 +491,9 @@ impl<'a> ColumnData<'a> {
             }
 
             let buf: Vec<_> = buf.chunks(2).map(LittleEndian::read_u16).collect();
-            let s = String::from_utf16(&buf)?;
-
-            ColumnData::String(s.into())
+            Some(String::from_utf16(&buf)?)
         } else {
-            ColumnData::None
+            None
         };
 
         Ok(res)
@@ -741,5 +624,158 @@ impl<'a> ColumnData<'a> {
         }
 
         Ok(read_state.data.take())
+    }
+}
+
+impl<'a> Encode<BytesMut> for ColumnData<'a> {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        match self {
+            ColumnData::Bit(val) => {
+                let header = [&[VarLenType::Bitn as u8, 1, 1][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.put_u8(val as u8);
+            }
+            ColumnData::I8(val) => {
+                let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.put_i8(val);
+            }
+            ColumnData::I16(val) => {
+                let header = [&[VarLenType::Intn as u8, 2, 2][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.put_i16_le(val);
+            }
+            ColumnData::I32(val) => {
+                let header = [&[VarLenType::Intn as u8, 4, 4][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.put_i32_le(val);
+            }
+            ColumnData::I64(val) => {
+                let header = [&[VarLenType::Intn as u8, 8, 8][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.put_i64_le(val);
+            }
+            ColumnData::F32(val) => {
+                let header = [&[VarLenType::Floatn as u8, 4, 4][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.put_f32_le(val);
+            }
+            ColumnData::F64(val) => {
+                let header = [&[VarLenType::Floatn as u8, 8, 8][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.put_f64_le(val);
+            }
+            ColumnData::Guid(uuid) => {
+                let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
+
+                dst.extend_from_slice(&header);
+                dst.extend_from_slice(uuid.as_bytes());
+            }
+            ColumnData::String(ref s) if s.len() <= 4000 => {
+                dst.put_u8(VarLenType::NVarchar as u8);
+                dst.put_u16_le(8000);
+                dst.extend_from_slice(&[0u8; 5][..]);
+
+                dst.put_u16_le(2 * s.encode_utf16().count() as u16);
+
+                for chr in s.encode_utf16() {
+                    dst.put_u16_le(chr);
+                }
+            }
+            ColumnData::String(ref s) => {
+                // length: 0xffff and raw collation
+                dst.put_u8(VarLenType::NVarchar as u8);
+                dst.extend_from_slice(&[0xff as u8; 2][..]);
+                dst.extend_from_slice(&[0u8; 5][..]);
+
+                // we cannot cheaply predetermine the length of the UCS2 string beforehand
+                // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
+                dst.put_u64_le(0xfffffffffffffffe as u64);
+
+                // Write the varchar length
+                dst.put_u32_le(2 * s.encode_utf16().count() as u32);
+
+                // And the PLP data
+                for chr in s.encode_utf16() {
+                    dst.put_u16_le(chr);
+                }
+
+                // PLP_TERMINATOR
+                dst.put_u32_le(0);
+            }
+            ColumnData::None => {
+                dst.put_u8(FixedLenType::Null as u8);
+            }
+            ColumnData::Binary(bytes) if bytes.len() <= 8000 => {
+                dst.put_u8(VarLenType::BigVarBin as u8);
+                dst.put_u16_le(8000);
+                dst.put_u16_le(bytes.len() as u16);
+                dst.extend(bytes.into_owned());
+            }
+            ColumnData::Binary(bytes) => {
+                dst.put_u8(VarLenType::BigVarBin as u8);
+                // Max length
+                dst.put_u16_le(0xffff as u16);
+                // Also the length is unknown
+                dst.put_u64_le(0xfffffffffffffffe as u64);
+                // We'll write in one chunk, length is the whole bytes length
+                dst.put_u32_le(bytes.len() as u32);
+                // Payload
+                dst.extend(bytes.into_owned());
+                // PLP_TERMINATOR
+                dst.put_u32_le(0);
+            }
+            ColumnData::DateTime(dt) => {
+                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 8, 8]);
+                dt.encode(dst)?;
+            }
+            ColumnData::SmallDateTime(dt) => {
+                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 4, 4]);
+                dt.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::Time(time) => {
+                dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale(), time.len()?]);
+
+                time.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::Date(date) => {
+                dst.extend_from_slice(&[VarLenType::Daten as u8, 3]);
+                date.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::DateTime2(dt) => {
+                let len = dt.time().len()? + 3;
+
+                dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time().scale(), len]);
+
+                dt.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            ColumnData::DateTimeOffset(dto) => {
+                dst.extend_from_slice(&[
+                    VarLenType::DatetimeOffsetn as u8,
+                    dto.datetime2().time().scale(),
+                    dto.datetime2().time().len()? + 5,
+                ]);
+
+                dto.encode(dst)?;
+            }
+            ColumnData::Xml(xml) => {
+                dst.put_u8(VarLenType::Xml as u8);
+                xml.into_owned().encode(dst)?;
+            }
+            ColumnData::Numeric(_) => todo!(),
+        }
+
+        Ok(())
     }
 }

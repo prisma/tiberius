@@ -3,6 +3,7 @@ mod collation;
 pub mod numeric;
 pub mod stream;
 pub mod time;
+pub mod xml;
 
 pub(crate) use collation::*;
 pub(crate) use numeric::*;

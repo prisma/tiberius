@@ -1,4 +1,4 @@
-use crate::tds::codec::ColumnData;
+use crate::{tds::codec::ColumnData, xml::XmlData};
 use std::borrow::Cow;
 use uuid::Uuid;
 
@@ -140,5 +140,11 @@ impl ToSql for Option<Vec<u8>> {
             }
             None => ("VARBINARY(8000)", ColumnData::None),
         }
+    }
+}
+
+impl ToSql for XmlData {
+    fn to_sql(&self) -> (&'static str, ColumnData) {
+        ("xml", ColumnData::Xml(Cow::Borrowed(self)))
     }
 }

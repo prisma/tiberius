@@ -13,7 +13,9 @@ pub(crate) struct PreparedStream<'a> {
 }
 
 impl<'a> PreparedStream<'a> {
-    pub fn new(token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>) -> Self {
+    pub fn new(
+        token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
+    ) -> Self {
         Self {
             token_stream,
             read_ahead: None,
