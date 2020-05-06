@@ -272,6 +272,7 @@ impl<'a> ColumnData<'a> {
             VarLenType::BigBinary | VarLenType::BigVarBin => Self::decode_binary(src, len).await?,
             VarLenType::Text => Self::decode_text(src).await?,
             VarLenType::NText => Self::decode_ntext(src).await?,
+            VarLenType::Image => Self::decode_image(src).await?,
             t => unimplemented!("{:?}", t),
         };
 
@@ -466,6 +467,28 @@ impl<'a> ColumnData<'a> {
             let text = read_varchar(src, text_len).await?;
 
             Ok(ColumnData::String(text.into()))
+        }
+    }
+
+    async fn decode_image<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    where
+        R: SqlReadBytes + Unpin,
+    {
+        let ptr_len = src.read_u8().await? as usize;
+
+        if ptr_len == 0 {
+            Ok(ColumnData::None)
+        } else {
+            let _ = src.read_exact(&mut vec![0; ptr_len][0..ptr_len]).await?; // text ptr
+
+            src.read_i32_le().await?; // days
+            src.read_u32_le().await?; // second fractions
+
+            let len = src.read_u32_le().await? as usize;
+            let mut buf = vec![0; len];
+            src.read_exact(&mut buf[0..len]).await?;
+
+            Ok(ColumnData::Binary(buf.into()))
         }
     }
 
