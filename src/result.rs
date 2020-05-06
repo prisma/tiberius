@@ -86,6 +86,7 @@ impl<'a> QueryResult<'a> {
         token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
     ) -> Self {
         let stream = QueryStream::new(token_stream);
+
         Self { stream }
     }
 
@@ -225,15 +226,19 @@ pub struct ExecuteResult {
 impl<'a> ExecuteResult {
     pub(crate) async fn new(connection: &'a mut Connection) -> crate::Result<Self> {
         let token_stream = TokenStream::new(connection).try_unfold();
-        let rows_affected = token_stream.try_fold(Vec::new(), |mut acc, token| async move {
-            match token {
-                ReceivedToken::DoneProc(done) if done.status.contains(DoneStatus::FINAL) => (),
-                ReceivedToken::DoneProc(done) => acc.push(done.done_rows),
-                ReceivedToken::DoneInProc(done) => acc.push(done.done_rows),
-                _ => (),
-            }
-            Ok(acc)
-        }).await?;
+
+        let rows_affected = token_stream
+            .try_fold(Vec::new(), |mut acc, token| async move {
+                match token {
+                    ReceivedToken::DoneProc(done) if done.status.contains(DoneStatus::FINAL) => (),
+                    ReceivedToken::DoneProc(done) => acc.push(done.done_rows),
+                    ReceivedToken::DoneInProc(done) => acc.push(done.done_rows),
+                    _ => (),
+                }
+                Ok(acc)
+            })
+            .await?;
+
         Ok(Self { rows_affected })
     }
 
@@ -267,6 +272,7 @@ impl<'a> ExecuteResult {
 impl IntoIterator for ExecuteResult {
     type Item = u64;
     type IntoIter = std::vec::IntoIter<Self::Item>;
+
     fn into_iter(self) -> Self::IntoIter {
         self.rows_affected.into_iter()
     }

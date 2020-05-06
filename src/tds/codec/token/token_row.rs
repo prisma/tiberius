@@ -55,6 +55,15 @@ impl RowBitmap {
     }
 }
 
+impl IntoIterator for TokenRow {
+    type Item = ColumnData<'static>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.columns.into_iter()
+    }
+}
+
 impl TokenRow {
     /// Normal row. We'll read the metadata what we've cached and parse columns
     /// based on that.

@@ -132,11 +132,14 @@ impl Client {
     /// handle the results correctly.
     ///
     /// [`ExecuteResult`]: struct.ExecuteResult.html
-    pub async fn execute<'b, 'a: 'b>(
+    pub async fn execute<'a, 'b>(
         &'a mut self,
-        query: impl Into<Cow<'_, str>>,
+        query: impl Into<Cow<'b, str>>,
         params: &'b [&'b dyn ToSql],
-    ) -> crate::Result<ExecuteResult> {
+    ) -> crate::Result<ExecuteResult>
+    where
+        'a: 'b,
+    {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
@@ -173,7 +176,7 @@ impl Client {
     /// [`QueryResult`]: struct.QueryResult.html
     pub async fn query<'a, 'b>(
         &'a mut self,
-        query: impl Into<Cow<'a, str>>,
+        query: impl Into<Cow<'b, str>>,
         params: &'b [&'b dyn ToSql],
     ) -> crate::Result<QueryResult<'a>>
     where

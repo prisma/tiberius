@@ -1,5 +1,5 @@
-use crate::{tds::Collation, Error, SqlReadBytes};
-use std::convert::TryFrom;
+use crate::{tds::Collation, xml::XmlSchema, Error, SqlReadBytes};
+use std::{convert::TryFrom, sync::Arc};
 use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
@@ -11,6 +11,10 @@ pub enum TypeInfo {
         size: usize,
         precision: u8,
         scale: u8,
+    },
+    Xml {
+        schema: Option<Arc<XmlSchema>>,
+        size: usize,
     },
 }
 
@@ -93,6 +97,29 @@ impl TypeInfo {
                     format!("invalid or unsupported column type: {:?}", ty).into(),
                 ))
             }
+            Ok(ty) if ty == VarLenType::Xml => {
+                let has_schema = src.read_u8().await?;
+
+                let schema = if has_schema == 1 {
+                    let len = src.read_u8().await?;
+                    let db_name = super::read_varchar(src, len).await?;
+
+                    let len = src.read_u8().await?;
+                    let owner = super::read_varchar(src, len).await?;
+
+                    let len = src.read_u16_le().await?;
+                    let collection = super::read_varchar(src, len).await?;
+
+                    Some(Arc::new(XmlSchema::new(db_name, owner, collection)))
+                } else {
+                    None
+                };
+
+                Ok(TypeInfo::Xml {
+                    schema,
+                    size: 0xfffffffffffffffe as usize,
+                })
+            }
             Ok(ty) => {
                 let len = match ty {
                     VarLenType::Bitn
@@ -113,7 +140,7 @@ impl TypeInfo {
                     | VarLenType::BigVarBin => src.read_u16_le().await? as usize,
                     VarLenType::Daten => 3,
                     VarLenType::Text | VarLenType::NText => src.read_u32_le().await? as usize,
-                    _ => todo!("not yet implemented for {:?}", ty),
+                    _ => todo!("{:?}", ty),
                 };
 
                 let collation = match ty {

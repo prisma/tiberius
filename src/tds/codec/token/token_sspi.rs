@@ -1,4 +1,4 @@
-use crate::{tds::codec::Encode, sql_read_bytes::SqlReadBytes};
+use crate::{sql_read_bytes::SqlReadBytes, tds::codec::Encode};
 use bytes::BytesMut;
 use tokio::io::AsyncReadExt;
 
