@@ -1,4 +1,6 @@
 # Tiberius
+[![crates.io](https://meritbadge.herokuapp.com/tiberius)](https://crates.io/crates/tiberius)
+[![docs.rs](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)
 [![Build status](https://badge.buildkite.com/172053d935f64a275beca911ab20bad34e7597775ce024469d.svg)](https://buildkite.com/prisma/tiberius)
 [![Build status](https://ci.appveyor.com/api/projects/status/vr39e8qd42n3yf0i/branch/master?svg=true)](https://ci.appveyor.com/project/pimeys/tiberius/branch/master)
 
@@ -27,6 +29,7 @@ We also have our [Discord server](https://discord.gg/jxC2vH) for dev chat.
 ### Documentation
 
 - [Master](https://prisma.github.io/tiberius/tiberius/index.html)
+- [Released](https://docs.rs/tiberius)
 
 The system should work with the Docker and Azure versions of SQL Server without
 trouble. For installing with Windows systems, please don't forget the following
