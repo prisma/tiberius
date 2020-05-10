@@ -7,7 +7,7 @@ keywords = ["tds", "mssql", "sql"]
 license = "MIT/Apache-2.0"
 name = "tiberius"
 readme = "README.md"
-repository = "https://github.com/steffengy/tiberius"
+repository = "https://github.com/prisma/tiberius"
 version = "0.4.0-alpha.1"
 
 [dependencies]
