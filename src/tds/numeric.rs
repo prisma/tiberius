@@ -10,6 +10,9 @@ use tokio::io::AsyncReadExt;
 
 /// Represent a sql Decimal / Numeric type. It is stored in a i128 and has a
 /// maximum precision of 38 decimals.
+///
+/// A recommended way of dealing with numeric values is by enabling the
+/// `rust_decimal` feature and using its `Decimal` type instead.
 #[derive(Copy, Clone)]
 pub struct Numeric {
     value: i128,
@@ -220,6 +223,42 @@ impl PartialEq for Numeric {
             10i128.pow((self.scale - other.scale) as u32) * other.value == self.value
         } else {
             self.value == other.value
+        }
+    }
+}
+
+#[cfg(feature = "rust_decimal")]
+mod decimal {
+    use super::Numeric;
+    use crate::{ColumnData, ToSql};
+    use rust_decimal::Decimal;
+    use std::borrow::Cow;
+
+    #[cfg(feature = "tds73")]
+    from_column_data!(
+    Decimal:
+        ColumnData::Numeric(ref num) => Decimal::from_i128_with_scale(
+            num.value(),
+            num.scale() as u32,
+        )
+    );
+
+    impl ToSql for Decimal {
+        fn to_sql(&self) -> (Cow<'static, str>, ColumnData<'static>) {
+            let unpacked = self.unpack();
+
+            let mut value = (((unpacked.hi as u128) << 64)
+                + ((unpacked.mid as u128) << 32)
+                + unpacked.lo as u128) as i128;
+
+            if self.is_sign_negative() {
+                value = -value;
+            }
+
+            let numeric = Numeric::new_with_scale(value, self.scale() as u8);
+            let type_name = format!("numeric({},{})", numeric.precision(), numeric.scale());
+
+            (type_name.into(), ColumnData::Numeric(numeric))
         }
     }
 }

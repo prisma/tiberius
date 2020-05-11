@@ -1,5 +1,5 @@
 use futures::TryStreamExt;
-use tiberius::{numeric::Numeric, AuthMethod, Client};
+use tiberius::{AuthMethod, Client};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,15 +12,11 @@ async fn main() -> anyhow::Result<()> {
     builder.trust_cert();
 
     let mut conn = builder.build().await?;
-    let num = Numeric::new_with_scale(123, 2);
-    let stream = conn.query("SELECT @P1", &[&num]).await?;
+    let stream = conn.query("SELECT @P1", &[&1]).await?;
 
-    let rows: Vec<_> = stream
-        .map_ok(|x| x.get::<_, Numeric>(0))
-        .try_collect()
-        .await?;
+    let rows: Vec<_> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await?;
 
-    dbg!(rows);
+    assert_eq!(1, rows[0]);
 
     Ok(())
 }
