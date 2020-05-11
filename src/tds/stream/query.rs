@@ -2,7 +2,7 @@ use crate::tds::{
     codec::DoneStatus,
     stream::{prepared::PreparedStream, ReceivedToken},
 };
-use crate::{Column, Error, Row};
+use crate::{row::ColumnType, Column, Error, Row};
 use futures::{ready, Stream, StreamExt, TryStreamExt};
 use std::{
     pin::Pin,
@@ -48,6 +48,7 @@ impl<'a> QueryStream<'a> {
                         .iter()
                         .map(|x| Column {
                             name: x.col_name.clone(),
+                            column_type: ColumnType::from(&x.base.ty),
                         })
                         .collect::<Vec<_>>();
 
@@ -119,6 +120,7 @@ impl<'a> Stream for QueryStream<'a> {
                         .iter()
                         .map(|x| Column {
                             name: x.col_name.clone(),
+                            column_type: ColumnType::from(&x.base.ty),
                         })
                         .collect::<Vec<_>>();
 

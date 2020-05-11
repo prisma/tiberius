@@ -29,6 +29,7 @@ pub struct WindowsAuth {
     pub(crate) domain: Option<String>,
 }
 
+/// Defines the method of authentication to the server.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuthMethod {
     /// Authenticate directly with SQL Server. The only authentication method
@@ -228,7 +229,7 @@ impl Client {
             }
             param_str.push_str(&format!("@P{} ", i + 1));
             let (sql_type, param_data) = param.to_sql();
-            param_str.push_str(sql_type);
+            param_str.push_str(sql_type.as_ref());
 
             rpc_params.push(RpcParam {
                 name: Cow::Owned(format!("@P{}", i + 1)),

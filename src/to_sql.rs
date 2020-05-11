@@ -1,4 +1,7 @@
-use crate::{tds::codec::ColumnData, xml::XmlData};
+use crate::{
+    tds::{codec::ColumnData, Numeric},
+    xml::XmlData,
+};
 use std::borrow::Cow;
 use uuid::Uuid;
 
@@ -15,136 +18,149 @@ to_sql!(self_,
         Uuid: ("uniqueidentifier", ColumnData::Guid(*self_));
 );
 
+/// A conversion trait from Rust to a TDS type.
 pub trait ToSql {
-    fn to_sql(&self) -> (&'static str, ColumnData);
+    /// Returns a tuple of the type name in TDS and the `ColumnData`
+    /// representation of the value.
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData);
+}
+
+impl ToSql for Numeric {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
+        let type_name = format!("numeric({},{})", self.precision(), self.scale());
+        (type_name.into(), ColumnData::Numeric(*self))
+    }
 }
 
 impl ToSql for str {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         let sql_type = match self.len() {
-            0..=4000 => "NVARCHAR(4000)",
-            4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
-            _ => "NTEXT",
+            0..=4000 => "nvarchar(4000)",
+            4001..=MAX_NVARCHAR_SIZE => "nvarchar(MAX)",
+            _ => "ntext",
         };
 
-        (sql_type, ColumnData::String(Cow::from(self)))
+        (Cow::Borrowed(sql_type), ColumnData::String(Cow::from(self)))
     }
 }
 
 impl ToSql for &str {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         let sql_type = match self.len() {
-            0..=4000 => "NVARCHAR(4000)",
-            4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
-            _ => "NTEXT",
+            0..=4000 => "nvarchar(4000)",
+            4001..=MAX_NVARCHAR_SIZE => "nvarchar(MAX)",
+            _ => "ntext",
         };
 
-        (sql_type, ColumnData::String(Cow::from(*self)))
+        (
+            Cow::Borrowed(sql_type),
+            ColumnData::String(Cow::from(*self)),
+        )
     }
 }
 
 impl ToSql for Option<&str> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         match self {
             Some(s) => {
                 let sql_type = match s.len() {
-                    0..=4000 => "NVARCHAR(4000)",
-                    4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
-                    _ => "NTEXT",
+                    0..=4000 => "nvarchar(4000)",
+                    4001..=MAX_NVARCHAR_SIZE => "nvarchar(MAX)",
+                    _ => "ntext",
                 };
 
-                (sql_type, ColumnData::String(Cow::from(*s)))
+                (sql_type.into(), ColumnData::String(Cow::from(*s)))
             }
-            None => ("NVARCHAR(4000)", ColumnData::None),
+            None => ("nvarchar(4000)".into(), ColumnData::None),
         }
     }
 }
 
 impl<'a> ToSql for String {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         let sql_type = match self.len() {
-            0..=4000 => "NVARCHAR(4000)",
-            4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
-            _ => "NTEXT",
+            0..=4000 => "nvarchar(4000)",
+            4001..=MAX_NVARCHAR_SIZE => "nvarchar(MAX)",
+            _ => "ntext",
         };
 
-        (sql_type, ColumnData::String(Cow::from(self)))
+        (sql_type.into(), ColumnData::String(Cow::from(self)))
     }
 }
 
 impl ToSql for Option<String> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         match self {
             Some(s) => {
                 let sql_type = match s.len() {
-                    0..=4000 => "NVARCHAR(4000)",
-                    4001..=MAX_NVARCHAR_SIZE => "NVARCHAR(MAX)",
-                    _ => "NTEXT",
+                    0..=4000 => "nvarchar(4000)",
+                    4001..=MAX_NVARCHAR_SIZE => "nvarchar(MAX)",
+                    _ => "ntext",
                 };
 
-                (sql_type, ColumnData::String(Cow::from(s)))
+                (sql_type.into(), ColumnData::String(Cow::from(s)))
             }
-            None => ("NVARCHAR(4000)", ColumnData::None),
+            None => ("nvarchar(4000)".into(), ColumnData::None),
         }
     }
 }
 
 impl ToSql for &[u8] {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         let sql_type = match self.len() {
-            0..=8000 => "VARBINARY(8000)",
-            _ => "VARBINARY(MAX)",
+            0..=8000 => "varbinary(8000)",
+            _ => "varbinary(MAX)",
         };
 
-        (sql_type, ColumnData::Binary(Cow::from(*self)))
+        (sql_type.into(), ColumnData::Binary(Cow::from(*self)))
     }
 }
 
 impl ToSql for Option<&[u8]> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         match self {
             Some(s) => {
                 let sql_type = match s.len() {
-                    0..=4000 => "VARBINARY(8000)",
-                    _ => "VARBINARY(MAX)",
+                    0..=4000 => "varbinary(8000)",
+                    _ => "varbinary(MAX)",
                 };
 
-                (sql_type, ColumnData::Binary(Cow::from(*s)))
+                (sql_type.into(), ColumnData::Binary(Cow::from(*s)))
             }
-            None => ("VARBINARY(4000)", ColumnData::None),
+            None => ("varbinary(4000)".into(), ColumnData::None),
         }
     }
 }
 
 impl ToSql for Vec<u8> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         let sql_type = match self.len() {
-            0..=8000 => "VARBINARY(8000)",
-            _ => "VARBINARY(MAX)",
+            0..=8000 => "varbinary(8000)",
+            _ => "varbinary(MAX)",
         };
 
-        (sql_type, ColumnData::Binary(Cow::from(self)))
+        (sql_type.into(), ColumnData::Binary(Cow::from(self)))
     }
 }
 
 impl ToSql for Option<Vec<u8>> {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
         match self {
             Some(s) => {
                 let sql_type = match s.len() {
-                    0..=4000 => "VARBINARY(8000)",
-                    _ => "VARBINARY(MAX)",
+                    0..=4000 => "varbinary(8000)",
+                    _ => "varbinary(MAX)",
                 };
 
-                (sql_type, ColumnData::Binary(Cow::from(s)))
+                (sql_type.into(), ColumnData::Binary(Cow::from(s)))
             }
-            None => ("VARBINARY(8000)", ColumnData::None),
+            None => ("varbinary(8000)".into(), ColumnData::None),
         }
     }
 }
 
 impl ToSql for XmlData {
-    fn to_sql(&self) -> (&'static str, ColumnData) {
-        ("xml", ColumnData::Xml(Cow::Borrowed(self)))
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
+        ("xml".into(), ColumnData::Xml(Cow::Borrowed(self)))
     }
 }

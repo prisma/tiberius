@@ -17,34 +17,50 @@ use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
+/// A container of a value that can be represented as a TDS value.
 pub enum ColumnData<'a> {
+    /// A missing value.
     None,
+    /// 8-bit integer, signed.
     I8(i8),
+    /// 16-bit integer, signed.
     I16(i16),
+    /// 32-bit integer, signed.
     I32(i32),
+    /// 64-bit integer, signed.
     I64(i64),
+    /// 32-bit floating point number.
     F32(f32),
+    /// 64-bit floating point number.
     F64(f64),
+    /// Boolean.
     Bit(bool),
+    /// A string value.
     String(Cow<'a, str>),
+    /// A Guid (UUID) value.
     Guid(Uuid),
+    /// Binary data.
     Binary(Cow<'a, [u8]>),
+    /// Numeric value (a decimal).
     Numeric(Numeric),
+    /// XML data.
     Xml(Cow<'a, XmlData>),
+    /// DateTime value.
     DateTime(DateTime),
+    /// A small DateTime value.
     SmallDateTime(SmallDateTime),
     #[cfg(feature = "tds73")]
+    /// Time value.
     Time(Time),
     #[cfg(feature = "tds73")]
+    /// Date value.
     Date(Date),
     #[cfg(feature = "tds73")]
+    /// DateTime2 value.
     DateTime2(DateTime2),
     #[cfg(feature = "tds73")]
+    /// DateTime2 value with an offset.
     DateTimeOffset(DateTimeOffset),
-    /*
-    /// a buffer string which is a reference to a buffer of a received packet
-    BString(Str),
-     */
 }
 
 /// Mode for type reader.
@@ -117,7 +133,10 @@ impl<'a> ColumnData<'a> {
             }
             TypeInfo::VarLenSizedPrecision { ty, scale, .. } => match ty {
                 VarLenType::Decimaln | VarLenType::Numericn => {
-                    Self::decode_var_len_precision(src, *scale).await?
+                    match Numeric::decode(src, *scale).await? {
+                        Some(num) => ColumnData::Numeric(num),
+                        None => ColumnData::None,
+                    }
                 }
                 _ => todo!(),
             },
@@ -150,70 +169,6 @@ impl<'a> ColumnData<'a> {
         };
 
         Ok(ret)
-    }
-
-    async fn decode_var_len_precision<R>(src: &mut R, scale: u8) -> crate::Result<ColumnData<'a>>
-    where
-        R: SqlReadBytes + Unpin,
-    {
-        fn decode_d128(buf: &[u8]) -> u128 {
-            let low_part = LittleEndian::read_u64(&buf[0..]) as u128;
-
-            if !buf[8..].iter().any(|x| *x != 0) {
-                return low_part;
-            }
-
-            let high_part = match buf.len() {
-                12 => LittleEndian::read_u32(&buf[8..]) as u128,
-                16 => LittleEndian::read_u64(&buf[8..]) as u128,
-                _ => unreachable!(),
-            };
-
-            // swap high&low for big endian
-            #[cfg(target_endian = "big")]
-            let (low_part, high_part) = (high_part, low_part);
-
-            let high_part = high_part * (u64::max_value() as u128 + 1);
-            low_part + high_part
-        }
-
-        let len = src.read_u8().await?;
-
-        if len == 0 {
-            Ok(ColumnData::None)
-        } else {
-            let sign = match src.read_u8().await? {
-                0 => -1i128,
-                1 => 1i128,
-                _ => return Err(Error::Protocol("decimal: invalid sign".into())),
-            };
-
-            let value = match len {
-                5 => src.read_u32_le().await? as i128 * sign,
-                9 => src.read_u64_le().await? as i128 * sign,
-                13 => {
-                    let mut bytes = [0u8; 12]; //u96
-                    for i in 0..12 {
-                        bytes[i] = src.read_u8().await?;
-                    }
-                    decode_d128(&bytes) as i128 * sign
-                }
-                17 => {
-                    let mut bytes = [0u8; 16]; //u96
-                    for i in 0..16 {
-                        bytes[i] = src.read_u8().await?;
-                    }
-                    decode_d128(&bytes) as i128 * sign
-                }
-                x => {
-                    return Err(Error::Protocol(
-                        format!("decimal/numeric: invalid length of {} received", x).into(),
-                    ))
-                }
-            };
-
-            Ok(ColumnData::Numeric(Numeric::new_with_scale(value, scale)))
-        }
     }
 
     async fn decode_var_len<R>(
@@ -796,7 +751,15 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u8(VarLenType::Xml as u8);
                 xml.into_owned().encode(dst)?;
             }
-            ColumnData::Numeric(_) => todo!(),
+            ColumnData::Numeric(num) => {
+                dst.extend_from_slice(&[
+                    VarLenType::Numericn as u8,
+                    num.len(),
+                    num.precision(),
+                    num.scale(),
+                ]);
+                num.encode(dst)?;
+            }
         }
 
         Ok(())
