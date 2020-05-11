@@ -3,16 +3,11 @@
 [![docs.rs](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)
 [![Build status](https://badge.buildkite.com/172053d935f64a275beca911ab20bad34e7597775ce024469d.svg)](https://buildkite.com/prisma/tiberius)
 [![Build status](https://ci.appveyor.com/api/projects/status/vr39e8qd42n3yf0i/branch/master?svg=true)](https://ci.appveyor.com/project/pimeys/tiberius/branch/master)
+[![Chat](https://img.shields.io/discord/664092374359605268)](https://discord.gg/8sF4ej)
 
-A native TDS (MSSQL) 7.3 driver for Rust
+A native Microsoft SQL Server (TDS) client for Rust.
 
-**NOTE**: Supporting async/await and revising the API is currently ongoing in
-this repo. Basics are now working and the crate is soon going to be in a stage
-ready for testing. Please test and file issues if we miss a feature you need
-or if you find bugs. [Ticket to follow](https://github.com/prisma/tiberius/issues/12)
-for what is still left to be done.
-
-We also have our [Discord server](https://discord.gg/jxC2vH) for dev chat.
+[Ticket to follow](https://github.com/prisma/tiberius/issues/12) for what is still left to be done to get 0.4.0 published.
 
 ### Supported SQL Server versions
 
