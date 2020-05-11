@@ -822,6 +822,82 @@ async fn numeric_type_u128_presentation() -> Result<()> {
 }
 
 #[tokio::test]
+#[cfg(feature = "rust_decimal")]
+async fn decimal_type_u32_presentation() -> Result<()> {
+    use rust_decimal::Decimal;
+
+    let mut conn = connect().await?;
+    let num = Decimal::from_i128_with_scale(2, 1);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Decimal>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(feature = "rust_decimal")]
+async fn decimal_type_u64_presentation() -> Result<()> {
+    use rust_decimal::Decimal;
+
+    let mut conn = connect().await?;
+    let num = Decimal::from_i128_with_scale(i32::MAX as i128 + 10, 1);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Decimal>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(feature = "rust_decimal")]
+async fn decimal_type_u96_presentation() -> Result<()> {
+    use rust_decimal::Decimal;
+
+    let mut conn = connect().await?;
+    let num = Decimal::from_i128_with_scale(i64::MAX as i128, 19);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Decimal>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg(feature = "rust_decimal")]
+async fn decimal_type_u128_presentation() -> Result<()> {
+    use rust_decimal::Decimal;
+
+    let mut conn = connect().await?;
+    let num = Decimal::from_i128_with_scale(i64::MAX as i128, 28);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Decimal>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
 #[cfg(all(feature = "chrono", feature = "tds73"))]
 async fn naive_small_date_time_tds73() -> Result<()> {
     use chrono::{NaiveDate, NaiveDateTime};

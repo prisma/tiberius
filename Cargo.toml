@@ -55,6 +55,10 @@ version = "0.3"
 features = ["log"]
 version = "0.1"
 
+[dependencies.rust_decimal]
+version = "1.5"
+optional = true
+
 [dependencies.winauth]
 version = "0.0.4"
 
@@ -69,6 +73,6 @@ version = "0.2"
 version = "1"
 
 [features]
-default = ["tls", "chrono", "tds73"]
+default = ["tls", "chrono", "tds73", "rust_decimal"]
 tls = ["native-tls", "tokio-tls"]
 tds73 = []

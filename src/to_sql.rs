@@ -26,7 +26,7 @@ pub trait ToSql {
 }
 
 impl ToSql for Numeric {
-    fn to_sql(&self) -> (Cow<'static, str>, ColumnData) {
+    fn to_sql(&self) -> (Cow<'static, str>, ColumnData<'static>) {
         let type_name = format!("numeric({},{})", self.precision(), self.scale());
         (type_name.into(), ColumnData::Numeric(*self))
     }
