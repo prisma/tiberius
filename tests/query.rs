@@ -2,7 +2,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{xml::XmlData, Client, ClientBuilder, Result};
+use tiberius::{numeric::Numeric, xml::XmlData, Client, ClientBuilder, Result};
 use uuid::Uuid;
 
 static LOGGER_SETUP: Once = Once::new();
@@ -753,6 +753,70 @@ async fn varbinary_max() -> Result<()> {
 
     assert_eq!(8001, rows[0].len());
     assert_eq!(binary, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn numeric_type_u32_presentation() -> Result<()> {
+    let mut conn = connect().await?;
+    let num = Numeric::new_with_scale(2, 1);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Numeric>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn numeric_type_u64_presentation() -> Result<()> {
+    let mut conn = connect().await?;
+    let num = Numeric::new_with_scale(i32::MAX as i128 + 10, 1);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Numeric>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn numeric_type_u96_presentation() -> Result<()> {
+    let mut conn = connect().await?;
+    let num = Numeric::new_with_scale(i64::MAX as i128, 19);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Numeric>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn numeric_type_u128_presentation() -> Result<()> {
+    let mut conn = connect().await?;
+    let num = Numeric::new_with_scale(i64::MAX as i128, 37);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
+
+    let rows: Vec<_> = stream
+        .map_ok(|x| x.get::<_, Numeric>(0))
+        .try_collect()
+        .await?;
+
+    assert_eq!(num, rows[0]);
 
     Ok(())
 }

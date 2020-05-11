@@ -1,3 +1,4 @@
+//! The XML containers
 use super::codec::Encode;
 use bytes::{BufMut, BytesMut};
 use std::sync::Arc;
@@ -11,7 +12,11 @@ pub struct XmlSchema {
 }
 
 impl XmlSchema {
-    pub(crate) fn new(db_name: impl ToString, owner: impl ToString, collection: impl ToString) -> Self {
+    pub(crate) fn new(
+        db_name: impl ToString,
+        owner: impl ToString,
+        collection: impl ToString,
+    ) -> Self {
         Self {
             db_name: db_name.to_string(),
             owner: owner.to_string(),

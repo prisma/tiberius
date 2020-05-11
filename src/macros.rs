@@ -39,14 +39,14 @@ macro_rules! to_sql {
     ($target:ident, $( $ty:ty: ($name:expr, $val:expr) ;)* ) => {
         $(
             impl crate::ToSql for $ty {
-                fn to_sql(&self) -> (&'static str, crate::tds::codec::ColumnData) {
+                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData) {
                     let $target = self;
-                    ($name, $val)
+                    (std::borrow::Cow::Borrowed($name), $val)
                 }
             }
 
             impl crate::ToSql for Option<$ty> {
-                fn to_sql(&self) -> (&'static str, crate::tds::codec::ColumnData) {
+                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData) {
                     let val = match self {
                         None => crate::tds::codec::ColumnData::None,
                         Some(item) => {
@@ -55,7 +55,7 @@ macro_rules! to_sql {
                         }
                     };
 
-                    ($name, val)
+                    (std::borrow::Cow::Borrowed($name), val)
                 }
             }
         )*

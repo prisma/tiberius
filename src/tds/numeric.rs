@@ -1,7 +1,12 @@
 //! Representations of numeric types.
 
+use super::codec::Encode;
+use crate::{sql_read_bytes::SqlReadBytes, Error};
+use byteorder::{ByteOrder, LittleEndian};
+use bytes::{BufMut, BytesMut};
 use std::cmp::PartialEq;
 use std::fmt::{self, Debug, Display, Formatter};
+use tokio::io::AsyncReadExt;
 
 /// Represent a sql Decimal / Numeric type. It is stored in a i128 and has a
 /// maximum precision of 38 decimals.
@@ -42,14 +47,130 @@ impl Numeric {
 
     /// The scale (where is the decimal point) of the value.
     #[inline]
-    pub fn scale(&self) -> u8 {
+    pub fn scale(self) -> u8 {
         self.scale
     }
 
     /// The internal integer value
     #[inline]
-    pub fn value(&self) -> i128 {
+    pub fn value(self) -> i128 {
         self.value
+    }
+
+    /// The precision of the `Number` as a number of digits.
+    pub fn precision(self) -> u8 {
+        let mut result = 0;
+        let mut n = self.int_part();
+
+        while n != 0 {
+            n /= 10;
+            result += 1;
+        }
+
+        if result == 0 {
+            1 + self.scale()
+        } else {
+            result + self.scale()
+        }
+    }
+
+    pub(crate) fn len(self) -> u8 {
+        match self.precision() {
+            1..=9 => 5,
+            10..=19 => 9,
+            20..=28 => 13,
+            _ => 17,
+        }
+    }
+
+    pub(crate) async fn decode<R>(src: &mut R, scale: u8) -> crate::Result<Option<Self>>
+    where
+        R: SqlReadBytes + Unpin,
+    {
+        fn decode_d128(buf: &[u8]) -> u128 {
+            let low_part = LittleEndian::read_u64(&buf[0..]) as u128;
+
+            if !buf[8..].iter().any(|x| *x != 0) {
+                return low_part;
+            }
+
+            let high_part = match buf.len() {
+                12 => LittleEndian::read_u32(&buf[8..]) as u128,
+                16 => LittleEndian::read_u64(&buf[8..]) as u128,
+                _ => unreachable!(),
+            };
+
+            // swap high&low for big endian
+            #[cfg(target_endian = "big")]
+            let (low_part, high_part) = (high_part, low_part);
+
+            let high_part = high_part * (u64::max_value() as u128 + 1);
+            low_part + high_part
+        }
+
+        let len = src.read_u8().await?;
+
+        if len == 0 {
+            return Ok(None);
+        } else {
+            let sign = match src.read_u8().await? {
+                0 => -1i128,
+                1 => 1i128,
+                _ => return Err(Error::Protocol("decimal: invalid sign".into())),
+            };
+
+            let value = match len {
+                5 => src.read_u32_le().await? as i128 * sign,
+                9 => src.read_u64_le().await? as i128 * sign,
+                13 => {
+                    let mut bytes = [0u8; 12]; //u96
+                    for i in 0..12 {
+                        bytes[i] = src.read_u8().await?;
+                    }
+                    decode_d128(&bytes) as i128 * sign
+                }
+                17 => {
+                    let mut bytes = [0u8; 16];
+                    for i in 0..16 {
+                        bytes[i] = src.read_u8().await?;
+                    }
+                    decode_d128(&bytes) as i128 * sign
+                }
+                x => {
+                    return Err(Error::Protocol(
+                        format!("decimal/numeric: invalid length of {} received", x).into(),
+                    ))
+                }
+            };
+
+            Ok(Some(Numeric::new_with_scale(value, scale)))
+        }
+    }
+}
+
+impl Encode<BytesMut> for Numeric {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u8(self.len());
+
+        if self.value < 0 {
+            dst.put_u8(0);
+        } else {
+            dst.put_u8(1);
+        }
+
+        let value = self.value().abs();
+
+        match self.len() {
+            5 => dst.put_u32_le(value as u32),
+            9 => dst.put_u64_le(value as u64),
+            13 => {
+                dst.put_u64_le(value as u64);
+                dst.put_u32_le((value >> 64) as u32)
+            }
+            _ => dst.put_u128_le(value as u128),
+        }
+
+        Ok(())
     }
 }
 
@@ -140,5 +261,11 @@ mod tests {
         let n = Numeric::new_with_scale(57705, 2);
         assert_eq!(n.int_part(), 577);
         assert_eq!(n.dec_part(), 05);
+    }
+
+    #[test]
+    fn calculates_precision_correctly() {
+        let n = Numeric::new_with_scale(57705, 2);
+        assert_eq!(5, n.precision());
     }
 }
