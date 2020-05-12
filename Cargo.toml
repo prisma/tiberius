@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 name = "tiberius"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
-version = "0.4.0-alpha.3"
+version = "0.4.0-alpha.4"
 
 [dependencies]
 async-stream = "0.2"
@@ -73,6 +73,6 @@ version = "0.2"
 version = "1"
 
 [features]
-default = ["tls", "chrono", "tds73", "rust_decimal"]
+default = ["tls", "chrono", "tds73"]
 tls = ["native-tls", "tokio-tls"]
 tds73 = []

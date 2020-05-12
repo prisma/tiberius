@@ -30,6 +30,15 @@ The system should work with the Docker and Azure versions of SQL Server without
 trouble. For installing with Windows systems, please don't forget the following
 things:
 
+### Feature flags
+
+| Flag           | Description                                                                           | Default    |
+|----------------|---------------------------------------------------------------------------------------|------------|
+| `tls`          | Enables TLS support.                                                                  | `enabled`  |
+| `chrono`       | Support for Chrono's datetime structures.                                             | `enabled`  |
+| `tds73`        | Support for new date and time types in TDS version 7.3. Disable if using version 7.2. | `enabled`  |
+| `rust_decimal` | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
+
 ### Enable TCP for SQL Server
 As of now only TCP is supported, which is **disabled by default**.  
 Make sure to enable TCP in your [MSSQL
