@@ -28,30 +28,6 @@ use futures_codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
-use async_trait::async_trait;
-
-
-/*
-#[async_trait]
-pub trait GenericTcpStream<A> {
-    type Stream: futures::AsyncRead + futures::AsyncWrite + Unpin;
-    async fn connect(addr: A) -> io::Result<Self::Stream> where A: 'async_trait;
-}
-
-#[async_trait]
-impl<A: net::ToSocketAddrs + Sync + Send> GenericTcpStream<A> for net::TcpStream {
-    type Stream = compat::Compat<net::TcpStream>;
-    async fn connect(addr: A) -> io::Result<Self::Stream> where A: 'async_trait {
-        net::TcpStream::connect(addr).await.map(|s| s.compat_write())
-    }
-}
-*/
-
-#[async_trait]
-pub trait GenericTcpStream<TCP: futures::AsyncRead + futures::AsyncWrite + Unpin> {
-    async fn connect(&self, addr: String, instance_name: &Option<String>) -> crate::Result<TCP>;
-}
-
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
@@ -96,31 +72,14 @@ enum LoginResult {
 
 impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Connection<S> {
     /// Creates a new connection
-    pub async fn connect_tcp<C>(
-        addr: String,
+    pub async fn connect_tcp(
         context: Context,
         opts: ConnectOpts,
-        conntr: C,
+        tcp_stream: S,
     ) -> crate::Result<Connection<S>>
     where
-        //T: ToSocketAddrs,
-        C: GenericTcpStream<S>,
     {
-        /*
-        let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
-        })?;
-
-        if let Some(ref instance_name) = opts.instance_name {
-            addr = Self::find_tcp_port(addr, instance_name).await?;
-        };
-        */
-
-        let stream = conntr.connect(addr, &opts.instance_name).await?;
-        //let stream = net::TcpStream::connect(addr).await?;
-        //stream.set_nodelay(true)?;
-
-        let transport = Framed::new(MaybeTlsStream::Raw(stream), PacketCodec);
+        let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
 
         let mut connection = Self {
             transport,

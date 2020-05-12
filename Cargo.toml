@@ -22,9 +22,6 @@ pretty-hex = "0.1"
 pin-project-lite = "0.1"
 futures_codec = "0.4"
 futures-sink = "0.3"
-async-trait = "0.1"
-serde = "1"
-serde_json = "1"
 
 [dependencies.chrono]
 version = "0.4"
@@ -33,7 +30,6 @@ optional = true
 [dependencies.uuid]
 version = "0.8"
 features = ["v1", "v3", "v4"]
-
 
 [dependencies.futures]
 version = "0.3"
@@ -44,7 +40,6 @@ version = "0.3"
 [dependencies.async-native-tls]
 optional = true
 version = "0.3"
-
 
 [dependencies.tracing]
 features = ["log"]

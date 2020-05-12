@@ -2,31 +2,23 @@ use futures_util::{StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-//use tiberius::{Client, ClientBuilder, Result};
-use uuid::Uuid;
 
-use tiberius::{ClientBuilder, Result, Client, GenericTcpStream};
+use tiberius::{ClientBuilder, Result, Client};
 
 use std::{io, net::{self, ToSocketAddrs}};
-use async_trait::async_trait;
 
-use smol::Async;
 
-pub struct SmolTcpStreamWrapper();
 
-#[async_trait]
-impl GenericTcpStream<smol::Async<net::TcpStream>> for SmolTcpStreamWrapper {
-    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<smol::Async<net::TcpStream>> 
-    {
-        let mut addr = addr.to_socket_addrs()?.next().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
-        })?;
+async fn connector(addr: String, instance_name: Option<String>) -> tiberius::Result<smol::Async<net::TcpStream>> 
+{
+    let mut addr = addr.to_socket_addrs()?.next().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+    })?;
 
-        if let Some(ref instance_name) = instance_name {
-            addr = tiberius::find_tcp_port(addr, instance_name).await?;
-        };
-        Ok(smol::Async::<net::TcpStream>::connect(addr).await?)
-    }
+    if let Some(ref instance_name) = instance_name {
+        addr = tiberius::find_tcp_port(addr, instance_name).await?;
+    };
+    Ok(smol::Async::<net::TcpStream>::connect(addr).await?)
 }
 
 static LOGGER_SETUP: Once = Once::new();
@@ -42,7 +34,7 @@ async fn connect() -> Result<Client<smol::Async<net::TcpStream>>> {
     });
 
     let builder = ClientBuilder::from_ado_string(&*CONN_STR)?;
-    builder.build(SmolTcpStreamWrapper()).await
+    builder.build(connector).await
 }
 
 #[cfg(feature = "tls")]
@@ -53,7 +45,7 @@ fn test_conn_full_encryption() -> Result<()> {
         });
 
         let conn_str = format!("{};encrypt=true", *CONN_STR);
-        let mut conn: Client<smol::Async<net::TcpStream>> = ClientBuilder::from_ado_string(&conn_str)?.build(SmolTcpStreamWrapper()).await?;
+        let mut conn: Client<smol::Async<net::TcpStream>> = ClientBuilder::from_ado_string(&conn_str)?.build(connector).await?;
 
         let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
 

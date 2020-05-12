@@ -2,28 +2,21 @@ use futures_util::{StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use uuid::Uuid;
 
-use tiberius::{ClientBuilder, Result, Client, GenericTcpStream};
+use tiberius::{ClientBuilder, Result, Client};
 
 use async_std::{io, net::{self, ToSocketAddrs}};
-use async_trait::async_trait;
 
-pub struct AsyncStdTcpStreamWrapper();
+async fn connector(addr: String, instance_name: Option<String>) -> tiberius::Result<net::TcpStream> 
+{
+    let mut addr = addr.to_socket_addrs().await?.next().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+    })?;
 
-#[async_trait]
-impl GenericTcpStream<net::TcpStream> for AsyncStdTcpStreamWrapper {
-    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<net::TcpStream> 
-    {
-        let mut addr = addr.to_socket_addrs().await?.next().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
-        })?;
-
-        if let Some(ref instance_name) = instance_name {
-            addr = tiberius::find_tcp_port(addr, instance_name).await?;
-        };
-        Ok(net::TcpStream::connect(addr).await?)
-    }
+    if let Some(ref instance_name) = instance_name {
+        addr = tiberius::find_tcp_port(addr, instance_name).await?;
+    };
+    Ok(net::TcpStream::connect(addr).await?)
 }
 
 static LOGGER_SETUP: Once = Once::new();
@@ -39,7 +32,7 @@ async fn connect() -> Result<Client<net::TcpStream>> {
     });
 
     let builder = ClientBuilder::from_ado_string(&*CONN_STR)?;
-    builder.build(AsyncStdTcpStreamWrapper()).await
+    builder.build(connector).await
 }
 
 #[cfg(feature = "tls")]
@@ -50,7 +43,7 @@ async fn test_conn_full_encryption() -> Result<()> {
     });
 
     let conn_str = format!("{};encrypt=true", *CONN_STR);
-    let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build(AsyncStdTcpStreamWrapper()).await?;
+    let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build(connector).await?;
 
     let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
 

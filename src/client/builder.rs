@@ -1,6 +1,6 @@
 use super::{connection::*, AuthMethod};
 use crate::{tds::Context, Client, EncryptionLevel};
-use std::collections::HashMap;
+use std::{future, collections::HashMap};
 
 #[derive(Clone, Debug)]
 /// A builder for creating a new [`Client`].
@@ -110,10 +110,10 @@ impl ClientBuilder {
     }
 
     /// Creates a new client and connects to the server.
-    pub async fn build<C, TCP>(self, connector: C) -> crate::Result<Client<TCP>> 
-        where C: GenericTcpStream<TCP>,
-              TCP: futures::AsyncRead + futures::AsyncWrite + Unpin,
-
+    pub async fn build<F, S>(self, connector: fn(String, Option<String>) -> F) -> crate::Result<Client<S>> 
+        where S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+              //T: Fn(String, &Option<String>) -> F, 
+              F: future::Future<Output = crate::Result<S>>,
     {
         let context = self.create_context();
         let addr = format!("{}:{}", self.get_host(), self.get_port());
@@ -129,7 +129,9 @@ impl ClientBuilder {
             instance_name: None,
         };
 
-        let connection = Connection::connect_tcp(addr, context, opts, connector).await?;
+        let tcp_stream = connector(addr, opts.instance_name.clone()).await?;
+
+        let connection = Connection::connect_tcp(context, opts, tcp_stream).await?;
 
         Ok(Client { connection })
     }
