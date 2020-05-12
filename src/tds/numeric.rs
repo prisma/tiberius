@@ -6,7 +6,6 @@ use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use std::cmp::PartialEq;
 use std::fmt::{self, Debug, Display, Formatter};
-use tokio::io::AsyncReadExt;
 
 /// Represent a sql Decimal / Numeric type. It is stored in a i128 and has a
 /// maximum precision of 38 decimals.

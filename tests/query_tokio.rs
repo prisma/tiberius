@@ -2,21 +2,18 @@ use futures_util::{StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{numeric::Numeric, xml::XmlData, Client, ClientBuilder, Result};
+use tiberius::{numeric::Numeric, xml::XmlData, Client, ClientBuilder, Result, GenericTcpStream};
 use uuid::Uuid;
 
-use tiberius::{ClientBuilder, Result, Client, GenericTcpStream};
 use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
 use tokio::{io, net};
 use async_trait::async_trait;
 
-//use smol;
-
 pub struct TokioTcpStreamWrapper();
 
 #[async_trait]
-impl GenericTcpStream<smol::Async<std::net::TcpStream>> for TokioTcpStreamWrapper {
-    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<smol::Async<std::net::TcpStream>> 
+impl GenericTcpStream<compat::Compat<net::TcpStream>> for TokioTcpStreamWrapper {
+    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<compat::Compat<net::TcpStream>> 
     {
         let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
@@ -25,25 +22,9 @@ impl GenericTcpStream<smol::Async<std::net::TcpStream>> for TokioTcpStreamWrappe
         if let Some(ref instance_name) = instance_name {
             addr = tiberius::find_tcp_port(addr, instance_name).await?;
         };
-        Ok(smol::Async::<std::net::TcpStream>::connect(addr).await?)
+        Ok(net::TcpStream::connect(addr).await.map(|s| s.compat_write())?)
     }
 }
-
-
-//#[async_trait]
-//impl GenericTcpStream<compat::Compat<net::TcpStream>> for TokioTcpStreamWrapper {
-//    async fn connect(&self, addr: String, instance_name: &Option<String>) -> tiberius::Result<compat::Compat<net::TcpStream>> 
-//    {
-//        let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
-//            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
-//        })?;
-//
-//        if let Some(ref instance_name) = instance_name {
-//            addr = tiberius::find_tcp_port(addr, instance_name).await?;
-//        };
-//        Ok(net::TcpStream::connect(addr).await.map(|s| s.compat_write())?)
-//    }
-//}
 
 static LOGGER_SETUP: Once = Once::new();
 
@@ -53,7 +34,7 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
     )
 });
 
-async fn connect() -> Result<Client<smol::Async<std::net::TcpStream>>> {
+async fn connect() -> Result<Client<compat::Compat<net::TcpStream>>> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
@@ -968,8 +949,9 @@ async fn numeric_type_u32_presentation() -> Result<()> {
 #[tokio::test]
 async fn numeric_type_u64_presentation() -> Result<()> {
     let mut conn = connect().await?;
+    let num = Numeric::new_with_scale(std::i32::MAX as i128 + 10, 1);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
 
-    let num = Numeric::new_with_scale(i32::MAX as i128 + 10, 1);
     let row = conn
         .query("SELECT @P1", &[&num])
         .await?
@@ -985,8 +967,9 @@ async fn numeric_type_u64_presentation() -> Result<()> {
 #[tokio::test]
 async fn numeric_type_u96_presentation() -> Result<()> {
     let mut conn = connect().await?;
+    let num = Numeric::new_with_scale(std::i64::MAX as i128, 19);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
 
-    let num = Numeric::new_with_scale(i64::MAX as i128, 19);
     let row = conn
         .query("SELECT @P1", &[&num])
         .await?
@@ -1002,8 +985,9 @@ async fn numeric_type_u96_presentation() -> Result<()> {
 #[tokio::test]
 async fn numeric_type_u128_presentation() -> Result<()> {
     let mut conn = connect().await?;
+    let num = Numeric::new_with_scale(std::i64::MAX as i128, 37);
+    let stream = conn.query("SELECT @P1", &[&num]).await?;
 
-    let num = Numeric::new_with_scale(i64::MAX as i128, 37);
     let row = conn
         .query("SELECT @P1", &[&num])
         .await?
