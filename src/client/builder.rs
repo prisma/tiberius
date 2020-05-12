@@ -2,7 +2,7 @@ use super::{connection::*, AuthMethod};
 use crate::{tds::Context, Client, EncryptionLevel};
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html

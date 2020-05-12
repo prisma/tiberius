@@ -14,7 +14,7 @@ use crate::{
     SqlReadBytes, ToSql,
 };
 use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Debug};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SqlServerAuth {
@@ -81,6 +81,7 @@ impl AuthMethod {
 ///
 /// ```no_run
 /// # use tiberius::{Client, AuthMethod};
+/// # #[allow(unused)]
 /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut builder = Client::builder();
 ///
@@ -89,12 +90,13 @@ impl AuthMethod {
 /// builder.authentication(AuthMethod::sql_server("SA", "<Mys3cureP4ssW0rD>"));
 ///
 /// // Client is ready to use.
-/// let mut conn = builder.build().await?;
+/// let conn = builder.build().await?;
 /// # Ok(())
 /// # }
 /// ```
 ///
 /// [`ClientBuilder`]: struct.ClientBuilder.html
+#[derive(Debug)]
 pub struct Client {
     connection: Connection,
 }
@@ -116,8 +118,9 @@ impl Client {
     ///
     /// ```no_run
     /// # use tiberius::Client;
+    /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let mut builder = Client::builder();
+    /// # let builder = Client::builder();
     /// # let mut conn = builder.build().await?;
     /// let results = conn
     ///     .execute(
@@ -158,8 +161,9 @@ impl Client {
     ///
     /// ```no_run
     /// # use tiberius::Client;
+    /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let mut builder = Client::builder();
+    /// # let builder = Client::builder();
     /// # let mut conn = builder.build().await?;
     /// let rows = conn
     ///     .query(

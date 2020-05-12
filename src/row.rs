@@ -161,40 +161,75 @@ impl Column {
 #[derive(Debug, Clone, Copy)]
 /// The type of the column.
 pub enum ColumnType {
+    /// The column doesn't have a specified type.
     Null,
-    Int1,
+    /// A bit or boolean value.
     Bit,
+    /// An 8-bit integer value.
+    Int1,
+    /// A 16-bit integer value.
     Int2,
+    /// A 32-bit integer value.
     Int4,
-    Datetime4,
-    Float4,
-    Money,
-    Datetime,
-    Float8,
-    Money4,
+    /// A 64-bit integer value.
     Int8,
+    /// A 32-bit datetime value.
+    Datetime4,
+    /// A 32-bit floating point value.
+    Float4,
+    /// A 64-bit floating point value.
+    Float8,
+    /// Money value.
+    Money,
+    /// A TDS 7.2 datetime value.
+    Datetime,
+    /// A 32-bit money value.
+    Money4,
+    /// A unique identifier, UUID.
     Guid,
+    /// N-bit integer value (variable).
     Intn,
+    /// A bit value in a variable-length type.
     Bitn,
+    /// A decimal value (same as `Numericn`).
     Decimaln,
+    /// A numeric value (same as `Decimaln`).
     Numericn,
+    /// A n-bit floating point value.
     Floatn,
+    /// A n-bit datetime value (TDS 7.2).
     Datetimen,
+    /// A n-bit date value (TDS 7.3).
     Daten,
+    /// A n-bit time value (TDS 7.3).
     Timen,
+    /// A n-bit datetime2 value (TDS 7.3).
     Datetime2,
+    /// A n-bit datetime value with an offset (TDS 7.3).
     DatetimeOffsetn,
+    /// A variable binary value.
     BigVarBin,
+    /// A large variable string value.
     BigVarChar,
+    /// A binary value.
     BigBinary,
+    /// A string value.
     BigChar,
+    /// A variable string value with UTF-16 encoding.
     NVarchar,
+    /// A string value with UTF-16 encoding.
     NChar,
+    /// A XML value.
     Xml,
+    /// User-defined type.
     Udt,
+    /// A text value (deprecated).
     Text,
+    /// A image value (deprecated).
     Image,
+    /// A text value with UTF-16 encoding (deprecated).
     NText,
+    /// An SQL variant type.
     SSVariant,
 }
 

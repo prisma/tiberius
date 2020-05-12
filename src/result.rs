@@ -7,7 +7,7 @@ use crate::{
     Row,
 };
 use futures::{Stream, StreamExt, TryStreamExt};
-use std::{pin::Pin, task};
+use std::{fmt::Debug, pin::Pin, task};
 use task::Poll;
 
 /// A set of `Streams` of [`Rows`] resulting from a `SELECT` query. The
@@ -24,6 +24,7 @@ use task::Poll;
 /// # use tiberius::{Client, AuthMethod};
 /// # use std::env;
 /// use futures::{StreamExt, TryStreamExt};
+/// # #[allow(unused)]
 /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut builder = Client::builder();
 /// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
@@ -77,6 +78,7 @@ use task::Poll;
 /// [`Client`]: struct.Client.html
 /// [`Rows`]: struct.Row.html
 /// [`next_resultset`]: #method.next_resultset
+#[derive(Debug)]
 pub struct QueryResult<'a> {
     stream: QueryStream<'a>,
 }
@@ -101,7 +103,7 @@ impl<'a> QueryResult<'a> {
     /// ```no_run
     /// # use tiberius::{Client, AuthMethod};
     /// # use std::env;
-    /// use futures::{StreamExt, TryStreamExt};
+    /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
     /// # let mut builder = Client::builder();
     /// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
@@ -187,7 +189,7 @@ impl<'a> Stream for QueryResult<'a> {
 /// ```no_run
 /// # use tiberius::{Client, AuthMethod};
 /// # use std::env;
-/// use futures::{StreamExt, TryStreamExt};
+/// # #[allow(unused)]
 /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
 /// # let mut builder = Client::builder();
 /// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
@@ -203,7 +205,7 @@ impl<'a> Stream for QueryResult<'a> {
 /// # };
 /// # let mut conn = builder.build().await?;
 ///
-/// let mut stream = conn
+/// let stream = conn
 ///     .execute(
 ///         "INSERT INTO #Test (id) VALUES (@P1); INSERT INTO #Test (id) VALUES (@P2, @P3)",
 ///         &[&1i32, &2i32, &3i32],
@@ -219,6 +221,7 @@ impl<'a> Stream for QueryResult<'a> {
 /// [`Client`]: struct.Client.html
 /// [`Rows`]: struct.Row.html
 /// [`next_resultset`]: #method.next_resultset
+#[derive(Debug)]
 pub struct ExecuteResult {
     rows_affected: Vec<u64>,
 }
@@ -245,9 +248,9 @@ impl<'a> ExecuteResult {
     /// Aggregates all resulting row counts into a sum.
     ///
     /// ```no_run
-    ///  use tiberius::{Client, AuthMethod, ClientBuilder};
+    /// # use tiberius::ClientBuilder;
     /// # use std::env;
-    /// # use futures::{StreamExt, TryStreamExt};
+    /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
     /// # let conn_str = env::var("TIBERIUS_TEST_CONNECTION_STRING")
     /// #    .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned());

@@ -178,7 +178,7 @@ impl Encode<BytesMut> for Numeric {
 }
 
 impl Debug for Numeric {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(
             f,
             "{}.{:0pad$}",
@@ -190,7 +190,7 @@ impl Debug for Numeric {
 }
 
 impl Display for Numeric {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{:?}", self)
     }
 }

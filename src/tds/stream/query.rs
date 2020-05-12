@@ -18,6 +18,7 @@ pub(crate) enum QueryStreamState {
     Done,
 }
 
+#[derive(Debug)]
 pub struct QueryStream<'a> {
     prepared_stream: PreparedStream<'a>,
     current_columns: Option<Arc<Vec<Column>>>,
