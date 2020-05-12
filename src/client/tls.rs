@@ -51,7 +51,7 @@ impl AsyncRead for MaybeTlsStream {
 
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut task::Context,
+        cx: &mut task::Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
@@ -65,7 +65,7 @@ impl AsyncRead for MaybeTlsStream {
 impl AsyncWrite for MaybeTlsStream {
     fn poll_write(
         self: Pin<&mut Self>,
-        cx: &mut task::Context,
+        cx: &mut task::Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
@@ -75,7 +75,7 @@ impl AsyncWrite for MaybeTlsStream {
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_flush(cx),
             #[cfg(feature = "tls")]
@@ -83,7 +83,7 @@ impl AsyncWrite for MaybeTlsStream {
         }
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_shutdown(cx),
             #[cfg(feature = "tls")]
@@ -135,7 +135,7 @@ impl<S> TlsPreloginWrapper<S> {
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsPreloginWrapper<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
-        cx: &mut task::Context,
+        cx: &mut task::Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         // Normal operation does not need any extra treatment, we handle packets
@@ -198,7 +198,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsPreloginWrapper<S> {
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
-        cx: &mut task::Context,
+        cx: &mut task::Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         // Normal operation does not need any extra treatment, we handle
@@ -213,7 +213,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
         Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         let inner = self.get_mut();
 
         // If on handshake mode, wraps the data to a TDS packet before sending.
@@ -254,7 +254,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsPreloginWrapper<S> {
         Pin::new(&mut inner.stream.as_mut().unwrap()).poll_flush(cx)
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.stream.as_mut().unwrap()).poll_shutdown(cx)
     }
 }

@@ -1,5 +1,10 @@
 //! A pure-rust TDS implementation for Microsoft SQL Server (>=2008)
 #![recursion_limit = "512"]
+#![warn(missing_docs)]
+#![warn(missing_debug_implementations, rust_2018_idioms)]
+#![doc(test(attr(deny(rust_2018_idioms, warnings))))]
+#![doc(test(attr(allow(unused_extern_crates, unused_variables))))]
+
 #[macro_use]
 mod macros;
 
@@ -23,6 +28,7 @@ pub use uuid::Uuid;
 use sql_read_bytes::*;
 use tds::codec::*;
 
+/// An alias for a result that holds crate's error type as the error.
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub(crate) fn get_driver_version() -> u64 {

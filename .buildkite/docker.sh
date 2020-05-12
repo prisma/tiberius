@@ -11,6 +11,7 @@ docker run --name test-mssql --network test-net \
     -d mcr.microsoft.com/mssql/server:2019-CU3-ubuntu-18.04
 
 docker run -w /build --network test-net -v $BUILDKITE_BUILD_CHECKOUT_PATH:/build \
+    -e RUSTFLAGS="-D warnings" \
     -e TIBERIUS_TEST_CONNECTION_STRING="server=tcp:test-mssql,1433;user=SA;password=$MSSQL_SA_PASSWORD;TrustServerCertificate=true" \
     prismagraphql/build:test cargo test $1
 

@@ -3,6 +3,7 @@ use crate::tds::codec::DoneStatus;
 use futures::{ready, Stream};
 use futures_util::StreamExt;
 use std::{
+    fmt::Debug,
     pin::Pin,
     task::{self, Poll},
 };
@@ -10,6 +11,18 @@ use std::{
 pub(crate) struct PreparedStream<'a> {
     token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
     read_ahead: Option<ReceivedToken>,
+}
+
+impl<'a> Debug for PreparedStream<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedStream")
+            .field(
+                "token_stream",
+                &"Stream<Item = crate::Result<ReceivedToken>>",
+            )
+            .field("read_ahead", &self.read_ahead)
+            .finish()
+    }
 }
 
 impl<'a> PreparedStream<'a> {

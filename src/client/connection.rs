@@ -22,7 +22,7 @@ use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
 #[cfg(windows)]
 use std::time::Duration;
-use std::{cmp, io, net::SocketAddr, pin::Pin, sync::atomic::Ordering, task};
+use std::{cmp, fmt::Debug, io, net::SocketAddr, pin::Pin, sync::atomic::Ordering, task};
 use task::Poll;
 use tokio::{
     io::AsyncRead,
@@ -49,6 +49,17 @@ pub(crate) struct Connection {
     flushed: bool,
     context: Context,
     buf: BytesMut,
+}
+
+impl Debug for Connection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Connection")
+            .field("transport", &"Framed<..>")
+            .field("flushed", &self.flushed)
+            .field("context", &self.context)
+            .field("buf", &self.buf.as_ref().hex_dump())
+            .finish()
+    }
 }
 
 pub(crate) struct ConnectOpts {

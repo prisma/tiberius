@@ -45,6 +45,7 @@ uint_enum! {
 }
 
 /// Context, that might be required to make sure we understand and are understood by the server
+#[derive(Debug)]
 pub(crate) struct Context {
     pub version: FeatureLevel,
     pub packet_size: AtomicU32,

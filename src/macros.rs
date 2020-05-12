@@ -1,14 +1,17 @@
 macro_rules! uint_enum {
     ($( #[$gattr:meta] )* pub enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
+        #[allow(missing_docs)]
         uint_enum!($( #[$gattr ])* (pub) enum $ty { $( $( #[$attr] )* $variant = $val, )* });
     };
     ($( #[$gattr:meta] )* enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
+        #[allow(missing_docs)]
         uint_enum!($( #[$gattr ])* () enum $ty { $( $( #[$attr] )* $variant = $val, )* });
     };
 
     ($( #[$gattr:meta] )* ( $($vis:tt)* ) enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
         #[derive(Debug, Copy, Clone, PartialEq)]
         $( #[$gattr] )*
+        #[allow(missing_docs)]
         $( $vis )* enum $ty {
             $( $( #[$attr ])* $variant = $val, )*
         }
@@ -39,14 +42,14 @@ macro_rules! to_sql {
     ($target:ident, $( $ty:ty: ($name:expr, $val:expr) ;)* ) => {
         $(
             impl crate::ToSql for $ty {
-                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData) {
+                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData<'_>) {
                     let $target = self;
                     (std::borrow::Cow::Borrowed($name), $val)
                 }
             }
 
             impl crate::ToSql for Option<$ty> {
-                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData) {
+                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData<'_>) {
                     let val = match self {
                         None => crate::tds::codec::ColumnData::None,
                         Some(item) => {
@@ -68,7 +71,7 @@ macro_rules! from_column_data {
             impl<'a> std::convert::TryFrom<&'a ColumnData<'a>> for $ty {
                 type Error = crate::Error;
 
-                fn try_from(data: &ColumnData) -> crate::Result<Self> {
+                fn try_from(data: &ColumnData<'a>) -> crate::Result<Self> {
                     match data {
                         $( $pat => Ok($val), )*
                         _ => Err(crate::Error::Conversion(format!("cannot interpret {:?} as an {} value", data, stringify!($ty)).into()))

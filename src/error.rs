@@ -18,24 +18,31 @@ impl Clone for CloneableIoError {
 #[derive(Debug, Clone, Error)]
 pub enum Error {
     #[error("An error occured during the attempt of performing I/O: {}", _0)]
+    /// An error occured when performing I/O to the server.
     Io(CloneableIoError),
     #[error("Protocol error: {}", _0)]
+    /// An error happened during the request or response parsing.
     Protocol(Cow<'static, str>),
     #[error("Encoding error: {}", _0)]
+    /// Server responded with encoding not supported.
     Encoding(Cow<'static, str>),
     #[error("Conversion error: {}", _0)]
+    /// Conversion failure from one type to another.
     Conversion(Cow<'static, str>),
     #[error("UTF-8 error")]
+    /// Tried to convert data to UTF-8 that was not valid.
     Utf8,
     #[error("UTF-16 error")]
+    /// Tried to convert data to UTF-16 that was not valid.
     Utf16,
     #[error("Error parsing an integer: {}", _0)]
+    /// Tried to parse an integer that was not an integer.
     ParseInt(std::num::ParseIntError),
     #[error("Token error: {}", _0)]
+    /// An error returned by the server.
     Server(TokenError),
-    #[error("Operation cancelled")]
-    Canceled,
     #[error("Error forming TLS connection: {}", _0)]
+    /// An error in the TLS handshake.
     Tls(String),
 }
 
