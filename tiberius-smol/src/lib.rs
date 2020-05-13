@@ -9,6 +9,11 @@ pub async fn connector(addr: String, instance_name: Option<String>) -> tiberius:
     if let Some(ref instance_name) = instance_name {
         addr = tiberius::find_tcp_port(addr, instance_name).await?;
     };
-    Ok(smol::Async::<net::TcpStream>::connect(addr).await?)
+
+    // connection might block, but this is required to allow set_nodelay(true)
+    let stream = net::TcpStream::connect(addr)?;
+    stream.set_nodelay(true)?;
+
+    Ok(smol::Async::new(stream)?)
 }
 
