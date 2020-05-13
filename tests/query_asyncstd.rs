@@ -5,19 +5,9 @@ use std::sync::Once;
 
 use tiberius::{ClientBuilder, Result, Client};
 
-use async_std::{io, net::{self, ToSocketAddrs}};
+use async_std::net;
 
-async fn connector(addr: String, instance_name: Option<String>) -> tiberius::Result<net::TcpStream> 
-{
-    let mut addr = addr.to_socket_addrs().await?.next().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
-    })?;
-
-    if let Some(ref instance_name) = instance_name {
-        addr = tiberius::find_tcp_port(addr, instance_name).await?;
-    };
-    Ok(net::TcpStream::connect(addr).await?)
-}
+use tiberius_asyncstd::connector;
 
 static LOGGER_SETUP: Once = Once::new();
 

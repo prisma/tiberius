@@ -1,0 +1,89 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2018"
+
+#[dev-dependencies]
+#tiberius = { path = "../tiberius", features = ["default"] }
+
+[dev-dependencies.tiberius]
+path = "../tiberius"
+version = "0.4.0-alpha.4"
+features = ["default"] # temporary
+
+[dev-dependencies.tiberius-asyncstd]
+path = "../tiberius-asyncstd"
+version = "0.4.0-alpha.4"
+
+[dev-dependencies.tiberius-smol]
+path = "../tiberius-smol"
+version = "0.4.0-alpha.4"
+
+[dev-dependencies.tiberius-tokio]
+path = "../tiberius-tokio"
+version = "0.4.0-alpha.4"
+
+[dev-dependencies]
+async-stream = "0.2"
+bitflags = "1.0"
+byteorder = "1.0"
+encoding = "0.2"
+once_cell = "1.3"
+thiserror = "1.0"
+bytes = "0.5"
+pretty-hex = "0.1"
+pin-project-lite = "0.1"
+futures_codec = "0.4"
+futures-sink = "0.3"
+env_logger = "0.7"
+
+[dev-dependencies.chrono]
+version = "0.4"
+
+[dev-dependencies.uuid]
+version = "0.8"
+features = ["v1", "v3", "v4"]
+
+[dev-dependencies.futures]
+version = "0.3"
+
+[dev-dependencies.futures-util]
+version = "0.3"
+
+[dev-dependencies.async-native-tls]
+version = "0.3"
+
+[dev-dependencies.tracing]
+features = ["log"]
+version = "0.1"
+
+[dev-dependencies.rust_decimal]
+version = "1.5"
+
+[dev-dependencies.winauth]
+version = "0.0.4"
+
+[dev-dependencies.tokio-util]
+version = "0.3"
+features = ["compat"]
+
+[dev-dependencies.tokio]
+features = ["macros", "sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
+version = "0.2"
+
+[dev-dependencies.smol]
+version = "0.1"
+
+[dev-dependencies.async-std]
+features = ["attributes"]
+version = "1"
+
+[dev-dependencies.anyhow]
+version = "1"
+
+
+[[example]]
+name = "new"
+path = "new.rs"
+

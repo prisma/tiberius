@@ -1,0 +1,33 @@
+[package]
+authors = ["Steffen Butzer <steffen.butzer@outlook.com>", "Julius de Bruijn <bruijn@prisma.io>"]
+description = "Tokio frontend for Tiberius MSSQL Driver"
+documentation = "https://docs.rs/tiberius-tokio/"
+edition = "2018"
+keywords = ["tds", "mssql", "sql"]
+license = "MIT/Apache-2.0"
+name = "tiberius-tokio"
+readme = "README.md"
+repository = "https://github.com/prisma/tiberius"
+version = "0.4.0-alpha.4"
+
+#[dependencies]
+#tiberius = { path = "../tiberius", features = ["default"] }
+#tiberius = { version = "0.4.0-alpha.4", path = "../tiberius", features = ["default"] }
+
+[dependencies.tiberius]
+path = "../tiberius"
+version = "0.4.0-alpha.4"
+features = ["default"] # temporary
+
+[dependencies.tokio-util]
+version = "0.3"
+features = ["compat"]
+
+[dependencies.tokio]
+version = "0.2"
+features = ["io-std", "io-util", "tcp", "dns"]
+
+#[features]
+#default = ["tls", "chrono", "tds73"]
+#tls = ["async-native-tls"]
+#tds73 = []

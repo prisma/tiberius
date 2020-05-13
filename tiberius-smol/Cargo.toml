@@ -1,0 +1,25 @@
+[package]
+authors = ["Steffen Butzer <steffen.butzer@outlook.com>", "Julius de Bruijn <bruijn@prisma.io>"]
+description = "A TDS (MSSQL) driver"
+documentation = "https://docs.rs/tiberius-smol/"
+edition = "2018"
+keywords = ["tds", "mssql", "sql"]
+license = "MIT/Apache-2.0"
+name = "tiberius-smol"
+readme = "README.md"
+repository = "https://github.com/prisma/tiberius"
+version = "0.4.0-alpha.4"
+
+[dependencies.tiberius]
+path = "../tiberius"
+version = "0.4.0-alpha.4"
+features = ["default"] # temporary
+
+
+[dependencies.smol]
+version = "0.1"
+
+#[features]
+#default = ["tls", "chrono", "tds73"]
+#tls = ["async-native-tls"]
+#tds73 = []
