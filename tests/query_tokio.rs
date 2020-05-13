@@ -5,7 +5,7 @@ use std::sync::Once;
 use tiberius::{numeric::Numeric, xml::XmlData, Client, ClientBuilder, Result};
 use tiberius_tokio::connector;
 use uuid::Uuid;
-use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
+use tokio_util::compat;
 use tokio::net;
 
 static LOGGER_SETUP: Once = Once::new();

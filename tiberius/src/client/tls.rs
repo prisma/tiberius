@@ -79,7 +79,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> futures::AsyncWrite fo
         }
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_close(cx),
             #[cfg(feature = "tls")]

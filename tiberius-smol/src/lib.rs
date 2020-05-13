@@ -1,5 +1,3 @@
-use tiberius::{ClientBuilder, Result, Client};
-
 use std::{io, net::{self, ToSocketAddrs}};
 
 pub async fn connector(addr: String, instance_name: Option<String>) -> tiberius::Result<smol::Async<net::TcpStream>> 

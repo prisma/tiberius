@@ -1,4 +1,4 @@
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::TryStreamExt;
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;

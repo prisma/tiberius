@@ -22,7 +22,7 @@ use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
 #[cfg(windows)]
 use std::time::Duration;
-use std::{cmp, fmt::Debug, io, net::SocketAddr, pin::Pin, task};
+use std::{cmp, net::SocketAddr, fmt::Debug, io, pin::Pin, sync::atomic::Ordering, task};
 use task::Poll;
 use futures_codec::Framed;
 use tracing::{event, Level};
@@ -45,7 +45,7 @@ pub(crate) struct Connection<S: futures::AsyncRead + futures::AsyncWrite + Unpin
     buf: BytesMut,
 }
 
-impl Debug for Connection {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Debug for Connection<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Connection")
             .field("transport", &"Framed<..>")
@@ -375,6 +375,8 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Connection<S> {
 
 }
 
+
+/// This feature is not used on platforms other than Windows
 #[cfg(not(windows))]
 pub async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> crate::Result<std::net::SocketAddr> {
     Ok(addr)

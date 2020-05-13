@@ -1,6 +1,5 @@
 use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
 use tokio::{io, net};
-use tiberius::{numeric::Numeric, xml::XmlData, Client, ClientBuilder, Result};
 
 
 pub async fn connector(addr: String, instance_name: Option<String>) -> tiberius::Result<compat::Compat<net::TcpStream>> 

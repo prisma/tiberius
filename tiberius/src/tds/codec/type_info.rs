@@ -1,6 +1,5 @@
 use crate::{tds::Collation, xml::XmlSchema, Error, SqlReadBytes};
 use std::{convert::TryFrom, sync::Arc};
-use futures::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub enum TypeInfo {
