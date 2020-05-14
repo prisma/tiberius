@@ -8,15 +8,11 @@ license = "MIT/Apache-2.0"
 name = "tiberius-asyncstd"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
-version = "0.4.0-alpha.4"
-
-#[dependencies]
-#tiberius = { version = "0.4.0-alpha.4", path = "../tiberius", features = ["default"] }
-#tiberius = { path = "../tiberius", features = ["default"] }
+version = "0.4.0-alpha.5"
 
 [dependencies.tiberius]
 path = "../tiberius"
-version = "0.4.0-alpha.4"
+version = "0.4.0-alpha.5"
 features = ["default"] # temporary
 
 [dependencies.async-std]

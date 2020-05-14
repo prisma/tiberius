@@ -6,20 +6,20 @@ edition = "2018"
 
 [dev-dependencies.tiberius]
 path = "../tiberius"
-version = "0.4.0-alpha.4"
+version = "0.4.0-alpha.5"
 features = ["default"] # temporary
 
 [dev-dependencies.tiberius-asyncstd]
 path = "../tiberius-asyncstd"
-version = "0.4.0-alpha.4"
+version = "0.4.0-alpha.5"
 
 [dev-dependencies.tiberius-smol]
 path = "../tiberius-smol"
-version = "0.4.0-alpha.4"
+version = "0.4.0-alpha.5"
 
 [dev-dependencies.tiberius-tokio]
 path = "../tiberius-tokio"
-version = "0.4.0-alpha.4"
+version = "0.4.0-alpha.5"
 
 [dev-dependencies]
 async-stream = "0.2"
