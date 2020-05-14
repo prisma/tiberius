@@ -143,7 +143,7 @@ impl<'a> Stream for QueryStream<'a> {
                     }
                     continue;
                 }
-                _ => todo!(),
+                _ => continue,
             };
         }
     }

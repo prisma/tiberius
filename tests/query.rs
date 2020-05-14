@@ -282,7 +282,11 @@ async fn multiple_queries() -> Result<()> {
 #[tokio::test]
 async fn bool_type() -> Result<()> {
     let mut conn = connect().await?;
-    let mut stream = conn.query("SELECT @P1, @P2", &[&false, &false]).await?;
+
+    let mut stream = conn
+        .query("SELECT @P1, @P2 ORDER BY 1", &[&false, &false])
+        .await?;
+
     let mut rows: Vec<bool> = Vec::with_capacity(2);
 
     while let Some(row) = stream.next().await {
