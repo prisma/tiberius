@@ -5,19 +5,6 @@ use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
 use tokio::{io, net};
 
 
-async fn connect(addr: String, instance_name: Option<String>) -> tiberius::Result<compat::Compat<net::TcpStream>> 
-{
-    let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
-    })?;
-
-    if let Some(ref instance_name) = instance_name {
-        addr = tiberius::find_tcp_port(addr, instance_name).await?;
-    };
-    Ok(net::TcpStream::connect(addr).await.map(|s| s.compat_write())?)
-}
-
-
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
     builder.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
     builder.trust_cert();
 
-    let mut conn = builder.build(connect).await?;
+    let mut conn = builder.build(tiberius_tokio::connector).await?;
     let stream = conn.query("SELECT @P1", &[&1]).await?;
 
     let results = conn

@@ -23,6 +23,9 @@ features = ["compat"]
 version = "0.2"
 features = ["io-std", "io-util", "tcp", "dns"]
 
+[dependencies.futures]
+version = "0.3"
+
 #[features]
 #default = ["tls", "chrono", "tds73"]
 #tls = ["async-native-tls"]
