@@ -29,6 +29,7 @@ pub use uuid::Uuid;
 
 use sql_read_bytes::*;
 use tds::codec::*;
+use std::{str, net};
 
 /// An alias for a result that holds crate's error type as the error.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -41,4 +42,31 @@ pub(crate) fn get_driver_version() -> u64 {
             Ok(num) => acc | num << (part.0 * 8),
             _ => acc | 0 << (part.0 * 8),
         })
+}
+
+/// Helper function for consuming a reply
+/// from the SQL browser on Windows
+#[cfg(windows)]
+pub fn consume_sql_browser_message(mut addr: net::SocketAddr, mut buf: Vec<u8>, len: usize, instance_name: &str) -> crate::Result<net::SocketAddr> {
+    buf.truncate(len);
+
+    let err = Error::Conversion(
+        format!("Could not resolve SQL browser instance {}", instance_name).into(),
+    );
+
+    if len == 0 {
+        return Err(err);
+    }
+
+    let response = str::from_utf8(&buf[3..len])?;
+
+    let port: u16 = response
+        .find("tcp;")
+        .and_then(|pos| response[pos..].split(';').nth(1))
+        .ok_or(err)
+        .and_then(|val| Ok(val.parse()?))?;
+
+    addr.set_port(port);
+
+    Ok(addr)
 }

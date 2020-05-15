@@ -19,6 +19,12 @@ features = ["default"] # temporary
 [dependencies.smol]
 version = "0.1"
 
+[dependencies.futures-timer]
+version = "0.3"
+
+[dependencies.futures]
+version = "0.3"
+
 #[features]
 #default = ["tls", "chrono", "tds73"]
 #tls = ["async-native-tls"]

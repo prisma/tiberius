@@ -1,6 +1,11 @@
 #[cfg(windows)]
-use std::str;
+use std::{str, time};
 use std::{io, net::{self, ToSocketAddrs}};
+
+#[cfg(windows)]
+use futures_timer;
+#[cfg(windows)]
+use futures::future::{self, FutureExt};
 
 pub async fn connector(addr: String, instance_name: Option<String>) -> tiberius::Result<smol::Async<net::TcpStream>> 
 {
@@ -29,7 +34,7 @@ async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> tiberius::Result<
 /// Use the SQL Browser to find the correct TCP port for the server
 /// instance.
 #[cfg(windows)]
-async fn find_tcp_port(mut addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
+async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
     // First resolve the instance to a port via the
     // SSRP protocol/MS-SQLR protocol [1]
     // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
@@ -46,40 +51,21 @@ async fn find_tcp_port(mut addr: std::net::SocketAddr, instance_name: &str) -> t
     let socket = smol::Async::<net::UdpSocket>::bind(&local_bind)?;
     socket.send_to(&msg, addr).await?;
 
-    //let timeout = std::time::Duration::from_millis(1000);
+    let recieve = Box::pin(socket.recv(&mut buf));
+    let timeout = futures_timer::Delay::new(std::time::Duration::from_millis(1000));
+    let len = future::select(recieve, timeout).then(|either| {
+        match either {
+            future::Either::Left((len, _)) => future::ready(len.map_err(|e| e.into())),
+            future::Either::Right(_) => future::ready(Err(tiberius::Error::Conversion(
+                    format!(
+                        "SQL browser timeout during resolving instance {}",
+                        instance_name
+                    )
+                    .into(),
+                )
+            )),
+        }
+    }).await?;
 
-    let len = socket.recv(&mut buf).await?;
-//    let len = time::timeout(timeout, socket.recv(&mut buf))
-//        .map_err(|_: time::Elapsed| {
-//            tiberius::Error::Conversion(
-//                format!(
-//                    "SQL browser timeout during resolving instance {}",
-//                    instance_name
-//                )
-//                .into(),
-//            )
-//        }).await??;
-
-
-    buf.truncate(len);
-
-    let err = tiberius::Error::Conversion(
-        format!("Could not resolve SQL browser instance {}", instance_name).into(),
-    );
-
-    if len == 0 {
-        return Err(err);
-    }
-
-    let response = str::from_utf8(&buf[3..len])?;
-
-    let port: u16 = response
-        .find("tcp;")
-        .and_then(|pos| response[pos..].split(';').nth(1))
-        .ok_or(err)
-        .and_then(|val| Ok(val.parse()?))?;
-
-    addr.set_port(port);
-
-    Ok(addr)
+    tiberius::consume_sql_browser_message(addr, buf, len, instance_name)
 }

@@ -32,7 +32,7 @@ async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> tiberius::Result<
 /// Use the SQL Browser to find the correct TCP port for the server
 /// instance.
 #[cfg(windows)]
-async fn find_tcp_port(mut addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
+async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
     // First resolve the instance to a port via the
     // SSRP protocol/MS-SQLR protocol [1]
     // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
@@ -62,27 +62,6 @@ async fn find_tcp_port(mut addr: std::net::SocketAddr, instance_name: &str) -> t
             )
         }).await??;
 
-
-    buf.truncate(len);
-
-    let err = tiberius::Error::Conversion(
-        format!("Could not resolve SQL browser instance {}", instance_name).into(),
-    );
-
-    if len == 0 {
-        return Err(err);
-    }
-
-    let response = str::from_utf8(&buf[3..len])?;
-
-    let port: u16 = response
-        .find("tcp;")
-        .and_then(|pos| response[pos..].split(';').nth(1))
-        .ok_or(err)
-        .and_then(|val| Ok(val.parse()?))?;
-
-    addr.set_port(port);
-
-    Ok(addr)
+    tiberius::consume_sql_browser_message(addr, buf, len, instance_name)
 }
 
