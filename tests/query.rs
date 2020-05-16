@@ -5,111 +5,25 @@ use std::sync::Once;
 use tiberius::{numeric::Numeric, xml::XmlData, Result};
 use uuid::Uuid;
 
+// This is used in the testing macro :)
+#[allow(dead_code)]
 static LOGGER_SETUP: Once = Once::new();
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING")
-        .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned())
+        .unwrap_or_else(|_| "server=tcp:localhost,1433;TrustServerCertificate=true".to_owned())
 });
 
-async fn connect_smol() -> Result<tiberius_smol::Client> {
-    LOGGER_SETUP.call_once(|| {
-        env_logger::init();
-    });
-
-    let builder = tiberius_smol::ClientBuilder::from_ado_string(&*CONN_STR)?;
-    builder.build().await
-}
-
-async fn connect_tokio() -> Result<tiberius_tokio::Client> {
-    LOGGER_SETUP.call_once(|| {
-        env_logger::init();
-    });
-
-    let builder = tiberius_tokio::ClientBuilder::from_ado_string(&*CONN_STR)?;
-    builder.build().await
-}
-
-#[tokio::test]
-async fn test_simple_query() -> Result<()> {
-    let mut conn = connect().await?;
-    let row = conn
-        .simple_query("SELECT 1")
-        .await?
-        .into_row()
-        .await?
-        .unwrap();
-
-    assert_eq!(Some(1i32), row.get(0));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_simple_query_no_results() -> Result<()> {
-    let mut conn = connect().await?;
-
-    let results = conn
-        .simple_query("CREATE TABLE ##NoResults (id INT)")
-        .await?
-        .into_results()
-        .await?;
-
-    assert!(results.is_empty());
-
-    Ok(())
-}
-
-#[cfg(feature = "tls")]
-#[tokio::test]
-async fn connect_with_full_encryption_tokio() -> Result<()> {
-    LOGGER_SETUP.call_once(|| {
-        env_logger::init();
-    });
-
-    let conn_str = format!("{};encrypt=true", *CONN_STR);
-    let mut conn = tiberius_tokio::ClientBuilder::from_ado_string(&conn_str)?.build().await?;
-
-    let row = conn
-        .query("SELECT @P1", &[&-4i32])
-        .await?
-        .into_row()
-        .await?
-        .unwrap();
-
-    assert_eq!(Some(-4i32), row.get(0));
-
-    Ok(())
-}
-
-#[cfg(windows)]
-#[tokio::test]
-async fn connect_to_named_instance() -> Result<()> {
-    let instance_name = env::var("TIBERIUS_TEST_INSTANCE").unwrap_or("MSSQLSERVER".to_owned());
-
-    let conn_str = CONN_STR.replace(",1433", &format!("\\{}", instance_name));
-    let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build().await?;
-
-    let row = conn
-        .query("SELECT @P1", &[&-4i32])
-        .await?
-        .into_row()
-        .await?
-        .unwrap();
-
-    assert_eq!(Some(-4i32), row.get(0));
-
-    Ok(())
-}
 
 
 macro_rules! test_on_runtimes {
-    ($code:ident) => {
+    ($code:ident, $connstr:expr) => {
         paste::item! {
             #[test]
             fn [<$code _on_asyncstd>]()-> Result<()> {
                 async_std::task::block_on(async {
-                    let conn = connect_asyncstd().await?.into();
+                    let builder = tiberius_asyncstd::ClientBuilder::from_ado_string($connstr)?;
+                    let conn = builder.build().await?.into();
                     $code(conn).await?;
                     Ok(())
                 })
@@ -119,7 +33,8 @@ macro_rules! test_on_runtimes {
             #[test]
             fn [<$code _on_smol>]()-> Result<()> {
                 smol::run( async {
-                    let conn = connect_smol().await?.into();
+                    let builder = tiberius_smol::ClientBuilder::from_ado_string($connstr)?;
+                    let conn = builder.build().await?.into();
                     $code(conn).await?;
                     Ok(())
                 })
@@ -130,13 +45,91 @@ macro_rules! test_on_runtimes {
             fn [<$code _on_tokio>]()-> Result<()> {
                 let mut rt = tokio::runtime::Runtime::new()?;
                 rt.block_on(async {
-                    let conn = connect_tokio().await?.into();
+                    let builder = tiberius_tokio::ClientBuilder::from_ado_string($connstr)?;
+                    let conn = builder.build().await?.into();
                     $code(conn).await?;
                     Ok(())
                 })
             }
         }
-    }
+    };
+    ($code:ident) => {
+        paste::item! {
+            #[test]
+            fn [<$code _on_asyncstd>]()-> Result<()> {
+                async_std::task::block_on(async {
+                    let builder = tiberius_asyncstd::ClientBuilder::from_ado_string(&*CONN_STR)?;
+                    let conn = builder.build().await?.into();
+                    $code(conn).await?;
+                    Ok(())
+                })
+            }
+        }
+        paste::item! {
+            #[test]
+            fn [<$code _on_smol>]()-> Result<()> {
+                smol::run( async {
+                    let builder = tiberius_smol::ClientBuilder::from_ado_string(&*CONN_STR)?;
+                    let conn = builder.build().await?.into();
+                    $code(conn).await?;
+                    Ok(())
+                })
+            }
+        }
+        paste::item! {
+            #[test]
+            fn [<$code _on_tokio>]()-> Result<()> {
+                let mut rt = tokio::runtime::Runtime::new()?;
+                rt.block_on(async {
+                    let builder = tiberius_tokio::ClientBuilder::from_ado_string(&*CONN_STR)?;
+                    let conn = builder.build().await?.into();
+                    $code(conn).await?;
+                    Ok(())
+                })
+            }
+        }
+    };
+}
+
+
+
+#[cfg(feature = "tls")]
+test_on_runtimes! { connect_with_full_encryption, &format!("{};encrypt=true", *CONN_STR)}
+
+#[cfg(feature = "tls")]
+async fn connect_with_full_encryption<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
+    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+
+    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![-4i32]);
+
+    Ok(())
+}
+
+
+#[cfg(windows)]
+test_on_runtimes! { 
+    connect_to_named_instance, 
+    {
+        let instance_name = env::var("TIBERIUS_TEST_INSTANCE").unwrap_or("MSSQLSERVER".to_owned());
+        CONN_STR.replace(",1433", &format!("\\{}", instance_name));
+    },
+}
+
+#[cfg(windows)]
+async fn connect_to_named_instance<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
+    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+
+    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
+    assert_eq!(rows?, vec![-4i32]);
+
+    Ok(())
 }
 
 test_on_runtimes! { test_kanji_varchars }

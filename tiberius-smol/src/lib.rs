@@ -133,7 +133,7 @@ impl Client {
     /// options.
     ///
     /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub fn builder() -> tiberius::ClientBuilder<smol::Async<net::TcpStream>, Client> {
+    pub fn builder() -> ClientBuilder {
         tiberius::ClientBuilder::new(Self::new, connector).into()
     }
 }

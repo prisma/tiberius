@@ -85,16 +85,3 @@ version = "0.1"
 [[test]]
 name = "query"
 path = "query.rs"
-
-[[test]]
-name = "query_asyncstd"
-path = "query_asyncstd.rs"
-
-[[test]]
-name = "query_smol"
-path = "query_smol.rs"
-
-[[test]]
-name = "query_tokio"
-path = "query_tokio.rs"
-
