@@ -45,6 +45,12 @@ impl convert::From<tiberius::Client<compat::Compat<net::TcpStream>>> for Client 
     }
 }
 
+impl convert::From<Client> for tiberius::Client<compat::Compat<net::TcpStream>> {
+    fn from(client: Client) -> tiberius::Client<compat::Compat<net::TcpStream>> {
+        client.inner
+    }
+}
+
 impl Client {
     pub fn new(inner: tiberius::Client<compat::Compat<net::TcpStream>>) -> Client {
         Client { inner }

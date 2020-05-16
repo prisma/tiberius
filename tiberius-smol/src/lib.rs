@@ -44,6 +44,12 @@ impl convert::From<tiberius::Client<smol::Async<net::TcpStream>>> for Client {
     }
 }
 
+impl convert::From<Client> for tiberius::Client<smol::Async<net::TcpStream>> {
+    fn from(client: Client) -> tiberius::Client<smol::Async<net::TcpStream>> {
+        client.inner
+    }
+}
+
 impl Client {
     pub fn new(inner: tiberius::Client<smol::Async<net::TcpStream>>) -> Client {
         Client { inner }

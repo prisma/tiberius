@@ -79,6 +79,12 @@ version = "1"
 [dev-dependencies.anyhow]
 version = "1"
 
+[dev-dependencies.paste]
+version = "0.1"
+
+[[test]]
+name = "query"
+path = "query.rs"
 
 [[test]]
 name = "query_asyncstd"

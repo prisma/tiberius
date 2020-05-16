@@ -50,6 +50,13 @@ impl convert::From<tiberius::Client<net::TcpStream>> for Client {
     }
 }
 
+impl convert::From<Client> for tiberius::Client<net::TcpStream> {
+    fn from(client: Client) -> tiberius::Client<net::TcpStream> {
+        client.inner
+    }
+}
+
+
 impl Client {
 
     fn new(inner: tiberius::Client<net::TcpStream>) -> Client {

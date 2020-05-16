@@ -1,4 +1,4 @@
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::{TryStreamExt, StreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
@@ -8,12 +8,20 @@ use uuid::Uuid;
 static LOGGER_SETUP: Once = Once::new();
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
-    env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
-        "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
-    )
+    env::var("TIBERIUS_TEST_CONNECTION_STRING")
+        .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned())
 });
 
-async fn connect() -> Result<tiberius_tokio::Client> {
+async fn connect_smol() -> Result<tiberius_smol::Client> {
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+
+    let builder = tiberius_smol::ClientBuilder::from_ado_string(&*CONN_STR)?;
+    builder.build().await
+}
+
+async fn connect_tokio() -> Result<tiberius_tokio::Client> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
@@ -54,7 +62,7 @@ async fn test_simple_query_no_results() -> Result<()> {
 
 #[cfg(feature = "tls")]
 #[tokio::test]
-async fn connect_with_full_encryption() -> Result<()> {
+async fn connect_with_full_encryption_tokio() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
@@ -94,10 +102,48 @@ async fn connect_to_named_instance() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn read_and_write_kanji_varchars() -> Result<()> {
-    let mut conn = connect().await?;
 
+macro_rules! test_on_runtimes {
+    ($code:ident) => {
+        paste::item! {
+            #[test]
+            fn [<$code _on_asyncstd>]()-> Result<()> {
+                async_std::task::block_on(async {
+                    let conn = connect_asyncstd().await?.into();
+                    $code(conn).await?;
+                    Ok(())
+                })
+            }
+        }
+        paste::item! {
+            #[test]
+            fn [<$code _on_smol>]()-> Result<()> {
+                smol::run( async {
+                    let conn = connect_smol().await?.into();
+                    $code(conn).await?;
+                    Ok(())
+                })
+            }
+        }
+        paste::item! {
+            #[test]
+            fn [<$code _on_tokio>]()-> Result<()> {
+                let mut rt = tokio::runtime::Runtime::new()?;
+                rt.block_on(async {
+                    let conn = connect_tokio().await?.into();
+                    $code(conn).await?;
+                    Ok(())
+                })
+            }
+        }
+    }
+}
+
+test_on_runtimes! { test_kanji_varchars }
+async fn test_kanji_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     conn.execute("CREATE TABLE ##TestKanji (content NVARCHAR(max))", &[])
         .await?;
 
@@ -125,10 +171,11 @@ async fn read_and_write_kanji_varchars() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn read_and_write_finnish_varchars() -> Result<()> {
-    let mut conn = connect().await?;
-
+test_on_runtimes! { read_and_write_finnish_varchars }
+async fn read_and_write_finnish_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     conn.execute("CREATE TABLE ##TestFinnish (content NVARCHAR(max))", &[])
         .await?;
 
@@ -203,9 +250,11 @@ async fn read_and_write_nchar() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn execute_insert_update_delete() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { execute_insert_update_delete }
+async fn execute_insert_update_delete<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##TestExecute (id int)", &[])
         .await?;
@@ -240,9 +289,11 @@ async fn execute_insert_update_delete() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn execute_with_multiple_separate_results() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { execute_with_multiple_separate_results }
+async fn execute_with_multiple_separate_results<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##TestExecuteMultiple1 (id int)", &[])
         .await?;
@@ -260,9 +311,11 @@ async fn execute_with_multiple_separate_results() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn execute_multiple_count_total() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { execute_multiple_count_total }
+async fn execute_multiple_count_total<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##TestExecuteMultiple2 (id int)", &[])
         .await?;
@@ -280,9 +333,11 @@ async fn execute_multiple_count_total() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn correct_row_handling_when_not_enough_data() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { correct_row_handling_when_not_enough_data }
+async fn correct_row_handling_when_not_enough_data<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let mut stream = conn
         .query(
@@ -304,9 +359,11 @@ async fn correct_row_handling_when_not_enough_data() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn multiple_stored_procedure_functions() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { multiple_stored_procedure_functions }
+async fn multiple_stored_procedure_functions<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let mut stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'; EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1'", &[]).await?;
 
     let rows: Result<Vec<i32>> = stream
@@ -328,9 +385,11 @@ async fn multiple_stored_procedure_functions() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn multiple_queries() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { multiple_queries }
+async fn multiple_queries<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let mut stream = conn
         .query("SELECT 'a' AS first; SELECT 'b' AS second;", &[])
@@ -356,9 +415,11 @@ async fn multiple_queries() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn bool_type() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { bool_type }
+async fn bool_type<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let row = conn
         .query("SELECT @P1, @P2 ORDER BY 1", &[&false, &true])
@@ -373,9 +434,11 @@ async fn bool_type() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn i8_token() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { i8_token }
+async fn i8_token<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let row = conn
         .query("SELECT @P1", &[&-4i8])
         .await?
@@ -383,14 +446,14 @@ async fn i8_token() -> Result<()> {
         .await?
         .unwrap();
     assert_eq!(Some(-4i8), row.get(0));
-
     Ok(())
 }
 
-#[tokio::test]
-async fn i16_token() -> Result<()> {
-    let mut conn = connect().await?;
-
+test_on_runtimes! { i16_token }
+async fn i16_token<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let row = conn
         .query("SELECT @P1", &[&-4i16])
         .await?
@@ -403,9 +466,11 @@ async fn i16_token() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn i32_token() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { i32_token }
+async fn i32_token<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let row = conn
         .query("SELECT @P1", &[&-4i32])
@@ -419,9 +484,11 @@ async fn i32_token() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn i64_token() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { i64_token }
+async fn i64_token<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let row = conn
         .query("SELECT @P1", &[&-4i64])
@@ -435,10 +502,11 @@ async fn i64_token() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn f32_token() -> Result<()> {
-    let mut conn = connect().await?;
-
+test_on_runtimes! { f32_token }
+async fn f32_token<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let row = conn
         .query("SELECT @P1", &[&4.20f32])
         .await?
@@ -451,9 +519,11 @@ async fn f32_token() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn f64_token() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { f64_token }
+async fn f64_token<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let row = conn
         .query("SELECT @P1", &[&4.20f64])
@@ -467,11 +537,11 @@ async fn f64_token() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn short_strings() -> Result<()> {
-    let mut conn = connect().await?;
-    let s = "Hallo";
-
+test_on_runtimes! { short_strings }
+async fn short_strings<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let row = conn
         .query("SELECT @P1", &[&s])
         .await?
@@ -483,9 +553,12 @@ async fn short_strings() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn long_strings() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { long_strings }
+async fn long_strings<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let string = "a".repeat(4001);
 
     let row = conn
@@ -499,10 +572,12 @@ async fn long_strings() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn stored_procedures() -> Result<()> {
-    let mut conn = connect().await?;
 
+test_on_runtimes! { stored_procedures }
+async fn stored_procedures<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let rows = conn
         .query(
             "EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3'",
@@ -519,9 +594,12 @@ async fn stored_procedures() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn drop_stream_before_handling_all_results_should_not_cause_weird_things() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { drop_stream_before_handling_all_results_should_not_cause_weird_things }
+async fn drop_stream_before_handling_all_results_should_not_cause_weird_things<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     {
         let mut stream = conn
@@ -549,10 +627,12 @@ async fn drop_stream_before_handling_all_results_should_not_cause_weird_things()
     Ok(())
 }
 
-#[tokio::test]
-async fn nbc_rows() -> Result<()> {
-    let mut conn = connect().await?;
 
+test_on_runtimes! { nbc_rows }
+async fn nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let mut stream = conn
         .query(
             "SELECT NULL, NULL, NULL, NULL, 1, NULL, NULL, NULL, 2, NULL, NULL, 3, NULL, 4",
@@ -590,9 +670,12 @@ async fn nbc_rows() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn ntext_type() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { ntext_type }
+async fn ntext_type<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let string = r#"Hääpuhetta voi värittää kertomalla vitsejä, aforismeja,
         sananlaskuja, laulunsäkeitä ja muita lainauksia. Huumori sopii hääpuheeseen,
@@ -617,9 +700,12 @@ async fn ntext_type() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn ntext_empty() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { ntext_empty }
+async fn ntext_empty<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##TestNTextEmpty (content NTEXT)", &[])
         .await?;
@@ -642,9 +728,12 @@ async fn ntext_empty() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn text_type() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { text_type }
+async fn text_type<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let string = "a".repeat(10000);
 
@@ -694,9 +783,12 @@ async fn varchar_empty() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn text_empty() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { text_empty }
+async fn text_empty<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##TestTextEmpty (content TEXT)", &[])
         .await?;
@@ -719,9 +811,12 @@ async fn text_empty() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn varbinary_empty() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { varbinary_empty }
+async fn varbinary_empty<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute(
         "CREATE TABLE ##TestVarBinaryEmpty (content VARBINARY(max))",
@@ -751,9 +846,12 @@ async fn varbinary_empty() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn binary_type() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { binary_type }
+async fn binary_type<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##TestBinary (content BINARY(8000))", &[])
         .await?;
@@ -786,9 +884,12 @@ async fn binary_type() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn varbinary_type() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { varbinary_type }
+async fn varbinary_type<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##VarBinary (content VARBINARY(8000))", &[])
         .await?;
@@ -821,9 +922,12 @@ async fn varbinary_type() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn image_type() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { image_type }
+async fn image_type<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##ImageType (content IMAGE)", &[])
         .await?;
@@ -856,10 +960,12 @@ async fn image_type() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn guid_type() -> Result<()> {
-    let mut conn = connect().await?;
 
+test_on_runtimes! { guid_type }
+async fn guid_type<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let id = Uuid::new_v4();
     let row = conn
         .query("SELECT @P1", &[&id])
@@ -873,9 +979,12 @@ async fn guid_type() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn varbinary_max() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { varbinary_max }
+async fn varbinary_max<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     conn.execute("CREATE TABLE ##MaxBinary (content VARBINARY(max))", &[])
         .await?;
@@ -908,10 +1017,11 @@ async fn varbinary_max() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn numeric_type_u32_presentation() -> Result<()> {
-    let mut conn = connect().await?;
-
+test_on_runtimes! { numeric_type_u32_presentation }
+async fn numeric_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let num = Numeric::new_with_scale(2, 1);
     let row = conn
         .query("SELECT @P1", &[&num])
@@ -925,9 +1035,12 @@ async fn numeric_type_u32_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn numeric_type_u64_presentation() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { numeric_type_u64_presentation }
+async fn numeric_type_u64_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let num = Numeric::new_with_scale(std::i32::MAX as i128 + 10, 1);
     let stream = conn.query("SELECT @P1", &[&num]).await?;
 
@@ -943,9 +1056,12 @@ async fn numeric_type_u64_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn numeric_type_u96_presentation() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { numeric_type_u96_presentation }
+async fn numeric_type_u96_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let num = Numeric::new_with_scale(std::i64::MAX as i128, 19);
     let stream = conn.query("SELECT @P1", &[&num]).await?;
 
@@ -961,9 +1077,12 @@ async fn numeric_type_u96_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn numeric_type_u128_presentation() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { numeric_type_u128_presentation }
+async fn numeric_type_u128_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     let num = Numeric::new_with_scale(std::i64::MAX as i128, 37);
     let stream = conn.query("SELECT @P1", &[&num]).await?;
 
@@ -979,12 +1098,17 @@ async fn numeric_type_u128_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[cfg(feature = "rust_decimal")]
-async fn decimal_type_u32_presentation() -> Result<()> {
+
+#[cfg(feature = "rust_decimal")] 
+test_on_runtimes! { decimal_type_u32_presentation }
+
+#[cfg(feature = "rust_decimal")] 
+async fn decimal_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use rust_decimal::Decimal;
 
-    let mut conn = connect().await?;
     let num = Decimal::from_i128_with_scale(2, 1);
     let row = conn
         .query("SELECT @P1", &[&num])
@@ -998,12 +1122,17 @@ async fn decimal_type_u32_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+
 #[cfg(feature = "rust_decimal")]
-async fn decimal_type_u64_presentation() -> Result<()> {
+test_on_runtimes! { decimal_type_u64_presentation }
+
+#[cfg(feature = "rust_decimal")]
+async fn decimal_type_u64_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use rust_decimal::Decimal;
 
-    let mut conn = connect().await?;
     let num = Decimal::from_i128_with_scale(i32::MAX as i128 + 10, 1);
 
     let row = conn
@@ -1018,12 +1147,17 @@ async fn decimal_type_u64_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+
 #[cfg(feature = "rust_decimal")]
-async fn decimal_type_u96_presentation() -> Result<()> {
+test_on_runtimes! { decimal_type_u96_presentation }
+
+#[cfg(feature = "rust_decimal")]
+async fn decimal_type_u96_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use rust_decimal::Decimal;
 
-    let mut conn = connect().await?;
     let num = Decimal::from_i128_with_scale(i64::MAX as i128, 19);
     let row = conn
         .query("SELECT @P1", &[&num])
@@ -1037,12 +1171,17 @@ async fn decimal_type_u96_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+
 #[cfg(feature = "rust_decimal")]
-async fn decimal_type_u128_presentation() -> Result<()> {
+test_on_runtimes! { decimal_type_u128_presentation }
+
+#[cfg(feature = "rust_decimal")]
+async fn decimal_type_u128_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use rust_decimal::Decimal;
 
-    let mut conn = connect().await?;
     let num = Decimal::from_i128_with_scale(i64::MAX as i128, 28);
     let row = conn
         .query("SELECT @P1", &[&num])
@@ -1056,12 +1195,17 @@ async fn decimal_type_u128_presentation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn naive_small_datetime_tds73() -> Result<()> {
-    use chrono::NaiveDate;
 
-    let mut conn = connect().await?;
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+test_on_runtimes! { naive_small_date_time_tds73 }
+
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn naive_small_date_time_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
+    use chrono::{NaiveDate, NaiveDateTime};
+
     let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
 
     conn.execute("CREATE TABLE ##TestSmallDt (date smalldatetime)", &[])
@@ -1083,12 +1227,17 @@ async fn naive_small_datetime_tds73() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn naive_datetime2_tds73() -> Result<()> {
-    use chrono::NaiveDate;
 
-    let mut conn = connect().await?;
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+test_on_runtimes! { naive_date_time2_tds73 }
+
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn naive_date_time2_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
+    use chrono::{NaiveDate, NaiveDateTime};
+
     let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
 
     conn.execute("CREATE TABLE ##NaiveDateTime2 (date datetime2)", &[])
@@ -1110,12 +1259,18 @@ async fn naive_datetime2_tds73() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[cfg(all(feature = "chrono", not(feature = "tds73")))]
-async fn naive_date_time_tds72() -> Result<()> {
-    use chrono::NaiveDate;
 
-    let mut conn = connect().await?;
+
+#[cfg(all(feature = "chrono", not(feature = "tds73")))]
+test_on_runtimes! { naive_date_time_tds72 }
+
+#[cfg(all(feature = "chrono", not(feature = "tds73")))]
+async fn naive_date_time_tds72<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
+    use chrono::{NaiveDate, NaiveDateTime};
+
     let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
 
     let row = conn
@@ -1130,12 +1285,17 @@ async fn naive_date_time_tds72() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn naive_time() -> Result<()> {
+test_on_runtimes! { naive_time }
+
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn naive_time<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use chrono::NaiveTime;
 
-    let mut conn = connect().await?;
     let time = NaiveTime::from_hms(16, 20, 0);
 
     let row = conn
@@ -1150,12 +1310,17 @@ async fn naive_time() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn naive_date() -> Result<()> {
+test_on_runtimes! { naive_date }
+
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn naive_date<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use chrono::NaiveDate;
 
-    let mut conn = connect().await?;
     let date = NaiveDate::from_ymd(2020, 4, 20);
 
     let row = conn
@@ -1170,12 +1335,17 @@ async fn naive_date() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn date_time_utc() -> Result<()> {
+test_on_runtimes! { date_time_utc }
+
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn date_time_utc<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use chrono::{offset::Utc, DateTime, NaiveDate};
 
-    let mut conn = connect().await?;
     let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
     let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 
@@ -1191,12 +1361,17 @@ async fn date_time_utc() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+
 #[cfg(all(feature = "chrono", feature = "tds73"))]
-async fn date_time_fixed() -> Result<()> {
+test_on_runtimes! { date_time_fixed }
+
+#[cfg(all(feature = "chrono", feature = "tds73"))]
+async fn date_time_fixed<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     use chrono::{offset::FixedOffset, DateTime, NaiveDate};
 
-    let mut conn = connect().await?;
     let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
     let fixed = FixedOffset::east(3600 * 3);
     let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
@@ -1213,9 +1388,12 @@ async fn date_time_fixed() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn xml_read_write() -> Result<()> {
-    let mut conn = connect().await?;
+
+test_on_runtimes! { xml_read_write }
+async fn xml_read_write<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let xml = XmlData::new("<root><child attr=\"attr-value\"/></root>");
     let row = conn
@@ -1230,9 +1408,11 @@ async fn xml_read_write() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn xml_read_null_xml() -> Result<()> {
-    let mut conn = connect().await?;
+test_on_runtimes! { xml_read_null_xml }
+async fn xml_read_null_xml<S>(mut conn: tiberius::Client<S>) -> Result<()> 
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
 
     let row = conn
         .query("SELECT CAST(NULL AS XML)", &[])
