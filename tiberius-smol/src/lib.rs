@@ -6,7 +6,7 @@
 #![doc(test(attr(allow(unused_extern_crates, unused_variables))))]
 
 #[cfg(windows)]
-use std::{str, time, convert};
+use std::{str, time};
 use std::{io, net::{self, ToSocketAddrs}, future::Future, pin::Pin, borrow::Cow, convert};
 
 #[cfg(windows)]
