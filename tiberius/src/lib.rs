@@ -30,7 +30,7 @@ pub use uuid::Uuid;
 use sql_read_bytes::*;
 use tds::codec::*;
 
-#[cfg(all(windows, doc))]
+#[cfg(any(windows, doc))]
 use std::{str, net};
 
 /// An alias for a result that holds crate's error type as the error.
@@ -48,7 +48,7 @@ pub(crate) fn get_driver_version() -> u64 {
 
 /// Helper function for consuming a reply
 /// from the SQL browser on Windows
-#[cfg(all(windows, doc))]
+#[cfg(any(windows, doc))]
 pub fn consume_sql_browser_message(mut addr: net::SocketAddr, mut buf: Vec<u8>, len: usize, instance_name: &str) -> crate::Result<net::SocketAddr> {
     buf.truncate(len);
 
