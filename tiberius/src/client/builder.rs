@@ -1,12 +1,15 @@
 use super::{connection::*, AuthMethod};
 use crate::{tds::Context, Client, EncryptionLevel};
-use std::{future, collections::HashMap};
+use std::{collections::HashMap, future::Future, pin::Pin};
 
 #[derive(Clone, Debug)]
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html
-pub struct ClientBuilder {
+pub struct ClientBuilder<S, W>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
     host: Option<String>,
     port: Option<u16>,
     database: Option<String>,
@@ -15,11 +18,24 @@ pub struct ClientBuilder {
     encryption: EncryptionLevel,
     trust_cert: bool,
     auth: AuthMethod,
+    wrapper: fn(Client<S>) -> W,
+    connector: fn(String, Option<String>) -> Pin<Box<dyn Future<Output = crate::Result<S>>>>,
 }
 
-impl Default for ClientBuilder {
-    fn default() -> Self {
-        Self {
+impl<S, W> ClientBuilder<S, W>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+{
+    /// Create a `ClientBuilder` using a connector
+    /// The `connector` must be able to create a TCP connection
+    /// with the remote server. To do this it must implement `AsyncRead`
+    /// and `AsyncWrite` but it is up to the user to ensure that it does
+    /// this via the TCP protocol.
+    pub fn new(
+        wrapper: fn(Client<S>) -> W,
+        connector: fn(String, Option<String>) -> Pin<Box<dyn Future<Output = crate::Result<S>>>>,
+    ) -> ClientBuilder<S, W> {
+        ClientBuilder {
             host: None,
             port: None,
             database: None,
@@ -31,11 +47,11 @@ impl Default for ClientBuilder {
             encryption: EncryptionLevel::NotSupported,
             trust_cert: false,
             auth: AuthMethod::None,
+            wrapper,
+            connector,
         }
     }
-}
 
-impl ClientBuilder {
     /// A host or ip address to connect to.
     ///
     /// - Defaults to `localhost`.
@@ -110,10 +126,8 @@ impl ClientBuilder {
     }
 
     /// Creates a new client and connects to the server.
-    pub async fn build<F, S>(self, connector: fn(String, Option<String>) -> F) -> crate::Result<Client<S>> 
-        where S: futures::AsyncRead + futures::AsyncWrite + Unpin,
-              //T: Fn(String, &Option<String>) -> F, 
-              F: future::Future<Output = crate::Result<S>>,
+    pub async fn build(self) -> crate::Result<W> 
+    where
     {
         let context = self.create_context();
         let addr = format!("{}:{}", self.get_host(), self.get_port());
@@ -129,11 +143,13 @@ impl ClientBuilder {
             instance_name: None,
         };
 
-        let tcp_stream = connector(addr, opts.instance_name.clone()).await?;
+        let ctr = self.connector;
+        let tcp_stream = ctr(addr, opts.instance_name.clone()).await?;
 
-        let connection = Connection::connect_tcp(context, opts, tcp_stream).await?;
+        let connection = Connection::with_tcp(context, opts, tcp_stream).await?;
 
-        Ok(Client { connection })
+        let wrap = self.wrapper;
+        Ok(wrap(Client { connection }))
     }
 
     /// Creates a new `ClientBuilder` from an [ADO.NET connection
@@ -152,7 +168,7 @@ impl ClientBuilder {
     /// | `encrypt`                 | Specifies whether the driver uses TLS to encrypt communication.                                                                                                                                                             |
     pub fn from_ado_string(s: &str) -> crate::Result<Self> {
         let ado = AdoNetString::parse(s)?;
-        let mut builder = Self::default();
+        let mut builder = Self::new(wrapper, connector);
 
         let server = ado.server()?;
 

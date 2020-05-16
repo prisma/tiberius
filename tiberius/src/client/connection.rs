@@ -14,7 +14,6 @@ use crate::{
     },
     EncryptionLevel, SqlReadBytes,
 };
-use ::std::str;
 use bytes::BytesMut;
 #[cfg(windows)]
 use codec::TokenSSPI;
@@ -72,7 +71,7 @@ enum LoginResult {
 
 impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Connection<S> {
     /// Creates a new connection
-    pub async fn connect_tcp(
+    pub async fn with_tcp(
         context: Context,
         opts: ConnectOpts,
         tcp_stream: S,

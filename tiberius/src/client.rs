@@ -55,8 +55,12 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Client<S> {
     /// options.
     ///
     /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub fn builder() -> ClientBuilder {
-        ClientBuilder::default()
+    pub fn builder<W>(
+        wrapper: fn(Client<S>) -> W,
+        connector: fn(String, Option<String>) -> Pin<Box<dyn Future<Output = crate::Result<S>>>>
+        ) -> ClientBuilder<S, W> 
+    {
+        ClientBuilder::new(wrapper, connector)
     }
 
     /// Executes SQL statements in the SQL Server, returning the number rows

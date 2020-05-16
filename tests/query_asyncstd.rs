@@ -3,11 +3,7 @@ use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
 
-use tiberius::{ClientBuilder, Result, Client};
-
-use async_std::net;
-
-use tiberius_asyncstd::connector;
+use tiberius::Result;
 
 static LOGGER_SETUP: Once = Once::new();
 
@@ -16,13 +12,13 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
         .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned())
 });
 
-async fn connect() -> Result<Client<net::TcpStream>> {
+async fn connect() -> Result<tiberius_asyncstd::Client> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
 
-    let builder = ClientBuilder::from_ado_string(&*CONN_STR)?;
-    builder.build(connector).await
+    let builder = tiberius_asyncstd::ClientBuilder::from_ado_string(&*CONN_STR)?;
+    builder.build().await
 }
 
 #[cfg(feature = "tls")]
@@ -33,7 +29,7 @@ async fn test_conn_full_encryption() -> Result<()> {
     });
 
     let conn_str = format!("{};encrypt=true", *CONN_STR);
-    let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build(connector).await?;
+    let mut conn = tiberius_asyncstd::ClientBuilder::from_ado_string(&conn_str)?.build().await?;
 
     let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
 

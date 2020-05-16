@@ -247,7 +247,7 @@ impl<'a> ExecuteResult {
     /// # Example
     ///
     /// ```no_run
-    /// # use tiberius::ClientBuilder;
+    /// # use tiberius_tokio::ClientBuilder;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {

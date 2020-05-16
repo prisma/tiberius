@@ -19,11 +19,9 @@ features = ["default"] # temporary
 [dependencies.smol]
 version = "0.1"
 
-[dependencies.futures-timer]
-version = "0.3"
-
-[dependencies.futures]
-version = "0.3"
+[target.'cfg(windows)'.dependencies]
+futures = "0.3"
+futures-timer = "0.3"
 
 #[features]
 #default = ["tls", "chrono", "tds73"]

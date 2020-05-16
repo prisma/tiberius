@@ -2,11 +2,8 @@ use futures_util::{StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{numeric::Numeric, xml::XmlData, Client, ClientBuilder, Result};
-use tiberius_tokio::connector;
+use tiberius::{numeric::Numeric, xml::XmlData, Result};
 use uuid::Uuid;
-use tokio_util::compat;
-use tokio::net;
 
 static LOGGER_SETUP: Once = Once::new();
 
@@ -16,13 +13,13 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
     )
 });
 
-async fn connect() -> Result<Client<compat::Compat<net::TcpStream>>> {
+async fn connect() -> Result<tiberius_tokio::Client> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
 
-    let builder = ClientBuilder::from_ado_string(&*CONN_STR)?;
-    builder.build(connector).await
+    let builder = tiberius_tokio::ClientBuilder::from_ado_string(&*CONN_STR)?;
+    builder.build().await
 }
 
 #[tokio::test]
@@ -63,7 +60,7 @@ async fn connect_with_full_encryption() -> Result<()> {
     });
 
     let conn_str = format!("{};encrypt=true", *CONN_STR);
-    let mut conn = ClientBuilder::from_ado_string(&conn_str)?.build(connector).await?;
+    let mut conn = tiberius_tokio::ClientBuilder::from_ado_string(&conn_str)?.build().await?;
 
     let row = conn
         .query("SELECT @P1", &[&-4i32])
