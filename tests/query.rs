@@ -116,7 +116,7 @@ test_on_runtimes! {
     {
         let instance_name = env::var("TIBERIUS_TEST_INSTANCE").unwrap_or("MSSQLSERVER".to_owned());
         CONN_STR.replace(",1433", &format!("\\{}", instance_name));
-    },
+    }
 }
 
 #[cfg(windows)]
