@@ -190,6 +190,18 @@ impl BaseMetaDataColumn {
             _ => (),
         }
 
+        // TODO: for type={text, ntext, and image} TABLENAME
+
+        /*// CryptoMetaData
+        let cmd_ordinal = try!(self.read_u16::<LittleEndian>());
+        let cmd_user_ty = try!(self.read_u32::<LittleEndian>());
+        let cmd_ty_info: TypeInfo = try!(self.unserialize(ctx));
+        let cmd_encryption_algo = try!(self.read_u8());
+        // TODO:
+        assert_eq!(cmd_encryption_algo, 0);
+        let cmd_algo_name = try!(self.read_varchar::<u8>());
+        let cmd_algo_type = try!(self.read_u8());
+        let cmd_norm_version = try!(self.read_u8());*/
         Ok(BaseMetaDataColumn { flags, ty })
     }
 }

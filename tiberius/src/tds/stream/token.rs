@@ -13,7 +13,6 @@ use std::{
     convert::TryFrom,
     sync::{atomic::Ordering, Arc},
 };
-//use futures::io::AsyncReadExt;
 use tracing::{event, Level};
 
 #[derive(Debug)]
