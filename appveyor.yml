@@ -20,4 +20,4 @@ install:
 build: false
 
 test_script:
-  - cargo test --target %TARGET% --all --test-threads=1
+  - cargo test --test-threads=1 --target %TARGET% --all
