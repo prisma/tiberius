@@ -21,6 +21,9 @@ macro_rules! test_on_runtimes {
         paste::item! {
             #[test]
             fn [<$code _on_asyncstd>]()-> Result<()> {
+                LOGGER_SETUP.call_once(|| {
+                    env_logger::init();
+                });
                 async_std::task::block_on(async {
                     let builder = tiberius_asyncstd::ClientBuilder::from_ado_string($connstr)?;
                     let conn = builder.build().await?.into();
@@ -32,6 +35,9 @@ macro_rules! test_on_runtimes {
         paste::item! {
             #[test]
             fn [<$code _on_smol>]()-> Result<()> {
+                LOGGER_SETUP.call_once(|| {
+                    env_logger::init();
+                });
                 smol::run( async {
                     let builder = tiberius_smol::ClientBuilder::from_ado_string($connstr)?;
                     let conn = builder.build().await?.into();
@@ -43,6 +49,9 @@ macro_rules! test_on_runtimes {
         paste::item! {
             #[test]
             fn [<$code _on_tokio>]()-> Result<()> {
+                LOGGER_SETUP.call_once(|| {
+                    env_logger::init();
+                });
                 let mut rt = tokio::runtime::Runtime::new()?;
                 rt.block_on(async {
                     let builder = tiberius_tokio::ClientBuilder::from_ado_string($connstr)?;
@@ -57,6 +66,9 @@ macro_rules! test_on_runtimes {
         paste::item! {
             #[test]
             fn [<$code _on_asyncstd>]()-> Result<()> {
+                LOGGER_SETUP.call_once(|| {
+                    env_logger::init();
+                });
                 async_std::task::block_on(async {
                     let builder = tiberius_asyncstd::ClientBuilder::from_ado_string(&*CONN_STR)?;
                     let conn = builder.build().await?.into();
@@ -68,6 +80,9 @@ macro_rules! test_on_runtimes {
         paste::item! {
             #[test]
             fn [<$code _on_smol>]()-> Result<()> {
+                LOGGER_SETUP.call_once(|| {
+                    env_logger::init();
+                });
                 smol::run( async {
                     let builder = tiberius_smol::ClientBuilder::from_ado_string(&*CONN_STR)?;
                     let conn = builder.build().await?.into();
@@ -79,6 +94,9 @@ macro_rules! test_on_runtimes {
         paste::item! {
             #[test]
             fn [<$code _on_tokio>]()-> Result<()> {
+                LOGGER_SETUP.call_once(|| {
+                    env_logger::init();
+                });
                 let mut rt = tokio::runtime::Runtime::new()?;
                 rt.block_on(async {
                     let builder = tiberius_tokio::ClientBuilder::from_ado_string(&*CONN_STR)?;
