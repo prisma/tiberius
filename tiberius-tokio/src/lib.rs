@@ -1,3 +1,10 @@
+//! The Tiberius Microsot SQL Server driver implemented on the tokio runtime
+#![recursion_limit = "512"]
+#![warn(missing_docs)]
+#![warn(missing_debug_implementations, rust_2018_idioms)]
+#![doc(test(attr(deny(rust_2018_idioms, warnings))))]
+#![doc(test(attr(allow(unused_extern_crates, unused_variables))))]
+
 use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
 use tokio::{io, net};
 use std::{future::Future, pin::Pin, borrow::Cow, convert};
@@ -52,7 +59,7 @@ impl convert::From<Client> for tiberius::Client<compat::Compat<net::TcpStream>> 
 }
 
 impl Client {
-    pub fn new(inner: tiberius::Client<compat::Compat<net::TcpStream>>) -> Client {
+    fn new(inner: tiberius::Client<compat::Compat<net::TcpStream>>) -> Client {
         Client { inner }
     }
 

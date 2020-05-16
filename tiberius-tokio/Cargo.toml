@@ -13,7 +13,6 @@ version = "0.4.0-alpha.5"
 [dependencies.tiberius]
 path = "../tiberius"
 version = "0.4.0-alpha.5"
-features = ["default"] # temporary
 
 [dependencies.tokio-util]
 version = "0.3"
@@ -26,7 +25,7 @@ features = ["io-std", "io-util", "tcp", "dns"]
 [dependencies.futures]
 version = "0.3"
 
-#[features]
-#default = ["tls", "chrono", "tds73"]
-#tls = ["async-native-tls"]
-#tds73 = []
+[features]
+default = ["tiberius/tls", "tiberius/chrono", "tiberius/tds73"]
+tls = ["tiberius/async-native-tls"]
+tds73 = []
