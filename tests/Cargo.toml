@@ -34,6 +34,7 @@ pin-project-lite = "0.1"
 futures_codec = "0.4"
 futures-sink = "0.3"
 env_logger = "0.7"
+names = "0.11"
 
 [dev-dependencies.chrono]
 version = "0.4"
