@@ -1,25 +1,21 @@
-use crate::tds::codec::TokenError;
+//! Error module
+pub use crate::tds::codec::TokenError;
+pub use std::io::ErrorKind as IoErrorKind;
 use std::{borrow::Cow, convert::Infallible, io};
 use thiserror::Error;
-
-// TODO: keep private
-#[derive(Debug, Error)]
-#[error("{}", _0)]
-pub struct CloneableIoError(io::Error);
-
-impl Clone for CloneableIoError {
-    fn clone(&self) -> Self {
-        Self(io::Error::new(self.0.kind(), format!("{}", self)))
-    }
-}
 
 /// A unified error enum that contains several errors that might occurr during
 /// the lifecycle of this driver
 #[derive(Debug, Clone, Error)]
 pub enum Error {
-    #[error("An error occured during the attempt of performing I/O: {}", _0)]
+    #[error("An error occured during the attempt of performing I/O: {}", message)]
     /// An error occured when performing I/O to the server.
-    Io(CloneableIoError),
+    Io {
+        /// A list specifying general categories of I/O error.
+        kind: IoErrorKind,
+        /// The error description.
+        message: String,
+    },
     #[error("Protocol error: {}", _0)]
     /// An error happened during the request or response parsing.
     Protocol(Cow<'static, str>),
@@ -67,7 +63,10 @@ impl From<Infallible> for Error {
 
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
-        Error::Io(CloneableIoError(err))
+        Self::Io {
+            kind: err.kind(),
+            message: format!("{}", err),
+        }
     }
 }
 
