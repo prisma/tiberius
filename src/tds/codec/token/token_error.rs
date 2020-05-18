@@ -6,6 +6,7 @@ use std::fmt;
 use tokio::io::AsyncReadExt;
 
 #[derive(Clone, Debug, thiserror::Error)]
+/// An error token returned from the server.
 pub struct TokenError {
     /// ErrorCode
     pub(crate) code: u32,
@@ -56,6 +57,46 @@ impl TokenError {
         };
 
         Ok(token)
+    }
+
+    /// The error code, see descriptions from [the manual].
+    ///
+    /// [the manual]: https://docs.microsoft.com/en-us/sql/relational-databases/errors-events/database-engine-events-and-errors?view=sql-server-ver15
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    /// The error state, used as a modifier to the error number.
+    pub fn state(&self) -> u8 {
+        self.state
+    }
+
+    /// The class (severity) of the error. A class of less than 10 indicates an
+    /// informational message.
+    pub fn class(&self) -> u8 {
+        self.class
+    }
+
+    /// The error message returned from the server.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// The server name.
+    pub fn server(&self) -> &str {
+        &self.server
+    }
+
+    /// The name of the stored procedure causing the error.
+    pub fn procedure(&self) -> &str {
+        &self.procedure
+    }
+
+    /// The line number in the SQL batch or stored procedure that caused the
+    /// error. Line numbers begin at 1. If the line number is not applicable to
+    /// the message, the value is 0.
+    pub fn line(&self) -> u32 {
+        self.line
     }
 }
 

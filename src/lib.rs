@@ -12,13 +12,13 @@ mod client;
 mod sql_read_bytes;
 mod to_sql;
 
-mod error;
+pub mod error;
 mod result;
 mod row;
 mod tds;
 
 pub use client::{AuthMethod, Client, ClientBuilder};
-pub use error::Error;
+pub(crate) use error::Error;
 pub use result::*;
 pub use row::{Column, ColumnType, Row};
 pub use tds::{codec::ColumnData, numeric, time, xml, EncryptionLevel};
