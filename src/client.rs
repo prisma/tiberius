@@ -81,8 +81,8 @@ impl AuthMethod {
 ///
 /// ```no_run
 /// # use tiberius::{Client, AuthMethod};
-/// # #[allow(unused)]
-/// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut builder = Client::builder();
 ///
 /// builder.host("0.0.0.0");
@@ -117,10 +117,14 @@ impl Client {
     /// `@PN`, where N is the index of the parameter, starting from `1`.
     ///
     /// ```no_run
-    /// # use tiberius::Client;
-    /// # #[allow(unused)]
-    /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let builder = Client::builder();
+    /// # use tiberius::ClientBuilder;
+    /// # use std::env;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
     /// # let mut conn = builder.build().await?;
     /// let results = conn
     ///     .execute(
@@ -159,11 +163,15 @@ impl Client {
     /// The `query` can define the parameter placement by annotating them with
     /// `@PN`, where N is the index of the parameter, starting from `1`.
     ///
-    /// ```no_run
-    /// # use tiberius::Client;
-    /// # #[allow(unused)]
-    /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let builder = Client::builder();
+    /// ```
+    /// # use tiberius::ClientBuilder;
+    /// # use std::env;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
     /// # let mut conn = builder.build().await?;
     /// let rows = conn
     ///     .query(
@@ -206,12 +214,12 @@ impl Client {
             RpcParam {
                 name: Cow::Borrowed("stmt"),
                 flags: RpcStatusFlags::empty(),
-                value: ColumnData::String(query.into()),
+                value: ColumnData::String(Some(query.into())),
             },
             RpcParam {
                 name: Cow::Borrowed("params"),
                 flags: RpcStatusFlags::empty(),
-                value: ColumnData::I32(0),
+                value: ColumnData::I32(Some(0)),
             },
         ]
     }
@@ -232,8 +240,8 @@ impl Client {
                 param_str.push(',')
             }
             param_str.push_str(&format!("@P{} ", i + 1));
-            let (sql_type, param_data) = param.to_sql();
-            param_str.push_str(sql_type.as_ref());
+            let param_data = param.to_sql();
+            param_str.push_str(&param_data.type_name());
 
             rpc_params.push(RpcParam {
                 name: Cow::Owned(format!("@P{}", i + 1)),
@@ -243,7 +251,7 @@ impl Client {
         }
 
         if let Some(params) = rpc_params.iter_mut().find(|x| x.name == "params") {
-            params.value = ColumnData::String(param_str.into());
+            params.value = ColumnData::String(Some(param_str.into()));
         }
 
         let req = TokenRpcRequest {

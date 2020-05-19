@@ -1,5 +1,6 @@
 use crate::{
     client::Connection,
+    error::Error,
     tds::{
         codec::DoneStatus,
         stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
@@ -21,53 +22,44 @@ use task::Poll;
 /// should not be polled anymore.
 ///
 /// ```
-/// # use tiberius::{Client, AuthMethod};
+/// # use tiberius::ClientBuilder;
 /// # use std::env;
-/// use futures::{StreamExt, TryStreamExt};
-/// # #[allow(unused)]
-/// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-/// # let mut builder = Client::builder();
-/// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
-/// #     builder.host(host);
-/// # };
-/// # if let Ok(port) = env::var("TIBERIUS_TEST_PORT") {
-/// #     let port: u16 = port.parse().unwrap();
-/// #     builder.port(port);
-/// # };
-/// # if let Ok(user) = env::var("TIBERIUS_TEST_USER") {
-/// #     let pw = env::var("TIBERIUS_TEST_PW").unwrap();
-/// #     builder.authentication(AuthMethod::sql_server(user, pw));
-/// # };
+/// # use futures::{StreamExt, TryStreamExt};
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+/// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+/// # );
+/// # let builder = ClientBuilder::from_ado_string(&c_str)?;
 /// # let mut conn = builder.build().await?;
-///
 /// let mut stream = conn
 ///     .query(
-///         "SELECT @P1; SELECT @P2",
+///         "SELECT @P1 AS first; SELECT @P2 AS second",
 ///         &[&1i32, &2i32],
 ///     )
 ///     .await?;
 ///
 /// // Result of `SELECT 1`. Taking the `Stream` by reference, allowing us to
-/// // poll it later again.
-/// let first_result: Vec<i32> = stream
+/// // poll it later again. We fetch the value with column index.
+/// let first_result: Vec<Option<i32>> = stream
 ///     .by_ref()
-///     .map_ok(|x| x.get::<_, i32>(0))
+///     .map_ok(|x| x.get::<i32, _>(0))
 ///     .try_collect()
 ///     .await?;
 ///
-/// assert_eq!(1, first_result[0]);
+/// assert_eq!(Some(1), first_result[0]);
 ///
 /// // Allows us to poll more results.
 /// assert!(stream.next_resultset());
 ///
-/// // Result of `SELECT 2`.
-/// let second_result: Vec<i32> = stream
+/// // Result of `SELECT 2`, this time fetching with the column name.
+/// let second_result: Vec<Option<i32>> = stream
 ///     .by_ref()
-///     .map_ok(|x| x.get::<_, i32>(0))
+///     .map_ok(|x| x.get::<i32, _>("second"))
 ///     .try_collect()
 ///     .await?;
 ///
-/// assert_eq!(2, second_result[0]);
+/// assert_eq!(Some(2), second_result[0]);
 ///
 /// // No more results left. We should not poll again.
 /// assert!(!stream.next_resultset());
@@ -101,24 +93,15 @@ impl<'a> QueryResult<'a> {
     /// result set.
     ///
     /// ```no_run
-    /// # use tiberius::{Client, AuthMethod};
+    /// # use tiberius::ClientBuilder;
     /// # use std::env;
-    /// # #[allow(unused)]
-    /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let mut builder = Client::builder();
-    /// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
-    /// #     builder.host(host);
-    /// # };
-    /// # if let Ok(port) = env::var("TIBERIUS_TEST_PORT") {
-    /// #     let port: u16 = port.parse().unwrap();
-    /// #     builder.port(port);
-    /// # };
-    /// # if let Ok(user) = env::var("TIBERIUS_TEST_USER") {
-    /// #     let pw = env::var("TIBERIUS_TEST_PW").unwrap();
-    /// #     builder.authentication(AuthMethod::sql_server(user, pw));
-    /// # };
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
     /// # let mut conn = builder.build().await?;
-    ///
     /// let mut result_set = conn
     ///     .query(
     ///         "SELECT 1 AS foo; SELECT 2 AS bar",
@@ -152,7 +135,7 @@ impl<'a> QueryResult<'a> {
 
     /// Collects results from all queries in the stream into memory in the order
     /// of querying.
-    pub async fn into_vec(mut self) -> crate::Result<Vec<Vec<Row>>> {
+    pub async fn into_results(mut self) -> crate::Result<Vec<Vec<Row>>> {
         let first: Vec<Row> = self.by_ref().try_collect().await?;
         let mut results = vec![first];
 
@@ -163,10 +146,28 @@ impl<'a> QueryResult<'a> {
         Ok(results)
     }
 
-    /// A convenience method on collecting the results of the first query into
-    /// memory. Drops all other results.
-    pub async fn into_first(self) -> crate::Result<Vec<Row>> {
-        Ok(self.try_collect().await?)
+    /// Collects the output of the first query, dropping any further
+    /// results.
+    pub async fn into_first_result(self) -> crate::Result<Vec<Row>> {
+        let mut results = self.into_results().await?.into_iter();
+
+        let rows = results
+            .next()
+            .ok_or(Error::Conversion("Empty result.".into()))?;
+
+        Ok(rows)
+    }
+
+    /// Collects the first row from the output of the first query, dropping any
+    /// further rows.
+    pub async fn into_row(self) -> crate::Result<Row> {
+        let mut results = self.into_first_result().await?.into_iter();
+
+        let row = results
+            .next()
+            .ok_or(Error::Conversion("Result contains no rows.".into()))?;
+
+        Ok(row)
     }
 }
 
@@ -187,24 +188,15 @@ impl<'a> Stream for QueryResult<'a> {
 /// marking the rows affected for each query.
 ///
 /// ```no_run
-/// # use tiberius::{Client, AuthMethod};
+/// # use tiberius::ClientBuilder;
 /// # use std::env;
-/// # #[allow(unused)]
-/// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-/// # let mut builder = Client::builder();
-/// # if let Ok(host) = env::var("TIBERIUS_TEST_HOST") {
-/// #     builder.host(host);
-/// # };
-/// # if let Ok(port) = env::var("TIBERIUS_TEST_PORT") {
-/// #     let port: u16 = port.parse().unwrap();
-/// #     builder.port(port);
-/// # };
-/// # if let Ok(user) = env::var("TIBERIUS_TEST_USER") {
-/// #     let pw = env::var("TIBERIUS_TEST_PW").unwrap();
-/// #     builder.authentication(AuthMethod::sql_server(user, pw));
-/// # };
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+/// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+/// # );
+/// # let builder = ClientBuilder::from_ado_string(&c_str)?;
 /// # let mut conn = builder.build().await?;
-///
 /// let stream = conn
 ///     .execute(
 ///         "INSERT INTO #Test (id) VALUES (@P1); INSERT INTO #Test (id) VALUES (@P2, @P3)",
@@ -250,13 +242,13 @@ impl<'a> ExecuteResult {
     /// ```no_run
     /// # use tiberius::ClientBuilder;
     /// # use std::env;
-    /// # #[allow(unused)]
-    /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let conn_str = env::var("TIBERIUS_TEST_CONNECTION_STRING")
-    /// #    .unwrap_or("server=tcp:localhost,1433;TrustServerCertificate=true".to_owned());
-    /// # let builder = ClientBuilder::from_ado_string(&conn_str)?;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
     /// # let mut conn = builder.build().await?;
-    ///
     /// let rows_affected = conn
     ///     .execute(
     ///         "INSERT INTO #Test (id) VALUES (@P1); INSERT INTO #Test (id) VALUES (@P2, @P3)",

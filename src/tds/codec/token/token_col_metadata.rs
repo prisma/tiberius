@@ -1,6 +1,6 @@
 use crate::{
-    tds::codec::{read_varchar, TypeInfo, VarLenType},
-    SqlReadBytes,
+    tds::codec::{read_varchar, FixedLenType, TypeInfo, VarLenType},
+    ColumnData, SqlReadBytes,
 };
 use bitflags::bitflags;
 use tokio::io::AsyncReadExt;
@@ -20,6 +20,88 @@ pub struct MetaDataColumn {
 pub struct BaseMetaDataColumn {
     pub flags: ColmetaDataFlags,
     pub ty: TypeInfo,
+}
+
+impl BaseMetaDataColumn {
+    pub(crate) fn null_value(&self) -> ColumnData<'static> {
+        match self.ty {
+            TypeInfo::FixedLen(ty) => match ty {
+                FixedLenType::Null => ColumnData::I32(None),
+                FixedLenType::Int1 => ColumnData::I8(None),
+                FixedLenType::Bit => ColumnData::Bit(None),
+                FixedLenType::Int2 => ColumnData::I16(None),
+                FixedLenType::Int4 => ColumnData::I32(None),
+                FixedLenType::Datetime4 => ColumnData::SmallDateTime(None),
+                FixedLenType::Float4 => ColumnData::F32(None),
+                FixedLenType::Money => ColumnData::F64(None),
+                FixedLenType::Datetime => ColumnData::DateTime(None),
+                FixedLenType::Float8 => ColumnData::F64(None),
+                FixedLenType::Money4 => ColumnData::F32(None),
+                FixedLenType::Int8 => ColumnData::I64(None),
+            },
+            TypeInfo::VarLenSized(ty, _, _) => match ty {
+                VarLenType::Guid => ColumnData::Guid(None),
+                VarLenType::Intn => ColumnData::I32(None),
+                VarLenType::Bitn => ColumnData::Bit(None),
+                VarLenType::Decimaln => ColumnData::Numeric(None),
+                VarLenType::Numericn => ColumnData::Numeric(None),
+                VarLenType::Floatn => ColumnData::F32(None),
+                VarLenType::Money => ColumnData::F64(None),
+                VarLenType::Datetimen => ColumnData::DateTime(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::Daten => ColumnData::Date(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::Timen => ColumnData::Time(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::Datetime2 => ColumnData::DateTime2(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::DatetimeOffsetn => ColumnData::DateTimeOffset(None),
+                VarLenType::BigVarBin => ColumnData::Binary(None),
+                VarLenType::BigVarChar => ColumnData::String(None),
+                VarLenType::BigBinary => ColumnData::Binary(None),
+                VarLenType::BigChar => ColumnData::String(None),
+                VarLenType::NVarchar => ColumnData::String(None),
+                VarLenType::NChar => ColumnData::String(None),
+                VarLenType::Xml => ColumnData::Xml(None),
+                VarLenType::Udt => todo!("User-defined types not supported"),
+                VarLenType::Text => ColumnData::String(None),
+                VarLenType::Image => ColumnData::Binary(None),
+                VarLenType::NText => ColumnData::String(None),
+                VarLenType::SSVariant => todo!(),
+            },
+            TypeInfo::VarLenSizedPrecision { ty, .. } => match ty {
+                VarLenType::Guid => ColumnData::Guid(None),
+                VarLenType::Intn => ColumnData::I32(None),
+                VarLenType::Bitn => ColumnData::Bit(None),
+                VarLenType::Decimaln => ColumnData::Numeric(None),
+                VarLenType::Numericn => ColumnData::Numeric(None),
+                VarLenType::Floatn => ColumnData::F32(None),
+                VarLenType::Money => ColumnData::F64(None),
+                VarLenType::Datetimen => ColumnData::DateTime(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::Daten => ColumnData::Date(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::Timen => ColumnData::Time(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::Datetime2 => ColumnData::DateTime2(None),
+                #[cfg(feature = "tds73")]
+                VarLenType::DatetimeOffsetn => ColumnData::DateTimeOffset(None),
+                VarLenType::BigVarBin => ColumnData::Binary(None),
+                VarLenType::BigVarChar => ColumnData::String(None),
+                VarLenType::BigBinary => ColumnData::Binary(None),
+                VarLenType::BigChar => ColumnData::String(None),
+                VarLenType::NVarchar => ColumnData::String(None),
+                VarLenType::NChar => ColumnData::String(None),
+                VarLenType::Xml => ColumnData::Xml(None),
+                VarLenType::Udt => todo!("User-defined types not supported"),
+                VarLenType::Text => ColumnData::String(None),
+                VarLenType::Image => ColumnData::Binary(None),
+                VarLenType::NText => ColumnData::String(None),
+                VarLenType::SSVariant => todo!(),
+            },
+            TypeInfo::Xml { .. } => ColumnData::Xml(None),
+        }
+    }
 }
 
 bitflags! {
@@ -109,19 +191,6 @@ impl BaseMetaDataColumn {
             }
             _ => (),
         }
-
-        // TODO: for type={text, ntext, and image} TABLENAME
-
-        /*// CryptoMetaData
-        let cmd_ordinal = try!(self.read_u16::<LittleEndian>());
-        let cmd_user_ty = try!(self.read_u32::<LittleEndian>());
-        let cmd_ty_info: TypeInfo = try!(self.unserialize(ctx));
-        let cmd_encryption_algo = try!(self.read_u8());
-        // TODO:
-        assert_eq!(cmd_encryption_algo, 0);
-        let cmd_algo_name = try!(self.read_varchar::<u8>());
-        let cmd_algo_type = try!(self.read_u8());
-        let cmd_norm_version = try!(self.read_u8());*/
 
         Ok(BaseMetaDataColumn { flags, ty })
     }
