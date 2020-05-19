@@ -1,143 +1,9 @@
 use crate::{
     error::Error,
-    tds::{
-        codec::{ColumnData, FixedLenType, TokenRow, TypeInfo, VarLenType},
-        xml::XmlData,
-        Numeric,
-    },
+    tds::codec::{ColumnData, FixedLenType, TokenRow, TypeInfo, VarLenType},
+    FromSql,
 };
-use std::{convert::TryFrom, sync::Arc};
-use uuid::Uuid;
-
-impl<'a> TryFrom<&'a ColumnData<'a>> for &'a str {
-    type Error = Error;
-
-    fn try_from(value: &'a ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::String(s) => Ok(s.as_ref()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as an str value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a ColumnData<'a>> for &'a [u8] {
-    type Error = Error;
-
-    fn try_from(value: &'a ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::Binary(s) => Ok(s.as_ref()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as a [u8] value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<&ColumnData<'a>> for String {
-    type Error = Error;
-
-    fn try_from(value: &ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::String(s) => Ok(s.to_string()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as a String value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<ColumnData<'a>> for String {
-    type Error = Error;
-
-    fn try_from(value: ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::String(s) => Ok(s.into_owned()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as a String value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<&ColumnData<'a>> for Vec<u8> {
-    type Error = Error;
-
-    fn try_from(value: &ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::Binary(b) => Ok(b.to_vec()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as a Vec<u8> value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<ColumnData<'a>> for Vec<u8> {
-    type Error = Error;
-
-    fn try_from(value: ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::Binary(b) => Ok(b.into_owned()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as a Vec<u8> value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a ColumnData<'a>> for XmlData {
-    type Error = Error;
-
-    fn try_from(value: &'a ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::Xml(s) => Ok(s.clone().into_owned()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as an XML value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<ColumnData<'a>> for Numeric {
-    type Error = Error;
-
-    fn try_from(value: ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::Numeric(n) => Ok(n),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as a Numeric value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a ColumnData<'a>> for Numeric {
-    type Error = Error;
-
-    fn try_from(value: &'a ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::Numeric(n) => Ok(*n),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as an XML value", value).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> TryFrom<ColumnData<'a>> for XmlData {
-    type Error = Error;
-
-    fn try_from(value: ColumnData<'a>) -> Result<Self, Self::Error> {
-        match value {
-            ColumnData::Xml(s) => Ok(s.into_owned()),
-            _ => Err(Error::Conversion(
-                format!("cannot interpret {:?} as an XML value", value).into(),
-            )),
-        }
-    }
-}
+use std::{fmt::Display, sync::Arc};
 
 /// A column of data from a query.
 #[derive(Debug)]
@@ -259,9 +125,13 @@ impl From<&TypeInfo> for ColumnType {
                 VarLenType::Floatn => Self::Floatn,
                 VarLenType::Money => Self::Money,
                 VarLenType::Datetimen => Self::Datetimen,
+                #[cfg(feature = "tds73")]
                 VarLenType::Daten => Self::Daten,
+                #[cfg(feature = "tds73")]
                 VarLenType::Timen => Self::Timen,
+                #[cfg(feature = "tds73")]
                 VarLenType::Datetime2 => Self::Datetime2,
+                #[cfg(feature = "tds73")]
                 VarLenType::DatetimeOffsetn => Self::DatetimeOffsetn,
                 VarLenType::BigVarBin => Self::BigVarBin,
                 VarLenType::BigVarChar => Self::BigVarChar,
@@ -285,9 +155,13 @@ impl From<&TypeInfo> for ColumnType {
                 VarLenType::Floatn => Self::Floatn,
                 VarLenType::Money => Self::Money,
                 VarLenType::Datetimen => Self::Datetimen,
+                #[cfg(feature = "tds73")]
                 VarLenType::Daten => Self::Daten,
+                #[cfg(feature = "tds73")]
                 VarLenType::Timen => Self::Timen,
+                #[cfg(feature = "tds73")]
                 VarLenType::Datetime2 => Self::Datetime2,
+                #[cfg(feature = "tds73")]
                 VarLenType::DatetimeOffsetn => Self::DatetimeOffsetn,
                 VarLenType::BigVarBin => Self::BigVarBin,
                 VarLenType::BigVarChar => Self::BigVarChar,
@@ -308,13 +182,59 @@ impl From<&TypeInfo> for ColumnType {
 }
 
 /// A row of data from a query.
+///
+/// Data can be accessed either by copying through [`get`] or [`try_get`]
+/// methods, or moving by value using the [`IntoIterator`] implementation.
+///
+/// ```
+/// # use tiberius::{ClientBuilder, FromSqlOwned};
+/// # use std::env;
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+/// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+/// # );
+/// # let builder = ClientBuilder::from_ado_string(&c_str)?;
+/// # let mut conn = builder.build().await?;
+/// // by-reference
+/// let row = conn
+///     .query("SELECT @P1 AS col1", &[&"test"])
+///     .await?
+///     .into_row()
+///     .await?;
+///
+/// assert_eq!(Some("test"), row.get("col1"));
+///
+/// // ...or by-value
+/// let row = conn
+///     .query("SELECT @P1 AS col1", &[&"test"])
+///     .await?
+///     .into_row()
+///     .await?;
+///
+/// for val in row.into_iter() {
+///     assert_eq!(
+///         Some(String::from("test")),
+///         String::from_sql_owned(val)?
+///     )
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+/// [`get`]: #method.get
+/// [`try_get`]: #method.try_get
+/// [`IntoIterator`]: #impl-IntoIterator
 #[derive(Debug)]
 pub struct Row {
     pub(crate) columns: Arc<Vec<Column>>,
     pub(crate) data: TokenRow,
 }
 
-pub trait QueryIdx {
+pub trait QueryIdx
+where
+    Self: Display,
+{
     fn idx(&self, row: &Row) -> Option<usize>;
 }
 
@@ -324,82 +244,121 @@ impl QueryIdx for usize {
     }
 }
 
+impl QueryIdx for &str {
+    fn idx(&self, row: &Row) -> Option<usize> {
+        row.columns.iter().position(|c| c.name() == *self)
+    }
+}
+
 impl Row {
     /// Columns defining the row data. Columns listed here are in the same order
     /// as the resulting data.
+    ///
+    /// ```
+    /// # use tiberius::ClientBuilder;
+    /// # use std::env;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let mut conn = builder.build().await?;
+    /// let row = conn
+    ///     .query("SELECT 1 AS foo, 2 AS bar", &[])
+    ///     .await?
+    ///     .into_row()
+    ///     .await?;
+    ///
+    /// assert_eq!("foo", row.columns()[0].name());
+    /// assert_eq!("bar", row.columns()[1].name());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn columns(&self) -> &[Column] {
         &self.columns
     }
 
-    /// Returns the amount of columns in the row
+    /// Returns the number of columns in the row.
+    ///
+    /// ```
+    /// # use tiberius::ClientBuilder;
+    /// # use std::env;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let mut conn = builder.build().await?;
+    /// let row = conn
+    ///     .query("SELECT 1, 2", &[])
+    ///     .await?
+    ///     .into_row()
+    ///     .await?;
+    ///
+    /// assert_eq!(2, row.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn len(&self) -> usize {
         self.data.columns.len()
     }
 
-    /// Retrieve a column's value for a given column index
+    /// Retrieve a column value for a given column index, which can either be
+    /// the zero-indexed position or the name of the column.
+    ///
+    /// ```
+    /// # use tiberius::ClientBuilder;
+    /// # use std::env;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let mut conn = builder.build().await?;
+    /// let row = conn
+    ///     .query("SELECT @P1 AS col1", &[&1i32])
+    ///     .await?
+    ///     .into_row()
+    ///     .await?;
+    ///
+    /// assert_eq!(Some(1i32), row.get(0));
+    /// assert_eq!(Some(1i32), row.get("col1"));
+    /// # Ok(())
+    /// # }
+    /// ```
     ///
     /// # Panics
     ///
-    /// - the requested type conversion (SQL->Rust) is not possible
-    /// - the given index is out of bounds (column does not exist)
-    pub fn get<'a, I, R>(&'a self, idx: I) -> R
+    /// - The requested type conversion (SQL->Rust) is not possible.
+    /// - The given index is out of bounds (column does not exist).
+    ///
+    /// Use [`try_get`] for a non-panicking version of the function.
+    ///
+    /// [`try_get`]: #method.try_get
+    pub fn get<'a, R, I>(&'a self, idx: I) -> Option<R>
     where
+        R: FromSql<'a>,
         I: QueryIdx,
-        R: TryFrom<&'a ColumnData<'a>, Error = Error>,
     {
-        self.try_get(idx)
-            .expect("given index out of bounds")
-            .unwrap()
+        self.try_get(idx).unwrap()
     }
 
     /// Retrieve a column's value for a given column index.
-    ///
-    /// # Returns `None` if:
-    ///
-    /// - Index is out of bounds.
-    /// - Column is null.
-    ///
-    /// # Returns an error if:
-    ///
-    /// - Column data conversion fails.
-    pub fn try_get<'a, I, R>(&'a self, idx: I) -> crate::Result<Option<R>>
+    pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Result<Option<R>>
     where
+        R: FromSql<'a>,
         I: QueryIdx,
-        R: TryFrom<&'a ColumnData<'a>, Error = Error>,
     {
-        let idx = match idx.idx(self) {
-            Some(x) => x,
-            None => return Ok(None),
-        };
+        let idx = idx.idx(self).ok_or_else(|| {
+            Error::Conversion(format!("Could not find column with index {}", idx).into())
+        })?;
 
-        let col_data = &self.data.columns[idx];
+        let data = self.data.columns.get(idx).unwrap();
 
-        if let ColumnData::None = col_data {
-            Ok(None)
-        } else {
-            R::try_from(col_data).map(Some)
-        }
-    }
-
-    /// Takes the first column data out from the row, consuming the row.
-    ///
-    /// # Returns `None` if:
-    ///
-    /// - Row has no data.
-    /// - Column is null.
-    ///
-    /// # Returns an error if:
-    ///
-    /// - Column data conversion fails.
-    pub fn into_first<'a, R>(self) -> crate::Result<Option<R>>
-    where
-        R: TryFrom<ColumnData<'a>, Error = Error>,
-    {
-        match self.into_iter().next() {
-            None => Ok(None),
-            Some(ColumnData::None) => Ok(None),
-            Some(col_data) => R::try_from(col_data).map(Some),
-        }
+        R::from_sql(data)
     }
 }
 
@@ -411,21 +370,3 @@ impl IntoIterator for Row {
         self.data.columns.into_iter()
     }
 }
-
-from_column_data!(
-    bool:       ColumnData::Bit(val) => *val;
-    i8:         ColumnData::I8(val) => *val;
-    i16:        ColumnData::I16(val) => *val;
-    i32:        ColumnData::I32(val) => *val;
-    i64:        ColumnData::I64(val) => *val;
-    f32:        ColumnData::F32(val) => *val;
-    f64:        ColumnData::F64(val) => *val;
-    Uuid:       ColumnData::Guid(val) => *val
-
-    // ColumnData::Numeric(val) => val.into();
-    // TODO &'a str:    ColumnData::BString(ref buf) => buf.as_str(),
-    //             ColumnData::String(ref buf) => buf;
-    // TODO &'a Guid:   ColumnData::Guid(ref guid) => guid;
-    // &'a [u8]:   ColumnData::Binary(ref buf) => buf
-    // TODO  Numeric:    ColumnData::Numeric(val) => val
-);

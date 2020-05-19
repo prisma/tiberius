@@ -135,15 +135,15 @@ impl ClientBuilder {
     ///
     /// # Supported parameters
     ///
-    /// |Parameters|Description|
-    /// |--------|--------|
-    /// |`server`|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance`|
-    /// |`IntegratedSecurity`|Toggle between Windows authentication and SQL authentication.|
-    /// |`uid`, `username`, `user`|The SQL Server login account.|
-    /// |`password`, `pwd`|The password for the SQL Server account logging on.|
-    /// |`database`|The name of the database.|
-    /// |`TrustServerCertificate`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
-    /// |`encrypt`|Specifies whether the driver uses TLS to encrypt communication.|
+    /// | Parameters                | Description                                                                                                                                                                                                                 |
+    /// |---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+    /// | `server`                  | The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance` |
+    /// | `IntegratedSecurity`      | Toggle between Windows authentication and SQL authentication.                                                                                                                                                               |
+    /// | `uid`, `username`, `user` | The SQL Server login account.                                                                                                                                                                                               |
+    /// | `password`, `pwd`         | The password for the SQL Server account logging on.                                                                                                                                                                         |
+    /// | `database`                | The name of the database.                                                                                                                                                                                                   |
+    /// | `TrustServerCertificate`  | Specifies whether the driver trusts the server certificate when connecting using TLS.                                                                                                                                       |
+    /// | `encrypt`                 | Specifies whether the driver uses TLS to encrypt communication.                                                                                                                                                             |
     pub fn from_ado_string(s: &str) -> crate::Result<Self> {
         let ado = AdoNetString::parse(s)?;
         let mut builder = Self::default();

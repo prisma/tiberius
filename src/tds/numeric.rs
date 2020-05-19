@@ -230,37 +230,34 @@ impl PartialEq for Numeric {
 #[cfg(feature = "rust_decimal")]
 mod decimal {
     use super::Numeric;
-    use crate::{ColumnData, ToSql};
+    use crate::ColumnData;
     use rust_decimal::Decimal;
-    use std::borrow::Cow;
 
     #[cfg(feature = "tds73")]
-    from_column_data!(
-    Decimal:
-        ColumnData::Numeric(ref num) => Decimal::from_i128_with_scale(
+    from_sql!(Decimal: ColumnData::Numeric(ref num) => num.map(|num| {
+        Decimal::from_i128_with_scale(
             num.value(),
             num.scale() as u32,
-        )
+        )})
     );
 
-    impl ToSql for Decimal {
-        fn to_sql(&self) -> (Cow<'static, str>, ColumnData<'static>) {
-            let unpacked = self.unpack();
+    to_sql!(self_ ,
+            Decimal: (ColumnData::Numeric, {
+                let unpacked = self_.unpack();
 
-            let mut value = (((unpacked.hi as u128) << 64)
-                + ((unpacked.mid as u128) << 32)
-                + unpacked.lo as u128) as i128;
+                let mut value = (((unpacked.hi as u128) << 64)
+                                 + ((unpacked.mid as u128) << 32)
+                                 + unpacked.lo as u128) as i128;
 
-            if self.is_sign_negative() {
-                value = -value;
-            }
+                if self_.is_sign_negative() {
+                    value = -value;
+                }
 
-            let numeric = Numeric::new_with_scale(value, self.scale() as u8);
-            let type_name = format!("numeric({},{})", numeric.precision(), numeric.scale());
+                let numeric = Numeric::new_with_scale(value, self_.scale() as u8);
 
-            (type_name.into(), ColumnData::Numeric(numeric))
-        }
-    }
+                numeric
+            });
+    );
 }
 
 #[cfg(test)]

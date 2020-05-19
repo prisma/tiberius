@@ -432,29 +432,29 @@ mod chrono {
     }
 
     #[cfg(feature = "tds73")]
-    from_column_data!(
+    from_sql!(
         NaiveDateTime:
-            ColumnData::SmallDateTime(ref dt) => NaiveDateTime::new(
+            ColumnData::SmallDateTime(ref dt) => dt.map(|dt| NaiveDateTime::new(
                 from_days(dt.days as i64, 1900),
                 from_mins(dt.seconds_fragments as u32 * 60),
-            ),
-            ColumnData::DateTime2(ref dt) => NaiveDateTime::new(
+            )),
+            ColumnData::DateTime2(ref dt) => dt.map(|dt| NaiveDateTime::new(
                 from_days(dt.date.days() as i64, 1),
                 NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(dt.time.increments as i64 * 10i64.pow(9 - dt.time.scale as u32))
-            ),
-            ColumnData::DateTime(ref dt) => NaiveDateTime::new(
+            )),
+            ColumnData::DateTime(ref dt) => dt.map(|dt| NaiveDateTime::new(
                 from_days(dt.days as i64, 1900),
                 from_sec_fragments(dt.seconds_fragments as i64)
-            );
+            ));
         NaiveTime:
-            ColumnData::Time(ref time) => {
+            ColumnData::Time(ref time) => time.map(|time| {
                 let ns = time.increments as i64 * 10i64.pow(9 - time.scale as u32);
                 NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(ns)
-            };
+            });
         NaiveDate:
-            ColumnData::Date(ref date) => from_days(date.days() as i64, 1);
+            ColumnData::Date(ref date) => date.map(|date| from_days(date.days() as i64, 1));
         chrono::DateTime<Utc>:
-            ColumnData::DateTimeOffset(ref dto) => {
+            ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
                 let date = from_days(dto.datetime2.date.days() as i64, 1);
                 let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
 
@@ -462,8 +462,8 @@ mod chrono {
                 let naive = NaiveDateTime::new(date, time);
 
                 chrono::DateTime::from_utc(naive, Utc)
-            };
-        chrono::DateTime<FixedOffset>: ColumnData::DateTimeOffset(ref dto) => {
+            });
+        chrono::DateTime<FixedOffset>: ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
             let date = from_days(dto.datetime2.date.days() as i64, 1);
             let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
             let time = NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(ns) - Duration::minutes(dto.offset as i64);
@@ -472,21 +472,21 @@ mod chrono {
             let naive = NaiveDateTime::new(date, time);
 
             chrono::DateTime::from_utc(naive, offset)
-        }
+        })
     );
 
     #[cfg(feature = "tds73")]
     to_sql!(self_,
-            NaiveDate: ("date", ColumnData::Date(Date::new(to_days(self_, 1) as u32)));
-            NaiveTime: ("time", {
+            NaiveDate: (ColumnData::Date, Date::new(to_days(self_, 1) as u32));
+            NaiveTime: (ColumnData::Time, {
                 use chrono::Timelike;
 
                 let nanos = self_.num_seconds_from_midnight() as u64 * 1e9 as u64 + self_.nanosecond() as u64;
                 let increments = nanos / 100;
 
-                ColumnData::Time(Time {increments, scale: 7})
+                Time {increments, scale: 7}
             });
-            NaiveDateTime: ("datetime2", {
+            NaiveDateTime: (ColumnData::DateTime2, {
                 use chrono::Timelike;
 
                 let time = self_.time();
@@ -496,9 +496,9 @@ mod chrono {
                 let date = Date::new(to_days(&self_.date(), 1) as u32);
                 let time = Time {increments, scale: 7};
 
-                ColumnData::DateTime2(DateTime2::new(date, time))
+                DateTime2::new(date, time)
             });
-            chrono::DateTime<Utc>: ("datetimeoffset", {
+            chrono::DateTime<Utc>: (ColumnData::DateTimeOffset, {
                 use chrono::Timelike;
 
                 let naive = self_.naive_utc();
@@ -508,9 +508,9 @@ mod chrono {
                 let date = Date::new(to_days(&naive.date(), 1) as u32);
                 let time = Time {increments: nanos / 100, scale: 7};
 
-                ColumnData::DateTimeOffset(DateTimeOffset::new(DateTime2::new(date, time), 0))
+                DateTimeOffset::new(DateTime2::new(date, time), 0)
             });
-            chrono::DateTime<FixedOffset>: ("datetimeoffset", {
+            chrono::DateTime<FixedOffset>: (ColumnData::DateTimeOffset, {
                 use chrono::Timelike;
 
                 let naive = self_.naive_local();
@@ -523,20 +523,20 @@ mod chrono {
                 let tz = self_.timezone();
                 let offset = (tz.local_minus_utc() / 60) as i16;
 
-                ColumnData::DateTimeOffset(DateTimeOffset::new(DateTime2::new(date, time), offset))
+                DateTimeOffset::new(DateTime2::new(date, time), offset)
             });
     );
 
     #[cfg(not(feature = "tds73"))]
     to_sql!(self_,
-            NaiveDateTime: ("datetime", {
+            NaiveDateTime: (ColumnData::DateTime, {
                 let date = self_.date();
                 let time = self_.time();
 
                 let days = to_days(&date, 1900) as i32;
                 let seconds_fragments = to_sec_fragments(&time);
 
-                ColumnData::DateTime(DateTime::new(days, seconds_fragments as u32))
+                DateTime::new(days, seconds_fragments as u32)
             });
     );
 }

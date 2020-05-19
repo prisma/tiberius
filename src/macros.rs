@@ -39,41 +39,67 @@ macro_rules! uint_enum {
 }
 
 macro_rules! to_sql {
-    ($target:ident, $( $ty:ty: ($name:expr, $val:expr) ;)* ) => {
+    ($target:ident, $( $ty:ty: ($variant:expr, $val:expr) ;)* ) => {
         $(
             impl crate::ToSql for $ty {
-                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData<'_>) {
+                fn to_sql(&self) -> crate::tds::codec::ColumnData<'_> {
                     let $target = self;
-                    (std::borrow::Cow::Borrowed($name), $val)
+                    $variant(Some($val))
                 }
             }
 
             impl crate::ToSql for Option<$ty> {
-                fn to_sql(&self) -> (std::borrow::Cow<'static, str>, crate::tds::codec::ColumnData<'_>) {
-                    let val = match self {
-                        None => crate::tds::codec::ColumnData::None,
-                        Some(item) => {
-                            let $target = item;
-                            $val
-                        }
-                    };
-
-                    (std::borrow::Cow::Borrowed($name), val)
+                fn to_sql(&self) -> crate::tds::codec::ColumnData<'_> {
+                    match self {
+                        Some(val) => {
+                            let $target = val;
+                            $variant(Some($val))
+                        },
+                        None => $variant(None)
+                    }
                 }
             }
         )*
     };
 }
 
-macro_rules! from_column_data {
-    ($( $ty:ty: $($pat:pat => $val:expr),* );* ) => {
+macro_rules! from_sql {
+    ($( $ty:ty: $($pat:pat => ($borrowed_val:expr, $owned_val:expr)),* );* ) => {
         $(
-            impl<'a> std::convert::TryFrom<&'a ColumnData<'a>> for $ty {
-                type Error = crate::Error;
-
-                fn try_from(data: &ColumnData<'a>) -> crate::Result<Self> {
+            impl<'a> crate::FromSql<'a> for $ty {
+                fn from_sql(data: &'a crate::tds::codec::ColumnData<'static>) -> crate::Result<Option<Self>> {
                     match data {
-                        $( $pat => Ok($val), )*
+                        $( $pat => Ok($borrowed_val), )*
+                        _ => Err(crate::Error::Conversion(format!("cannot interpret {:?} as an {} value", data, stringify!($ty)).into()))
+                    }
+                }
+            }
+
+            impl crate::FromSqlOwned for $ty {
+                fn from_sql_owned(data: crate::tds::codec::ColumnData<'static>) -> crate::Result<Option<Self>> {
+                    match data {
+                        $( $pat => Ok($owned_val), )*
+                        _ => Err(crate::Error::Conversion(format!("cannot interpret {:?} as an {} value", data, stringify!($ty)).into()))
+                    }
+                }
+            }
+        )*
+    };
+    ($( $ty:ty: $($pat:pat => $borrowed_val:expr),* );* ) => {
+        $(
+            impl<'a> crate::FromSql<'a> for $ty {
+                fn from_sql(data: &'a crate::tds::codec::ColumnData<'static>) -> crate::Result<Option<Self>> {
+                    match data {
+                        $( $pat => Ok($borrowed_val), )*
+                        _ => Err(crate::Error::Conversion(format!("cannot interpret {:?} as an {} value", data, stringify!($ty)).into()))
+                    }
+                }
+            }
+
+            impl crate::FromSqlOwned for $ty {
+                fn from_sql_owned(data: crate::tds::codec::ColumnData<'static>) -> crate::Result<Option<Self>> {
+                    match data {
+                        $( $pat => Ok($borrowed_val), )*
                         _ => Err(crate::Error::Conversion(format!("cannot interpret {:?} as an {} value", data, stringify!($ty)).into()))
                     }
                 }

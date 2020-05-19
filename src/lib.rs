@@ -9,6 +9,7 @@
 mod macros;
 
 mod client;
+mod from_sql;
 mod sql_read_bytes;
 mod to_sql;
 
@@ -19,6 +20,7 @@ mod tds;
 
 pub use client::{AuthMethod, Client, ClientBuilder};
 pub(crate) use error::Error;
+pub use from_sql::{FromSql, FromSqlOwned};
 pub use result::*;
 pub use row::{Column, ColumnType, Row};
 pub use tds::{codec::ColumnData, numeric, time, xml, EncryptionLevel};
