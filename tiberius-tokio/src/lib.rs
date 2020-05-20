@@ -7,7 +7,7 @@
 
 use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
 use tokio::{io, net};
-use std::{future::Future, pin::Pin, borrow::Cow, convert};
+use std::{borrow::Cow, convert};
 #[cfg(windows)]
 use tokio::time;
 #[cfg(windows)]

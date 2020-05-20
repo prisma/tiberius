@@ -6,9 +6,9 @@ use std::{future::Future, io, mem::size_of, pin::Pin, task};
 use task::Poll;
 use futures::io::AsyncRead;
 
-macro_rules! le_reader {
+macro_rules! bytes_reader {
     ($name:ident, $ty:ty, $reader:ident) => {
-        le_reader!($name, $ty, $reader, size_of::<$ty>());
+        bytes_reader!($name, $ty, $reader, size_of::<$ty>());
     };
     ($name:ident, $ty:ty, $reader:ident, $bytes:expr) => {
         pin_project! {
@@ -181,22 +181,22 @@ pub(crate) trait SqlReadBytes: futures::AsyncRead + Unpin {
     }
 }
 
-le_reader!(ReadI8, i8, get_i8);
-le_reader!(ReadU8, u8, get_u8);
-le_reader!(ReadU32Be, u32, get_u32);
+bytes_reader!(ReadI8, i8, get_i8);
+bytes_reader!(ReadU8, u8, get_u8);
+bytes_reader!(ReadU32Be, u32, get_u32);
 
-le_reader!(ReadU16Le, u16, get_u16_le);
-le_reader!(ReadU32Le, u32, get_u32_le);
-le_reader!(ReadU64Le, u64, get_u64_le);
-le_reader!(ReadU128Le, u128, get_u128_le);
+bytes_reader!(ReadU16Le, u16, get_u16_le);
+bytes_reader!(ReadU32Le, u32, get_u32_le);
+bytes_reader!(ReadU64Le, u64, get_u64_le);
+bytes_reader!(ReadU128Le, u128, get_u128_le);
 
-le_reader!(ReadI16Le, i16, get_i16_le);
-le_reader!(ReadI32Le, i32, get_i32_le);
-le_reader!(ReadI64Le, i64, get_i64_le);
-le_reader!(ReadI128Le, i128, get_i128_le);
+bytes_reader!(ReadI16Le, i16, get_i16_le);
+bytes_reader!(ReadI32Le, i32, get_i32_le);
+bytes_reader!(ReadI64Le, i64, get_i64_le);
+bytes_reader!(ReadI128Le, i128, get_i128_le);
 
-le_reader!(ReadF32, f32, get_f32);
-le_reader!(ReadF64, f64, get_f64);
+bytes_reader!(ReadF32, f32, get_f32);
+bytes_reader!(ReadF64, f64, get_f64);
 
-le_reader!(ReadF32Le, f32, get_f32_le);
-le_reader!(ReadF64Le, f64, get_f64_le);
+bytes_reader!(ReadF32Le, f32, get_f32_le);
+bytes_reader!(ReadF64Le, f64, get_f64_le);

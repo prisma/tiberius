@@ -23,7 +23,7 @@ use tiberius::ToSql;
 /// connection options and capabilities.
 ///
 /// ```no_run
-/// # use tiberius_asyncstd::Client;
+/// # use tiberius_async_std::Client;
 /// # use tiberius::AuthMethod;
 /// # #[allow(unused)]
 /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,7 +72,7 @@ impl Client {
     /// `@PN`, where N is the index of the parameter, starting from `1`.
     ///
     /// ```no_run
-    /// # use tiberius_asyncstd::Client;
+    /// # use tiberius_async_std::Client;
     /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
     /// # let builder = Client::builder();
@@ -109,7 +109,7 @@ impl Client {
     /// `@PN`, where N is the index of the parameter, starting from `1`.
     ///
     /// ```no_run
-    /// # use tiberius_asyncstd::Client;
+    /// # use tiberius_async_std::Client;
     /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
     /// # let builder = Client::builder();

@@ -18,15 +18,6 @@ use async_native_tls::TlsStream;
 #[cfg(feature = "tls")]
 use tracing::{event, Level};
 
-/*
-/// A wrapper to handle either TLS or bare connections.
-pub(crate) enum MaybeTlsStream {
-    Raw(TcpStream),
-    #[cfg(feature = "tls")]
-    Tls(TlsStream<TlsPreloginWrapper<TcpStream>>),
-}
-*/
-
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream<S: futures::AsyncRead + futures::AsyncWrite + Unpin> {
     Raw(S),

@@ -312,9 +312,6 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Connection<S> {
                 builder = builder.use_sni(false);
             }
 
-            //let cx = builder.build().unwrap();
-            //let builder = async_native_tls::TlsConnector::from(cx);
-
             let Self { transport, context, .. } = self;
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {

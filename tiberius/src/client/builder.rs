@@ -1,6 +1,6 @@
 use super::{connection::*, AuthMethod};
 use crate::{tds::Context, Client, EncryptionLevel};
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::collections::HashMap;
 use futures::future;
 
 #[derive(Clone, Debug)]

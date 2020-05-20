@@ -32,7 +32,7 @@ macro_rules! test_on_runtimes {
                     env_logger::init();
                 });
                 async_std::task::block_on(async {
-                    let builder = tiberius_asyncstd::ClientBuilder::from_ado_string($connstr)?;
+                    let builder = tiberius_async_std::ClientBuilder::from_ado_string($connstr)?;
                     let conn = builder.build().await?.into();
                     $code(conn).await?;
                     Ok(())
@@ -63,7 +63,7 @@ macro_rules! test_on_runtimes {
                     env_logger::init();
                 });
                 async_std::task::block_on(async {
-                    let builder = tiberius_asyncstd::ClientBuilder::from_ado_string(&*CONN_STR)?;
+                    let builder = tiberius_async_std::ClientBuilder::from_ado_string(&*CONN_STR)?;
                     let conn = builder.build().await?.into();
                     $code(conn).await?;
                     Ok(())
