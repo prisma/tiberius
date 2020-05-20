@@ -254,7 +254,7 @@ async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> tiberius::Result<
 
 #[cfg(windows)]
 async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
-    use std::{time, str};
+    use std::time;
     use futures::TryFutureExt;
     // First resolve the instance to a port via the
     // SSRP protocol/MS-SQLR protocol [1]
@@ -276,7 +276,7 @@ async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiber
 
     let len = io::timeout(timeout, socket.recv(&mut buf))
         .map_err(|_| {
-            tiberius::Error::Conversion(
+            tiberius::error::Error::Conversion(
                 format!(
                     "SQL browser timeout during resolving instance {}",
                     instance_name
