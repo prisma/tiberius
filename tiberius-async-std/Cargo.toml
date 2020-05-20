@@ -1,11 +1,11 @@
 [package]
 authors = ["Steffen Butzer <steffen.butzer@outlook.com>", "Julius de Bruijn <bruijn@prisma.io>"]
 description = "A TDS (MSSQL) driver"
-documentation = "https://docs.rs/tiberius-asyncstd/"
+documentation = "https://docs.rs/tiberius-async-std/"
 edition = "2018"
 keywords = ["tds", "mssql", "sql"]
 license = "MIT/Apache-2.0"
-name = "tiberius-asyncstd"
+name = "tiberius-async-std"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
 version = "0.4.0-alpha.5"

@@ -1,12 +1,13 @@
 use super::{connection::*, AuthMethod};
 use crate::{tds::Context, Client, EncryptionLevel};
 use std::{collections::HashMap, future::Future, pin::Pin};
+use futures::future;
 
 #[derive(Clone, Debug)]
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html
-pub struct ClientBuilder<S, W>
+pub struct ClientBuilder<'a, S, W>
 where
     S: futures::AsyncRead + futures::AsyncWrite + Unpin,
 {
@@ -19,10 +20,10 @@ where
     trust_cert: bool,
     auth: AuthMethod,
     wrapper: fn(Client<S>) -> W,
-    connector: fn(String, Option<String>) -> Pin<Box<dyn Future<Output = crate::Result<S>>>>,
+    connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>,
 }
 
-impl<S, W> ClientBuilder<S, W>
+impl<'a, S, W> ClientBuilder<'a, S, W>
 where
     S: futures::AsyncRead + futures::AsyncWrite + Unpin,
 {
@@ -33,8 +34,8 @@ where
     /// this via the TCP protocol.
     pub fn new(
         wrapper: fn(Client<S>) -> W,
-        connector: fn(String, Option<String>) -> Pin<Box<dyn Future<Output = crate::Result<S>>>>,
-    ) -> ClientBuilder<S, W> {
+        connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>,
+    ) -> ClientBuilder<'a, S, W> {
         ClientBuilder {
             host: None,
             port: None,
@@ -157,16 +158,20 @@ where
     ///
     /// # Supported parameters
     ///
-    /// | Parameters                | Description                                                                                                                                                                                                                 |
-    /// |---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-    /// | `server`                  | The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance` |
-    /// | `IntegratedSecurity`      | Toggle between Windows authentication and SQL authentication.                                                                                                                                                               |
-    /// | `uid`, `username`, `user` | The SQL Server login account.                                                                                                                                                                                               |
-    /// | `password`, `pwd`         | The password for the SQL Server account logging on.                                                                                                                                                                         |
-    /// | `database`                | The name of the database.                                                                                                                                                                                                   |
-    /// | `TrustServerCertificate`  | Specifies whether the driver trusts the server certificate when connecting using TLS.                                                                                                                                       |
-    /// | `encrypt`                 | Specifies whether the driver uses TLS to encrypt communication.                                                                                                                                                             |
-    pub fn from_ado_string(s: &str) -> crate::Result<Self> {
+    /// |Parameters|Description|
+    /// |--------|--------|
+    /// |`server`|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance`|
+    /// |`IntegratedSecurity`|Toggle between Windows authentication and SQL authentication.|
+    /// |`uid`, `username`, `user`|The SQL Server login account.|
+    /// |`password`, `pwd`|The password for the SQL Server account logging on.|
+    /// |`database`|The name of the database.|
+    /// |`TrustServerCertificate`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
+    /// |`encrypt`|Specifies whether the driver uses TLS to encrypt communication.|
+    pub fn from_ado_string(
+        wrapper: fn(Client<S>) -> W,
+        connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>,
+        s: &str,
+    ) -> crate::Result<Self> {
         let ado = AdoNetString::parse(s)?;
         let mut builder = Self::new(wrapper, connector);
 

@@ -15,6 +15,8 @@ use futures::TryFutureExt;
 #[cfg(windows)]
 use std::str;
 
+use futures::future;
+
 use tiberius::ToSql;
 
 /// `Client` is the main entry point to the SQL Server, providing query
@@ -141,7 +143,7 @@ impl Client {
     /// options.
     ///
     /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub fn builder() -> ClientBuilder {
+    pub fn builder<'a>() -> ClientBuilder<'a> {
         tiberius::ClientBuilder::new(Self::new, connector).into()
     }
 }
@@ -150,30 +152,30 @@ impl Client {
 ///
 /// [`Client`]: struct.Client.html
 #[derive(Debug)]
-pub struct ClientBuilder {
-    inner: tiberius::ClientBuilder<compat::Compat<net::TcpStream>, Client>,
+pub struct ClientBuilder<'a> {
+    inner: tiberius::ClientBuilder<'a, compat::Compat<net::TcpStream>, Client>,
 }
 
-impl convert::From<tiberius::ClientBuilder<compat::Compat<net::TcpStream>, Client>> for ClientBuilder {
-    fn from(inner: tiberius::ClientBuilder<compat::Compat<net::TcpStream>, Client>) -> ClientBuilder {
+impl<'a> convert::From<tiberius::ClientBuilder<'a, compat::Compat<net::TcpStream>, Client>> for ClientBuilder<'a> {
+    fn from(inner: tiberius::ClientBuilder<'a, compat::Compat<net::TcpStream>, Client>) -> ClientBuilder<'a> {
         ClientBuilder { inner }
     }
 }
 
-impl convert::From<ClientBuilder> for tiberius::ClientBuilder<compat::Compat<net::TcpStream>, Client> {
-    fn from(local_builder: ClientBuilder )-> tiberius::ClientBuilder<compat::Compat<net::TcpStream>, Client> {
+impl<'a> convert::From<ClientBuilder<'a>> for tiberius::ClientBuilder<'a, compat::Compat<net::TcpStream>, Client> {
+    fn from(local_builder: ClientBuilder<'a> )-> tiberius::ClientBuilder<'a, compat::Compat<net::TcpStream>, Client> {
         local_builder.inner
     }
 }
 
-impl ClientBuilder {
+impl<'a> ClientBuilder<'a> {
     /// Creates a new client and connects to the server.
     pub async fn build(self) -> tiberius::Result<Client> {
         self.inner.build().await
     }
 
     /// Create a `ClientBuilder` with options specified in the ADO string format
-    pub fn from_ado_string(conn_str: &str) -> tiberius::Result<ClientBuilder> {
+    pub fn from_ado_string(conn_str: &str) -> tiberius::Result<ClientBuilder<'a>> {
         let builder = tiberius::ClientBuilder::from_ado_string(Client::new, connector, conn_str)?;
         Ok(builder.into())
     }
@@ -230,7 +232,7 @@ impl ClientBuilder {
 }
 
 
-fn connector(addr: String, instance_name: Option<String>) -> Pin<Box<dyn Future<Output = tiberius::Result<compat::Compat<net::TcpStream>>>>>
+fn connector<'a>(addr: String, instance_name: Option<String>) -> future::BoxFuture<'a, tiberius::Result<compat::Compat<net::TcpStream>>>
 {
     let stream = async move {
         let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {

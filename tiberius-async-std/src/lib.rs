@@ -1,18 +1,18 @@
-//! The Tiberius Microsot SQL Server driver implemented on the smol runtime
+//! The Tiberius Microsot SQL Server driver implemented on the async-std runtime
 #![recursion_limit = "512"]
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations, rust_2018_idioms)]
 #![doc(test(attr(deny(rust_2018_idioms, warnings))))]
 #![doc(test(attr(allow(unused_extern_crates, unused_variables))))]
 
+use async_std::{io, net::{self, ToSocketAddrs}};
+use std::{borrow::Cow, convert};
 #[cfg(windows)]
-use std::{str, time};
-use std::{io, net::{self, ToSocketAddrs}, future::Future, pin::Pin, borrow::Cow, convert};
+use std::{time, str};
+#[cfg(windows)]
+use futures::TryFutureExt;
 
-#[cfg(windows)]
-use futures_timer;
-#[cfg(windows)]
-use futures::{select, future::FutureExt};
+use futures::future;
 
 use tiberius::ToSql;
 
@@ -23,7 +23,7 @@ use tiberius::ToSql;
 /// connection options and capabilities.
 ///
 /// ```no_run
-/// # use tiberius_smol::Client;
+/// # use tiberius_asyncstd::Client;
 /// # use tiberius::AuthMethod;
 /// # #[allow(unused)]
 /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
@@ -42,24 +42,27 @@ use tiberius::ToSql;
 /// [`ClientBuilder`]: struct.ClientBuilder.html
 #[derive(Debug)]
 pub struct Client {
-    inner: tiberius::Client<smol::Async<net::TcpStream>>,
+    inner: tiberius::Client<net::TcpStream>,
 }
 
-impl convert::From<tiberius::Client<smol::Async<net::TcpStream>>> for Client {
-    fn from(inner: tiberius::Client<smol::Async<net::TcpStream>>) -> Client {
+
+impl convert::From<tiberius::Client<net::TcpStream>> for Client {
+    fn from(inner: tiberius::Client<net::TcpStream>) -> Client {
         Client { inner }
     }
 }
 
-impl convert::From<Client> for tiberius::Client<smol::Async<net::TcpStream>> {
-    fn from(client: Client) -> tiberius::Client<smol::Async<net::TcpStream>> {
+impl convert::From<Client> for tiberius::Client<net::TcpStream> {
+    fn from(client: Client) -> tiberius::Client<net::TcpStream> {
         client.inner
     }
 }
 
+
 impl Client {
-    fn new(inner: tiberius::Client<smol::Async<net::TcpStream>>) -> Client {
-        Client { inner }
+
+    fn new(inner: tiberius::Client<net::TcpStream>) -> Client {
+        inner.into()
     }
 
     /// Executes SQL statements in the SQL Server, returning the number rows
@@ -69,7 +72,7 @@ impl Client {
     /// `@PN`, where N is the index of the parameter, starting from `1`.
     ///
     /// ```no_run
-    /// # use tiberius_smol::Client;
+    /// # use tiberius_asyncstd::Client;
     /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
     /// # let builder = Client::builder();
@@ -106,7 +109,7 @@ impl Client {
     /// `@PN`, where N is the index of the parameter, starting from `1`.
     ///
     /// ```no_run
-    /// # use tiberius_smol::Client;
+    /// # use tiberius_asyncstd::Client;
     /// # #[allow(unused)]
     /// # async fn foo() -> Result<(), Box<dyn std::error::Error>> {
     /// # let builder = Client::builder();
@@ -140,41 +143,42 @@ impl Client {
     /// options.
     ///
     /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub fn builder() -> ClientBuilder {
+    pub fn builder<'a>() -> ClientBuilder<'a> {
         tiberius::ClientBuilder::new(Self::new, connector).into()
     }
+
 }
 
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html
 #[derive(Debug)]
-pub struct ClientBuilder {
-    inner: tiberius::ClientBuilder<smol::Async<net::TcpStream>, Client>,
+pub struct ClientBuilder<'a> {
+    inner: tiberius::ClientBuilder<'a, net::TcpStream, Client>,
 }
 
-impl convert::From<tiberius::ClientBuilder<smol::Async<net::TcpStream>, Client>> for ClientBuilder {
-    fn from(inner: tiberius::ClientBuilder<smol::Async<net::TcpStream>, Client>) -> ClientBuilder {
+impl<'a> convert::From<tiberius::ClientBuilder<'a, net::TcpStream, Client>> for ClientBuilder<'a> {
+    fn from(inner: tiberius::ClientBuilder<'a, net::TcpStream, Client>) -> ClientBuilder<'a> {
         ClientBuilder { inner }
     }
 }
 
-impl convert::From<ClientBuilder> for tiberius::ClientBuilder<smol::Async<net::TcpStream>, Client> {
-    fn from(local_builder: ClientBuilder )-> tiberius::ClientBuilder<smol::Async<net::TcpStream>, Client> {
+impl<'a> convert::From<ClientBuilder<'a>> for tiberius::ClientBuilder<'a, net::TcpStream, Client> {
+    fn from(local_builder: ClientBuilder<'a> )-> tiberius::ClientBuilder<'a, net::TcpStream, Client> {
         local_builder.inner
     }
 }
 
-impl ClientBuilder {
+impl<'a> ClientBuilder<'a> {
     /// Creates a new client and connects to the server.
     pub async fn build(self) -> tiberius::Result<Client> {
         self.inner.build().await
     }
 
     /// Create a `ClientBuilder` with options specified in the ADO string format
-    pub fn from_ado_string(conn_str: &str) -> tiberius::Result<ClientBuilder> {
-        let builder = tiberius::ClientBuilder::from_ado_string(Client::new, connector, conn_str)?;
-        Ok(builder.into())
+    pub fn from_ado_string(conn_str: &str) -> tiberius::Result<ClientBuilder<'a>> {
+        tiberius::ClientBuilder::from_ado_string(Client::new, connector, conn_str)
+            .map(convert::Into::into)
     }
 
     /// A host or ip address to connect to.
@@ -229,24 +233,23 @@ impl ClientBuilder {
 }
 
 
-fn connector(addr: String, instance_name: Option<String>) -> Pin<Box<dyn Future<Output = tiberius::Result<smol::Async<net::TcpStream>>>>>
+fn connector<'a>(addr: String, instance_name: Option<String>) -> future::BoxFuture<'a, tiberius::Result<net::TcpStream>>
 {
     let stream = async move {
-        let mut addr = addr.to_socket_addrs()?.next().ok_or_else(|| {
+        let mut addr = addr.to_socket_addrs().await?.next().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
         })?;
+
         if let Some(ref instance_name) = instance_name {
             addr = find_tcp_port(addr, instance_name).await?;
         };
 
-        let mut stream = smol::Async::<net::TcpStream>::connect(addr).await?;
-        stream.get_mut().set_nodelay(true)?;
-
+        let stream = net::TcpStream::connect(addr).await?;
+        stream.set_nodelay(true)?;
         Ok(stream)
     };
     Box::pin(stream)
 }
-
 
 #[cfg(not(windows))]
 async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> tiberius::Result<std::net::SocketAddr> {
@@ -268,19 +271,21 @@ async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiber
     let msg = [&[4u8], instance_name.as_bytes()].concat();
     let mut buf = vec![0u8; 4096];
 
-    let socket = smol::Async::<net::UdpSocket>::bind(&local_bind)?;
-    socket.send_to(&msg, addr).await?;
+    let socket = net::UdpSocket::bind(&local_bind).await?;
+    socket.send_to(&msg, &addr).await?;
 
-    let mut recieve = Box::pin(socket.recv(&mut buf)).fuse();
-    let mut timeout = futures_timer::Delay::new(time::Duration::from_millis(1000)).fuse();
-    let err = |name| format!("SQL browser timeout during resolving instance {}", name).into();
+    let timeout = time::Duration::from_millis(1000);
 
-    let len = async move {
-        select! {
-            len = recieve => len.map_err(convert::Into::into),
-            _ = timeout => Err(tiberius::Error::Conversion(err(instance_name))),
-        }
-    }.await?;
+    let len = io::timeout(timeout, socket.recv(&mut buf))
+        .map_err(|_| {
+            tiberius::Error::Conversion(
+                format!(
+                    "SQL browser timeout during resolving instance {}",
+                    instance_name
+                )
+                .into(),
+            )
+        }).await?;
 
     tiberius::consume_sql_browser_message(addr, buf, len, instance_name)
 }

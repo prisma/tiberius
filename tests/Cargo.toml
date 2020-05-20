@@ -9,12 +9,8 @@ path = "../tiberius"
 version = "0.4.0-alpha.5"
 features = ["default"] # temporary
 
-[dev-dependencies.tiberius-asyncstd]
-path = "../tiberius-asyncstd"
-version = "0.4.0-alpha.5"
-
-[dev-dependencies.tiberius-smol]
-path = "../tiberius-smol"
+[dev-dependencies.tiberius-async-std]
+path = "../tiberius-async-std"
 version = "0.4.0-alpha.5"
 
 [dev-dependencies.tiberius-tokio]
@@ -69,9 +65,6 @@ features = ["compat"]
 [dev-dependencies.tokio]
 features = ["macros", "sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
 version = "0.2"
-
-[dev-dependencies.smol]
-version = "0.1"
 
 [dev-dependencies.async-std]
 features = ["attributes"]

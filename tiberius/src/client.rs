@@ -18,7 +18,65 @@ use crate::{
 use codec::{
     BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest,
 };
+use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
 use std::{borrow::Cow, fmt::Debug};
+use futures::future;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SqlServerAuth {
+    pub(crate) user: String,
+    pub(crate) password: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct WindowsAuth {
+    pub(crate) user: String,
+    pub(crate) password: String,
+    pub(crate) domain: Option<String>,
+}
+
+/// Defines the method of authentication to the server.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuthMethod {
+    /// Authenticate directly with SQL Server. The only authentication method
+    /// that works on all platforms.
+    SqlServer(SqlServerAuth),
+    #[cfg(any(windows, doc))]
+    /// Authenticate with Windows credentials. Only available on Windows
+    /// platforms.
+    Windows(WindowsAuth),
+    #[cfg(any(windows, doc))]
+    /// Authenticate as the currently logged in user. Only available on Windows
+    /// platforms.
+    WindowsIntegrated,
+    #[doc(hidden)]
+    None,
+}
+
+impl AuthMethod {
+    /// Construct a new SQL Server authentication configuration.
+    pub fn sql_server(user: impl ToString, password: impl ToString) -> Self {
+        Self::SqlServer(SqlServerAuth {
+            user: user.to_string(),
+            password: password.to_string(),
+        })
+    }
+/// Construct a new Windows authentication configuration. Only available on
+    /// Windows platforms.
+    #[cfg(any(windows, doc))]
+    pub fn windows(user: impl AsRef<str>, password: impl ToString) -> Self {
+        let (domain, user) = match user.as_ref().find("\\") {
+            Some(idx) => (Some(&user.as_ref()[..idx]), &user.as_ref()[idx + 1..]),
+            _ => (None, user.as_ref()),
+        };
+
+        Self::Windows(WindowsAuth {
+            user: user.to_string(),
+            password: password.to_string(),
+            domain: domain.map(|s| s.to_string()),
+        })
+    }
+}
 
 /// `Client` is the main entry point to the SQL Server, providing query
 /// execution capabilities.
@@ -55,10 +113,10 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Client<S> {
     /// options.
     ///
     /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub fn builder<W>(
+    pub fn builder<'a, W>(
         wrapper: fn(Client<S>) -> W,
-        connector: fn(String, Option<String>) -> Pin<Box<dyn Future<Output = crate::Result<S>>>>
-        ) -> ClientBuilder<S, W> 
+        connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>
+        ) -> ClientBuilder<'a, S, W> 
     {
         ClientBuilder::new(wrapper, connector)
     }
