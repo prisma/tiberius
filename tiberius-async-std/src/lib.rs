@@ -7,10 +7,6 @@
 
 use async_std::{io, net::{self, ToSocketAddrs}};
 use std::{borrow::Cow, convert};
-#[cfg(windows)]
-use std::{time, str};
-#[cfg(windows)]
-use futures::TryFutureExt;
 
 use futures::future;
 
@@ -258,6 +254,8 @@ async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> tiberius::Result<
 
 #[cfg(windows)]
 async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
+    use std::{time, str};
+    use futures::TryFutureExt;
     // First resolve the instance to a port via the
     // SSRP protocol/MS-SQLR protocol [1]
     // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx

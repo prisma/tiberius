@@ -8,12 +8,6 @@
 use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
 use tokio::{io, net};
 use std::{borrow::Cow, convert};
-#[cfg(windows)]
-use tokio::time;
-#[cfg(windows)]
-use futures::TryFutureExt;
-#[cfg(windows)]
-use std::str;
 
 use futures::future;
 
@@ -256,6 +250,9 @@ async fn find_tcp_port(addr: std::net::SocketAddr, _: &str) -> tiberius::Result<
 
 #[cfg(windows)]
 async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
+    use tokio::time;
+    use futures::TryFutureExt;
+    use std::str;
     // First resolve the instance to a port via the
     // SSRP protocol/MS-SQLR protocol [1]
     // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
