@@ -4,6 +4,9 @@ version = "0.0.0"
 publish = false
 edition = "2018"
 
+[dev-dependencies.runtimes-macro]
+path = "../runtimes-macro"
+
 [dev-dependencies.tiberius]
 path = "../tiberius"
 version = "0.4.0-alpha.5"
@@ -79,3 +82,7 @@ version = "0.1"
 [[test]]
 name = "query"
 path = "query.rs"
+
+[[test]]
+name = "query_new"
+path = "query_new.rs"

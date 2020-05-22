@@ -10,6 +10,11 @@ readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
 version = "0.4.0-alpha.7"
 
+[workspace]
+members = [
+    "runtimes-macro",
+]
+
 [dependencies]
 async-stream = "0.2"
 bitflags = "1.0"
