@@ -1,10 +1,8 @@
-use crate::tds::{
-    codec::DoneStatus,
-    stream::{prepared::PreparedStream, ReceivedToken},
-};
+use crate::tds::{codec::DoneStatus, stream::ReceivedToken};
 use crate::{row::ColumnType, Column, Error, Row};
 use futures::{ready, Stream, StreamExt, TryStreamExt};
 use std::{
+    fmt::Debug,
     pin::Pin,
     sync::Arc,
     task::{self, Poll},
@@ -18,22 +16,34 @@ pub(crate) enum QueryStreamState {
     Done,
 }
 
-#[derive(Debug)]
+/// A stream of rows, needed for queries returning data.
 pub struct QueryStream<'a> {
-    prepared_stream: PreparedStream<'a>,
+    token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
     current_columns: Option<Arc<Vec<Column>>>,
     previous_columns: Option<Arc<Vec<Column>>>,
     pub(crate) state: QueryStreamState,
+}
+
+impl<'a> Debug for QueryStream<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Querystream")
+            .field(
+                "token_stream",
+                &"Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>",
+            )
+            .field("current_columns", &self.current_columns)
+            .field("previous_columns", &self.previous_columns)
+            .field("state", &self.state)
+            .finish()
+    }
 }
 
 impl<'a> QueryStream<'a> {
     pub(crate) fn new(
         token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
     ) -> Self {
-        let prepared_stream = PreparedStream::new(token_stream);
-
         Self {
-            prepared_stream,
+            token_stream,
             current_columns: None,
             previous_columns: None,
             state: QueryStreamState::Initial,
@@ -42,7 +52,7 @@ impl<'a> QueryStream<'a> {
 
     pub(crate) async fn fetch_metadata(&mut self) -> crate::Result<()> {
         loop {
-            match self.prepared_stream.try_next().await? {
+            match self.token_stream.try_next().await? {
                 Some(ReceivedToken::NewResultset(meta)) => {
                     let columns = meta
                         .columns
@@ -109,7 +119,7 @@ impl<'a> Stream for QueryStream<'a> {
                 _ => return Poll::Ready(None),
             }
 
-            let token = match ready!(this.prepared_stream.poll_next_unpin(cx)) {
+            let token = match ready!(this.token_stream.poll_next_unpin(cx)) {
                 Some(res) => res?,
                 None => return Poll::Ready(None),
             };
