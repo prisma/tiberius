@@ -75,22 +75,10 @@ impl<'a> QueryStream<'a> {
         }
     }
 
-    pub(crate) fn columns(&self) -> Vec<&str> {
+    pub(crate) fn columns(&self) -> &[Column] {
         match self.state {
-            QueryStreamState::HasNext => self
-                .previous_columns
-                .as_ref()
-                .unwrap()
-                .iter()
-                .map(|c| c.name.as_str())
-                .collect(),
-            _ => self
-                .current_columns
-                .as_ref()
-                .unwrap()
-                .iter()
-                .map(|c| c.name.as_str())
-                .collect(),
+            QueryStreamState::HasNext => &self.previous_columns.as_ref().unwrap(),
+            _ => &self.current_columns.as_ref().unwrap(),
         }
     }
 
