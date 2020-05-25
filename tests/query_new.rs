@@ -48,8 +48,7 @@ where
             &[&kanji, &long_kanji],
         )
         .await?;
-
-    assert_eq!(2, res.total());
+assert_eq!(2, res.total());
 
     let stream = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
