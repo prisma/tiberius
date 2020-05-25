@@ -22,6 +22,16 @@ async fn connect() -> Result<Client> {
     builder.build().await
 }
 
+#[tokio::test]
+async fn test_simple_query() -> Result<()> {
+    let mut conn = connect().await?;
+    let row = conn.simple_query("SELECT 1").await?.into_row().await?;
+
+    assert_eq!(Some(1i32), row.get(0));
+
+    Ok(())
+}
+
 #[cfg(feature = "tls")]
 #[tokio::test]
 async fn connect_with_full_encryption() -> Result<()> {

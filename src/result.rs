@@ -21,6 +21,8 @@ use task::Poll;
 /// `true` is needed. When the [`next_resultset`] returns `false` the results
 /// should not be polled anymore.
 ///
+/// # Example
+///
 /// ```
 /// # use tiberius::ClientBuilder;
 /// # use std::env;
@@ -89,6 +91,8 @@ impl<'a> QueryResult<'a> {
     /// Names of the columns of the current resultset. Order is the same as the
     /// order of columns in the rows. Needs to be called separately for every
     /// result set.
+    ///
+    /// # Example
     ///
     /// ```no_run
     /// # use tiberius::ClientBuilder;
@@ -185,6 +189,8 @@ impl<'a> Stream for QueryResult<'a> {
 /// If executing multiple queries, the resulting counts will be come separately,
 /// marking the rows affected for each query.
 ///
+/// # Example
+///
 /// ```no_run
 /// # use tiberius::ClientBuilder;
 /// # use std::env;
@@ -236,6 +242,8 @@ impl<'a> ExecuteResult {
     }
 
     /// Aggregates all resulting row counts into a sum.
+    ///
+    /// # Example
     ///
     /// ```no_run
     /// # use tiberius::ClientBuilder;
