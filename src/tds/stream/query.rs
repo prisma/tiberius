@@ -1,6 +1,6 @@
 use crate::tds::{codec::DoneStatus, stream::ReceivedToken};
 use crate::{row::ColumnType, Column, Error, Row};
-use futures::{ready, Stream, StreamExt, TryStreamExt};
+use futures::{ready, stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use std::{
     fmt::Debug,
     pin::Pin,
@@ -18,7 +18,7 @@ pub(crate) enum QueryStreamState {
 
 /// A stream of rows, needed for queries returning data.
 pub struct QueryStream<'a> {
-    token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
+    token_stream: BoxStream<'a, crate::Result<ReceivedToken>>,
     current_columns: Option<Arc<Vec<Column>>>,
     previous_columns: Option<Arc<Vec<Column>>>,
     pub(crate) state: QueryStreamState,
@@ -29,7 +29,7 @@ impl<'a> Debug for QueryStream<'a> {
         f.debug_struct("Querystream")
             .field(
                 "token_stream",
-                &"Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>",
+                &"BoxStream<'a, crate::Result<ReceivedToken>>",
             )
             .field("current_columns", &self.current_columns)
             .field("previous_columns", &self.previous_columns)
@@ -39,9 +39,7 @@ impl<'a> Debug for QueryStream<'a> {
 }
 
 impl<'a> QueryStream<'a> {
-    pub(crate) fn new(
-        token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
-    ) -> Self {
+    pub(crate) fn new(token_stream: BoxStream<'a, crate::Result<ReceivedToken>>) -> Self {
         Self {
             token_stream,
             current_columns: None,

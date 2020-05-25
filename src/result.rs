@@ -7,7 +7,7 @@ use crate::{
     },
     Column, Row,
 };
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use std::{fmt::Debug, pin::Pin, task};
 use task::Poll;
 
@@ -76,9 +76,7 @@ pub struct QueryResult<'a> {
 }
 
 impl<'a> QueryResult<'a> {
-    pub(crate) fn new(
-        token_stream: Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>>,
-    ) -> Self {
+    pub(crate) fn new(token_stream: BoxStream<'a, crate::Result<ReceivedToken>>) -> Self {
         let stream = QueryStream::new(token_stream);
 
         Self { stream }

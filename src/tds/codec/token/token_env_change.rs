@@ -35,8 +35,8 @@ uint_enum! {
 }
 
 pub struct CollationInfo {
-    lcid_encoding: Option<&'static dyn Encoding>,
-    sortid_encoding: Option<&'static dyn Encoding>,
+    lcid_encoding: Option<&'static (dyn Encoding + Send + Sync)>,
+    sortid_encoding: Option<&'static (dyn Encoding + Send + Sync)>,
 }
 
 impl CollationInfo {

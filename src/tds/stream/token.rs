@@ -8,10 +8,9 @@ use crate::{
     },
     Error, SqlReadBytes, TokenType,
 };
-use futures::{Stream, TryStreamExt};
+use futures::{stream::BoxStream, TryStreamExt};
 use std::{
     convert::TryFrom,
-    pin::Pin,
     sync::{atomic::Ordering, Arc},
 };
 use tokio::io::AsyncReadExt;
@@ -166,8 +165,8 @@ impl<'a> TokenStream<'a> {
         Ok(ReceivedToken::SSPI(sspi))
     }
 
-    pub fn try_unfold(self) -> Pin<Box<dyn Stream<Item = crate::Result<ReceivedToken>> + 'a>> {
-        let s = futures::stream::try_unfold(self, |mut this| async move {
+    pub fn try_unfold(self) -> BoxStream<'a, crate::Result<ReceivedToken>> {
+        let stream = futures::stream::try_unfold(self, |mut this| async move {
             if this.conn.is_eof() {
                 return Ok(None);
             }
@@ -199,6 +198,6 @@ impl<'a> TokenStream<'a> {
             Ok(Some((token, this)))
         });
 
-        Box::pin(s)
+        Box::pin(stream)
     }
 }
