@@ -1,3 +1,4 @@
+mod batch_request;
 mod column_data;
 mod decode;
 mod encode;
@@ -10,6 +11,7 @@ mod token;
 mod type_info;
 
 use crate::SqlReadBytes;
+pub use batch_request::*;
 use bytes::BytesMut;
 pub use column_data::*;
 pub use decode::*;

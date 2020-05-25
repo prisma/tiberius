@@ -13,7 +13,9 @@ use crate::{
     },
     SqlReadBytes, ToSql,
 };
-use codec::{ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest};
+use codec::{
+    BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest,
+};
 use std::{borrow::Cow, fmt::Debug};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -79,6 +81,8 @@ impl AuthMethod {
 /// A `Client` is created using the [`ClientBuilder`], defining the needed
 /// connection options and capabilities.
 ///
+/// # Example
+///
 /// ```no_run
 /// # use tiberius::{Client, AuthMethod};
 /// # #[tokio::main]
@@ -111,10 +115,13 @@ impl Client {
     }
 
     /// Executes SQL statements in the SQL Server, returning the number rows
-    /// affected. Useful for `INSERT`, `UPDATE` and `DELETE` statements.
+    /// affected. Useful for `INSERT`, `UPDATE` and `DELETE` statements. The
+    /// `query` can define the parameter placement by annotating them with
+    /// `@PN`, where N is the index of the parameter, starting from `1`. If
+    /// executing multiple queries at a time, delimit them with `;` and refer to
+    /// [`ExecuteResult`] how to get results for the separate queries.
     ///
-    /// The `query` can define the parameter placement by annotating them with
-    /// `@PN`, where N is the index of the parameter, starting from `1`.
+    /// # Example
     ///
     /// ```no_run
     /// # use tiberius::ClientBuilder;
@@ -136,9 +143,6 @@ impl Client {
     /// # }
     /// ```
     ///
-    /// See the documentation for the resulting [`ExecuteResult`] on how to
-    /// handle the results correctly.
-    ///
     /// [`ExecuteResult`]: struct.ExecuteResult.html
     pub async fn execute<'a, 'b>(
         &'a mut self,
@@ -158,10 +162,13 @@ impl Client {
     }
 
     /// Executes SQL statements in the SQL Server, returning resulting rows.
-    /// Useful for `SELECT` statements.
+    /// Useful for `SELECT` statements. The `query` can define the parameter
+    /// placement by annotating them with `@PN`, where N is the index of the
+    /// parameter, starting from `1`. If executing multiple queries at a time,
+    /// delimit them with `;` and refer to [`QueryResult`] on proper stream
+    /// handling.
     ///
-    /// The `query` can define the parameter placement by annotating them with
-    /// `@PN`, where N is the index of the parameter, starting from `1`.
+    /// # Example
     ///
     /// ```
     /// # use tiberius::ClientBuilder;
@@ -173,7 +180,7 @@ impl Client {
     /// # );
     /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
     /// # let mut conn = builder.build().await?;
-    /// let rows = conn
+    /// let stream = conn
     ///     .query(
     ///         "SELECT @P1, @P2, @P3",
     ///         &[&1i32, &2i32, &3i32],
@@ -182,9 +189,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    ///
-    /// See the documentation for the resulting [`QueryResult`] on how to
-    /// handle the results correctly.
     ///
     /// [`QueryResult`]: struct.QueryResult.html
     pub async fn query<'a, 'b>(
@@ -199,6 +203,58 @@ impl Client {
         let rpc_params = Self::rpc_params(query);
 
         self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
+            .await?;
+
+        let ts = TokenStream::new(&mut self.connection);
+        let mut result = QueryResult::new(ts.try_unfold());
+
+        result.fetch_metadata().await?;
+
+        Ok(result)
+    }
+
+    /// Execute multiple queries, delimited with `;` and return multiple result
+    /// sets; one for each query.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tiberius::ClientBuilder;
+    /// # use std::env;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let mut conn = builder.build().await?;
+    /// let row = conn.simple_query("SELECT 1 AS col").await?.into_row().await?;
+    /// assert_eq!(Some(1i32), row.get("col"));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Warning
+    ///
+    /// Do not use this with any user specified input. Please resort to prepared
+    /// statements using the [`query`] method.
+    ///
+    /// [`query`]: #method.query
+    pub async fn simple_query<'a, 'b>(
+        &'a mut self,
+        query: impl Into<Cow<'b, str>>,
+    ) -> crate::Result<QueryResult<'a>>
+    where
+        'a: 'b,
+    {
+        self.connection.flush_stream().await?;
+
+        let req = BatchRequest {
+            queries: query.into(),
+        };
+
+        self.connection
+            .send(PacketHeader::batch(self.connection.context()), req)
             .await?;
 
         let ts = TokenStream::new(&mut self.connection);

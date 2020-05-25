@@ -92,6 +92,14 @@ impl PacketHeader {
         }
     }
 
+    pub fn batch(ctx: &Context) -> Self {
+        Self {
+            ty: PacketType::SQLBatch,
+            status: PacketStatus::NormalMessage,
+            ..ctx.new_header(0)
+        }
+    }
+
     pub fn set_status(&mut self, status: PacketStatus) {
         self.status = status;
     }

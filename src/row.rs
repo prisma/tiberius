@@ -254,6 +254,8 @@ impl Row {
     /// Columns defining the row data. Columns listed here are in the same order
     /// as the resulting data.
     ///
+    /// # Example
+    ///
     /// ```
     /// # use tiberius::ClientBuilder;
     /// # use std::env;
@@ -281,6 +283,8 @@ impl Row {
 
     /// Returns the number of columns in the row.
     ///
+    /// # Example
+    ///
     /// ```
     /// # use tiberius::ClientBuilder;
     /// # use std::env;
@@ -307,6 +311,8 @@ impl Row {
 
     /// Retrieve a column value for a given column index, which can either be
     /// the zero-indexed position or the name of the column.
+    ///
+    /// # Example
     ///
     /// ```
     /// # use tiberius::ClientBuilder;
