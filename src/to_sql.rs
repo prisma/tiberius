@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use uuid::Uuid;
 
 /// A conversion trait to a TDS type.
-pub trait ToSql {
+pub trait ToSql: Send + Sync {
     /// Convert to a value understood by the SQL Server.
     fn to_sql(&self) -> ColumnData<'_>;
 }
