@@ -57,9 +57,6 @@ optional = true
 [dependencies.winauth]
 version = "0.0.4"
 
-[dev-dependencies]
-env_logger = "0.7"
-
 [dev-dependencies.tokio-util]
 version = "0.3"
 features = ["compat"]
@@ -68,15 +65,14 @@ features = ["compat"]
 features = ["macros", "sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
 version = "0.2"
 
-[dev-dependencies.smol]
-version = "0.1"
-
 [dev-dependencies.async-std]
 features = ["attributes"]
 version = "1"
 
-[dev-dependencies.anyhow]
-version = "1"
+[dev-dependencies]
+names = "0.11"
+anyhow = "1"
+env_logger = "0.7"
 
 [features]
 default = ["tls", "chrono", "tds73"]

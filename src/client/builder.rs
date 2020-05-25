@@ -1,31 +1,24 @@
-use super::{connection::*, AuthMethod};
-use crate::{tds::Context, Client, EncryptionLevel};
+use super::AuthMethod;
+use crate::EncryptionLevel;
 use std::collections::HashMap;
-use futures::future;
 
 #[derive(Clone, Debug)]
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html
-pub struct ClientBuilder<'a, S, W>
-where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+pub struct ClientBuilder
 {
-    host: Option<String>,
-    port: Option<u16>,
-    database: Option<String>,
+    pub (crate) host: Option<String>,
+    pub (crate) port: Option<u16>,
+    pub (crate) database: Option<String>,
     #[cfg(windows)]
-    instance_name: Option<String>,
-    encryption: EncryptionLevel,
-    trust_cert: bool,
-    auth: AuthMethod,
-    wrapper: fn(Client<S>) -> W,
-    connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>,
+    pub (crate) instance_name: Option<String>,
+    pub (crate) encryption: EncryptionLevel,
+    pub (crate) trust_cert: bool,
+    pub (crate) auth: AuthMethod,
 }
 
-impl<'a, S, W> ClientBuilder<'a, S, W>
-where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+impl ClientBuilder
 {
     /// Create a `ClientBuilder` using a connector
     /// The `connector` must be able to create a TCP connection
@@ -33,9 +26,7 @@ where
     /// and `AsyncWrite` but it is up to the user to ensure that it does
     /// this via the TCP protocol.
     pub fn new(
-        wrapper: fn(Client<S>) -> W,
-        connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>,
-    ) -> ClientBuilder<'a, S, W> {
+    ) -> ClientBuilder {
         ClientBuilder {
             host: None,
             port: None,
@@ -48,8 +39,6 @@ where
             encryption: EncryptionLevel::NotSupported,
             trust_cert: false,
             auth: AuthMethod::None,
-            wrapper,
-            connector,
         }
     }
 
@@ -103,54 +92,20 @@ where
         self.auth = auth;
     }
 
-    fn get_host(&self) -> &str {
+    pub (crate) fn get_host(&self) -> &str {
         self.host
             .as_ref()
             .map(|s| s.as_str())
             .unwrap_or("localhost")
     }
 
-    fn get_port(&self) -> u16 {
+    pub (crate) fn get_port(&self) -> u16 {
         self.port.unwrap_or(1433)
     }
 
-    #[cfg(windows)]
-    fn create_context(&self) -> Context {
-        let mut context = Context::new();
-        context.set_spn(self.get_host(), self.get_port());
-        context
-    }
 
-    #[cfg(not(windows))]
-    fn create_context(&self) -> Context {
-        Context::new()
-    }
-
-    /// Creates a new client and connects to the server.
-    pub async fn build(self) -> crate::Result<W> 
-    where
-    {
-        let context = self.create_context();
-        let addr = format!("{}:{}", self.get_host(), self.get_port());
-
-        let opts = ConnectOpts {
-            encryption: self.encryption,
-            trust_cert: self.trust_cert,
-            auth: self.auth,
-            database: self.database,
-            #[cfg(windows)]
-            instance_name: self.instance_name,
-            #[cfg(not(windows))]
-            instance_name: None,
-        };
-
-        let ctr = self.connector;
-        let tcp_stream = ctr(addr, opts.instance_name.clone()).await?;
-
-        let connection = Connection::with_tcp(context, opts, tcp_stream).await?;
-
-        let wrap = self.wrapper;
-        Ok(wrap(Client { connection }))
+    pub fn get_addr(&self) -> String {
+        format!("{}:{}", self.get_host(), self.get_port())
     }
 
     /// Creates a new `ClientBuilder` from an [ADO.NET connection
@@ -168,12 +123,10 @@ where
     /// |`TrustServerCertificate`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
     /// |`encrypt`|Specifies whether the driver uses TLS to encrypt communication.|
     pub fn from_ado_string(
-        wrapper: fn(Client<S>) -> W,
-        connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>,
         s: &str,
     ) -> crate::Result<Self> {
         let ado = AdoNetString::parse(s)?;
-        let mut builder = Self::new(wrapper, connector);
+        let mut builder = Self::new();
 
         let server = ado.server()?;
 

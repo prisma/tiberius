@@ -113,12 +113,14 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Client<S> {
     /// options.
     ///
     /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub fn builder<'a, W>(
-        wrapper: fn(Client<S>) -> W,
-        connector: fn(String, Option<String>) -> future::BoxFuture<'a, crate::Result<S>>
-        ) -> ClientBuilder<'a, S, W> 
+    pub async fn connect(
+        opts: ClientBuilder,
+        tcp_stream: S,
+        ) -> crate::Result<Client<S>>
     {
-        ClientBuilder::new(wrapper, connector)
+        Ok(Client {
+            connection: Connection::connect(opts, tcp_stream).await?,
+        })
     }
 
     /// Executes SQL statements in the SQL Server, returning the number rows

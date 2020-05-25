@@ -1,7 +1,7 @@
 #[cfg(feature = "tls")]
 use crate::client::tls::TlsPreloginWrapper;
 use crate::{
-    client::{tls::MaybeTlsStream, AuthMethod},
+    client::{tls::MaybeTlsStream, AuthMethod, ClientBuilder},
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -68,13 +68,25 @@ enum LoginResult {
 
 impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin> Connection<S> {
     /// Creates a new connection
-    pub async fn with_tcp(
-        context: Context,
-        opts: ConnectOpts,
+    pub (crate) async fn connect(
+        opts: ClientBuilder,
         tcp_stream: S,
     ) -> crate::Result<Connection<S>>
     where
     {
+        // need to do a create context in hre
+        #[cfg(windows)]
+        let context = {
+            let mut context = Context::new();
+            context.set_spn(opts.get_host(), opts.get_port());
+            context
+        };
+
+        #[cfg(not(windows))]
+        let context = {
+            Context::new()
+        };
+
         let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
 
         let mut connection = Self {
