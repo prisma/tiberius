@@ -5,7 +5,7 @@ use crate::{
         codec::DoneStatus,
         stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
     },
-    Row,
+    Column, Row,
 };
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::{fmt::Debug, pin::Pin, task};
@@ -109,13 +109,13 @@ impl<'a> QueryResult<'a> {
     ///     )
     ///     .await?;
     ///
-    /// assert_eq!(vec!["foo"], result_set.columns());
+    /// assert_eq!("foo", result_set.columns()[0].name());
     /// result_set.next_resultset();
-    /// assert_eq!(vec!["bar"], result_set.columns());
+    /// assert_eq!("bar", result_set.columns()[0].name());
     /// # Ok(())
     /// # }
     /// ```
-    pub fn columns(&'a self) -> Vec<&str> {
+    pub fn columns(&'a self) -> &[Column] {
         self.stream.columns()
     }
 

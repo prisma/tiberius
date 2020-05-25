@@ -255,22 +255,22 @@ async fn multiple_queries() -> Result<()> {
         .query("SELECT 'a' AS first; SELECT 'b' AS second;", &[])
         .await?;
 
-    assert_eq!(vec!["first"], stream.columns());
+    assert_eq!("first", stream.columns()[0].name());
 
     while let Some(x) = stream.by_ref().try_next().await? {
         assert_eq!(Some("a"), x.get(0))
     }
 
-    assert_eq!(vec!["first"], stream.columns());
+    assert_eq!("first", stream.columns()[0].name());
 
     assert!(stream.next_resultset());
-    assert_eq!(stream.columns(), vec!["second"]);
+    assert_eq!("second", stream.columns()[0].name());
 
     while let Some(x) = stream.by_ref().try_next().await? {
         assert_eq!(Some("b"), x.get(0))
     }
 
-    assert_eq!(vec!["second"], stream.columns());
+    assert_eq!("second", stream.columns()[0].name());
 
     Ok(())
 }
