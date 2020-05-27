@@ -201,7 +201,8 @@ impl From<&TypeInfo> for ColumnType {
 ///     .query("SELECT @P1 AS col1", &[&"test"])
 ///     .await?
 ///     .into_row()
-///     .await?;
+///     .await?
+///     .unwrap();
 ///
 /// assert_eq!(Some("test"), row.get("col1"));
 ///
@@ -210,7 +211,8 @@ impl From<&TypeInfo> for ColumnType {
 ///     .query("SELECT @P1 AS col1", &[&"test"])
 ///     .await?
 ///     .into_row()
-///     .await?;
+///     .await?
+///     .unwrap();
 ///
 /// for val in row.into_iter() {
 ///     assert_eq!(
@@ -270,7 +272,8 @@ impl Row {
     ///     .query("SELECT 1 AS foo, 2 AS bar", &[])
     ///     .await?
     ///     .into_row()
-    ///     .await?;
+    ///     .await?
+    ///     .unwrap();
     ///
     /// assert_eq!("foo", row.columns()[0].name());
     /// assert_eq!("bar", row.columns()[1].name());
@@ -299,7 +302,8 @@ impl Row {
     ///     .query("SELECT 1, 2", &[])
     ///     .await?
     ///     .into_row()
-    ///     .await?;
+    ///     .await?
+    ///     .unwrap();
     ///
     /// assert_eq!(2, row.len());
     /// # Ok(())
@@ -328,7 +332,8 @@ impl Row {
     ///     .query("SELECT @P1 AS col1", &[&1i32])
     ///     .await?
     ///     .into_row()
-    ///     .await?;
+    ///     .await?
+    ///     .unwrap();
     ///
     /// assert_eq!(Some(1i32), row.get(0));
     /// assert_eq!(Some(1i32), row.get("col1"));

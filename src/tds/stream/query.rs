@@ -1,5 +1,5 @@
 use crate::tds::{codec::DoneStatus, stream::ReceivedToken};
-use crate::{row::ColumnType, Column, Error, Row};
+use crate::{row::ColumnType, Column, Row};
 use futures::{ready, stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use std::{
     fmt::Debug,
@@ -65,19 +65,24 @@ impl<'a> QueryStream<'a> {
 
                     return Ok(());
                 }
-                Some(ReceivedToken::Done(_)) => {
-                    return Err(Error::Protocol("Never got result metadata".into()))
+                _ => {
+                    if self.columns().is_none() {
+                        self.state = QueryStreamState::Done;
+                    }
+
+                    return Ok(());
                 }
-                _ => continue,
             }
         }
     }
 
-    pub(crate) fn columns(&self) -> &[Column] {
-        match self.state {
-            QueryStreamState::HasNext => &self.previous_columns.as_ref().unwrap(),
-            _ => &self.current_columns.as_ref().unwrap(),
-        }
+    pub(crate) fn columns(&self) -> Option<&[Column]> {
+        let cols = match self.state {
+            QueryStreamState::HasNext => self.previous_columns.as_ref(),
+            _ => self.current_columns.as_ref(),
+        };
+
+        cols.map(|cols| cols.as_slice())
     }
 
     fn store_columns(&mut self, columns: Vec<Column>) {

@@ -59,8 +59,45 @@ macro_rules! to_sql {
                     }
                 }
             }
+
+            impl crate::ToSql for &Option<$ty> {
+                fn to_sql(&self) -> crate::tds::codec::ColumnData<'_> {
+                    match self {
+                        Some(val) => {
+                            let $target = val;
+                            $variant(Some($val))
+                        },
+                        None => $variant(None)
+                    }
+                }
+            }
         )*
     };
+}
+
+macro_rules! into_sql {
+    ($target:ident, $( $ty:ty: ($variant:expr, $val:expr) ;)* ) => {
+        $(
+            impl IntoSql for $ty {
+                fn into_sql(self) -> ColumnData<'static> {
+                    let $target = self;
+                    $variant(Some($val))
+                }
+            }
+
+            impl IntoSql for Option<$ty> {
+                fn into_sql(self) -> ColumnData<'static> {
+                    match self {
+                        Some(val) => {
+                            let $target = val;
+                            $variant(Some($val))
+                        },
+                        None => $variant(None)
+                    }
+                }
+            }
+        )*
+    }
 }
 
 macro_rules! from_sql {

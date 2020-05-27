@@ -12,8 +12,13 @@ async fn main() -> anyhow::Result<()> {
 
     let mut conn = builder.build().await?;
 
-    conn.execute("INSERT INTO nulltest (id) VALUES (@P1)", &[&1])
+    let results = conn
+        .simple_query("CREATE TABLE ##NoResults (id INT)")
+        .await?
+        .into_results()
         .await?;
+
+    assert!(results.is_empty());
 
     Ok(())
 }

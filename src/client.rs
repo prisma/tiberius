@@ -228,7 +228,7 @@ impl Client {
     /// # );
     /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
     /// # let mut conn = builder.build().await?;
-    /// let row = conn.simple_query("SELECT 1 AS col").await?.into_row().await?;
+    /// let row = conn.simple_query("SELECT 1 AS col").await?.into_row().await?.unwrap();
     /// assert_eq!(Some(1i32), row.get("col"));
     /// # Ok(())
     /// # }

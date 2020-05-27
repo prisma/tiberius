@@ -1,6 +1,5 @@
 use crate::{
     client::Connection,
-    error::Error,
     tds::{
         codec::DoneStatus,
         stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
@@ -90,7 +89,7 @@ impl<'a> QueryResult<'a> {
 
     /// Names of the columns of the current resultset. Order is the same as the
     /// order of columns in the rows. Needs to be called separately for every
-    /// result set.
+    /// result set. None if query could not result anything.
     ///
     /// # Example
     ///
@@ -111,13 +110,17 @@ impl<'a> QueryResult<'a> {
     ///     )
     ///     .await?;
     ///
-    /// assert_eq!("foo", result_set.columns()[0].name());
+    /// let columns = result_set.columns().unwrap();
+    /// assert_eq!("foo", columns[0].name());
+    ///
     /// result_set.next_resultset();
-    /// assert_eq!("bar", result_set.columns()[0].name());
+    ///
+    /// let columns = result_set.columns().unwrap();
+    /// assert_eq!("bar", columns[0].name());
     /// # Ok(())
     /// # }
     /// ```
-    pub fn columns(&'a self) -> &[Column] {
+    pub fn columns(&'a self) -> Option<&[Column]> {
         self.stream.columns()
     }
 
@@ -138,38 +141,35 @@ impl<'a> QueryResult<'a> {
     /// Collects results from all queries in the stream into memory in the order
     /// of querying.
     pub async fn into_results(mut self) -> crate::Result<Vec<Vec<Row>>> {
-        let first: Vec<Row> = self.by_ref().try_collect().await?;
-        let mut results = vec![first];
+        if self.stream.state == QueryStreamState::Done {
+            Ok(Vec::new())
+        } else {
+            let first: Vec<Row> = self.by_ref().try_collect().await?;
+            let mut results = vec![first];
 
-        while self.next_resultset() {
-            results.push(self.by_ref().try_collect().await?);
+            while self.next_resultset() {
+                results.push(self.by_ref().try_collect().await?);
+            }
+
+            Ok(results)
         }
-
-        Ok(results)
     }
 
     /// Collects the output of the first query, dropping any further
     /// results.
     pub async fn into_first_result(self) -> crate::Result<Vec<Row>> {
         let mut results = self.into_results().await?.into_iter();
-
-        let rows = results
-            .next()
-            .ok_or(Error::Conversion("Empty result.".into()))?;
+        let rows = results.next().unwrap_or(Vec::new());
 
         Ok(rows)
     }
 
     /// Collects the first row from the output of the first query, dropping any
     /// further rows.
-    pub async fn into_row(self) -> crate::Result<Row> {
+    pub async fn into_row(self) -> crate::Result<Option<Row>> {
         let mut results = self.into_first_result().await?.into_iter();
 
-        let row = results
-            .next()
-            .ok_or(Error::Conversion("Result contains no rows.".into()))?;
-
-        Ok(row)
+        Ok(results.next())
     }
 }
 

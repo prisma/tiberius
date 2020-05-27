@@ -271,6 +271,7 @@ impl AdoNetString {
             .get("uid")
             .or_else(|| self.dict.get("username"))
             .or_else(|| self.dict.get("user"))
+            .or_else(|| self.dict.get("user id"))
             .map(|s| s.as_str());
 
         let pw = self
@@ -291,7 +292,10 @@ impl AdoNetString {
     }
 
     pub fn database(&self) -> Option<String> {
-        self.dict.get("database").map(|db| db.to_string())
+        self.dict
+            .get("database")
+            .or_else(|| self.dict.get("initial catalog"))
+            .map(|db| db.to_string())
     }
 
     pub fn trust_cert(&self) -> crate::Result<bool> {

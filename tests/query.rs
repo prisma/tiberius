@@ -25,9 +25,29 @@ async fn connect() -> Result<Client> {
 #[tokio::test]
 async fn test_simple_query() -> Result<()> {
     let mut conn = connect().await?;
-    let row = conn.simple_query("SELECT 1").await?.into_row().await?;
+    let row = conn
+        .simple_query("SELECT 1")
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(1i32), row.get(0));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_simple_query_no_results() -> Result<()> {
+    let mut conn = connect().await?;
+
+    let results = conn
+        .simple_query("CREATE TABLE ##NoResults (id INT)")
+        .await?
+        .into_results()
+        .await?;
+
+    assert!(results.is_empty());
 
     Ok(())
 }
@@ -46,7 +66,8 @@ async fn connect_with_full_encryption() -> Result<()> {
         .query("SELECT @P1", &[&-4i32])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(-4i32), row.get(0));
 
@@ -65,7 +86,8 @@ async fn connect_to_named_instance() -> Result<()> {
         .query("SELECT @P1", &[&-4i32])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(-4i32), row.get(0));
 
@@ -125,7 +147,8 @@ async fn read_and_write_finnish_varchars() -> Result<()> {
         .query("SELECT content FROM ##TestFinnish", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(kalevala), row.get(0));
 
@@ -265,22 +288,22 @@ async fn multiple_queries() -> Result<()> {
         .query("SELECT 'a' AS first; SELECT 'b' AS second;", &[])
         .await?;
 
-    assert_eq!("first", stream.columns()[0].name());
+    assert_eq!("first", stream.columns().unwrap()[0].name());
 
     while let Some(x) = stream.by_ref().try_next().await? {
         assert_eq!(Some("a"), x.get(0))
     }
 
-    assert_eq!("first", stream.columns()[0].name());
+    assert_eq!("first", stream.columns().unwrap()[0].name());
 
     assert!(stream.next_resultset());
-    assert_eq!("second", stream.columns()[0].name());
+    assert_eq!("second", stream.columns().unwrap()[0].name());
 
     while let Some(x) = stream.by_ref().try_next().await? {
         assert_eq!(Some("b"), x.get(0))
     }
 
-    assert_eq!("second", stream.columns()[0].name());
+    assert_eq!("second", stream.columns().unwrap()[0].name());
 
     Ok(())
 }
@@ -293,7 +316,8 @@ async fn bool_type() -> Result<()> {
         .query("SELECT @P1, @P2 ORDER BY 1", &[&false, &true])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(false), row.get(0));
     assert_eq!(Some(true), row.get(1));
@@ -304,7 +328,12 @@ async fn bool_type() -> Result<()> {
 #[tokio::test]
 async fn i8_token() -> Result<()> {
     let mut conn = connect().await?;
-    let row = conn.query("SELECT @P1", &[&-4i8]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&-4i8])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
     assert_eq!(Some(-4i8), row.get(0));
 
     Ok(())
@@ -318,7 +347,8 @@ async fn i16_token() -> Result<()> {
         .query("SELECT @P1", &[&-4i16])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(-4i16), row.get(0));
 
@@ -333,7 +363,8 @@ async fn i32_token() -> Result<()> {
         .query("SELECT @P1", &[&-4i32])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(-4i32), row.get(0));
 
@@ -348,7 +379,8 @@ async fn i64_token() -> Result<()> {
         .query("SELECT @P1", &[&-4i64])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(-4i64), row.get(0));
 
@@ -363,7 +395,8 @@ async fn f32_token() -> Result<()> {
         .query("SELECT @P1", &[&4.20f32])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(4.20f32), row.get(0));
 
@@ -378,7 +411,8 @@ async fn f64_token() -> Result<()> {
         .query("SELECT @P1", &[&4.20f64])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(4.20f64), row.get(0));
 
@@ -390,7 +424,12 @@ async fn short_strings() -> Result<()> {
     let mut conn = connect().await?;
     let s = "Hallo";
 
-    let row = conn.query("SELECT @P1", &[&s]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&s])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
     assert_eq!(Some(s), row.get::<&str, _>(0));
 
     Ok(())
@@ -405,7 +444,8 @@ async fn long_strings() -> Result<()> {
         .query("SELECT @P1", &[&string.as_str()])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(string.as_str()), row.get(0));
     Ok(())
@@ -449,7 +489,12 @@ async fn drop_stream_before_handling_all_results_should_not_cause_weird_things()
     }
 
     {
-        let row = conn.query("SELECT @P1", &[&1i32]).await?.into_row().await?;
+        let row = conn
+            .query("SELECT @P1", &[&1i32])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
         assert_eq!(Some(1i32), row.get(0));
     }
 
@@ -516,7 +561,8 @@ async fn ntext_type() -> Result<()> {
         .query("SELECT content FROM ##TestNText", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(string), row.get::<&str, _>(0));
 
@@ -540,7 +586,8 @@ async fn ntext_empty() -> Result<()> {
         .query("SELECT content FROM ##TestNTextEmpty", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&str, _>(0));
 
@@ -566,7 +613,8 @@ async fn text_type() -> Result<()> {
         .query("SELECT content FROM ##TestText", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(string.as_str()), row.get(0));
 
@@ -590,7 +638,8 @@ async fn varchar_empty() -> Result<()> {
         .query("SELECT content FROM ##TestFoo", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&str, _>(0));
 
@@ -614,7 +663,8 @@ async fn text_empty() -> Result<()> {
         .query("SELECT content FROM ##TestTextEmpty", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&str, _>(0));
 
@@ -645,7 +695,8 @@ async fn varbinary_empty() -> Result<()> {
         .query("SELECT content FROM ##TestVarBinaryEmpty", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&[u8], _>(0));
 
@@ -676,7 +727,8 @@ async fn binary_type() -> Result<()> {
         .query("SELECT content FROM ##TestBinary", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -710,7 +762,8 @@ async fn varbinary_type() -> Result<()> {
         .query("SELECT content FROM ##VarBinary", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -744,7 +797,8 @@ async fn image_type() -> Result<()> {
         .query("SELECT content FROM ##ImageType", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -759,7 +813,12 @@ async fn guid_type() -> Result<()> {
     let mut conn = connect().await?;
 
     let id = Uuid::new_v4();
-    let row = conn.query("SELECT @P1", &[&id]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&id])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(id), row.get(0));
 
@@ -790,7 +849,8 @@ async fn varbinary_max() -> Result<()> {
         .query("SELECT content FROM ##MaxBinary", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -805,7 +865,12 @@ async fn numeric_type_u32_presentation() -> Result<()> {
     let mut conn = connect().await?;
 
     let num = Numeric::new_with_scale(2, 1);
-    let row = conn.query("SELECT @P1", &[&num]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&num])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get(0));
 
@@ -817,7 +882,12 @@ async fn numeric_type_u64_presentation() -> Result<()> {
     let mut conn = connect().await?;
 
     let num = Numeric::new_with_scale(i32::MAX as i128 + 10, 1);
-    let row = conn.query("SELECT @P1", &[&num]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&num])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get(0));
 
@@ -829,7 +899,12 @@ async fn numeric_type_u96_presentation() -> Result<()> {
     let mut conn = connect().await?;
 
     let num = Numeric::new_with_scale(i64::MAX as i128, 19);
-    let row = conn.query("SELECT @P1", &[&num]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&num])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get(0));
 
@@ -841,7 +916,12 @@ async fn numeric_type_u128_presentation() -> Result<()> {
     let mut conn = connect().await?;
 
     let num = Numeric::new_with_scale(i64::MAX as i128, 37);
-    let row = conn.query("SELECT @P1", &[&num]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&num])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get(0));
 
@@ -855,7 +935,12 @@ async fn decimal_type_u32_presentation() -> Result<()> {
 
     let mut conn = connect().await?;
     let num = Decimal::from_i128_with_scale(2, 1);
-    let row = conn.query("SELECT @P1", &[&num]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&num])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get(0));
 
@@ -874,7 +959,8 @@ async fn decimal_type_u64_presentation() -> Result<()> {
         .query("SELECT @P1 AS foo", &[&num])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get("foo"));
 
@@ -888,7 +974,12 @@ async fn decimal_type_u96_presentation() -> Result<()> {
 
     let mut conn = connect().await?;
     let num = Decimal::from_i128_with_scale(i64::MAX as i128, 19);
-    let row = conn.query("SELECT @P1", &[&num]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&num])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get(0));
 
@@ -902,7 +993,12 @@ async fn decimal_type_u128_presentation() -> Result<()> {
 
     let mut conn = connect().await?;
     let num = Decimal::from_i128_with_scale(i64::MAX as i128, 28);
-    let row = conn.query("SELECT @P1", &[&num]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&num])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(num), row.get(0));
 
@@ -928,7 +1024,8 @@ async fn naive_small_datetime_tds73() -> Result<()> {
         .query("SELECT date FROM ##TestSmallDt", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(dt), row.get(0));
 
@@ -954,7 +1051,8 @@ async fn naive_datetime2_tds73() -> Result<()> {
         .query("SELECT date FROM ##NaiveDateTime2", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(Some(dt), row.get(0));
 
@@ -969,7 +1067,12 @@ async fn naive_date_time_tds72() -> Result<()> {
     let mut conn = connect().await?;
     let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
 
-    let row = conn.query("SELECT @P1", &[&dt]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(dt), row.get(0));
 
@@ -984,7 +1087,12 @@ async fn naive_time() -> Result<()> {
     let mut conn = connect().await?;
     let time = NaiveTime::from_hms(16, 20, 0);
 
-    let row = conn.query("SELECT @P1", &[&time]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&time])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(time), row.get(0));
 
@@ -999,7 +1107,12 @@ async fn naive_date() -> Result<()> {
     let mut conn = connect().await?;
     let date = NaiveDate::from_ymd(2020, 4, 20);
 
-    let row = conn.query("SELECT @P1", &[&date]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&date])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(date), row.get(0));
 
@@ -1015,7 +1128,12 @@ async fn date_time_utc() -> Result<()> {
     let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
     let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 
-    let row = conn.query("SELECT @P1", &[&dt]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(dt), row.get(0));
 
@@ -1032,7 +1150,12 @@ async fn date_time_fixed() -> Result<()> {
     let fixed = FixedOffset::east(3600 * 3);
     let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
 
-    let row = conn.query("SELECT @P1", &[&dt]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(dt), row.get(0));
 
@@ -1044,7 +1167,12 @@ async fn xml_read_write() -> Result<()> {
     let mut conn = connect().await?;
 
     let xml = XmlData::new("<root><child attr=\"attr-value\"/></root>");
-    let row = conn.query("SELECT @P1", &[&xml]).await?.into_row().await?;
+    let row = conn
+        .query("SELECT @P1", &[&xml])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(&xml), row.get(0));
 
@@ -1059,7 +1187,8 @@ async fn xml_read_null_xml() -> Result<()> {
         .query("SELECT CAST(NULL AS XML)", &[])
         .await?
         .into_row()
-        .await?;
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&XmlData, _>(0));
 
