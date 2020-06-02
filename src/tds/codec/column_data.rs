@@ -223,7 +223,7 @@ impl<'a> ColumnData<'a> {
             // 2.2.5.5.1.5 IEEE754
             VarLenType::Floatn => Self::decode_float(src).await?,
             VarLenType::Guid => Self::decode_guid(src).await?,
-            VarLenType::NChar | VarLenType::NVarchar => {
+            VarLenType::BigChar | VarLenType::NChar | VarLenType::NVarchar => {
                 let decoded = Self::decode_variable_string(src, ty, len)
                     .await?
                     .map(Cow::from);
@@ -493,7 +493,7 @@ impl<'a> ColumnData<'a> {
     where
         R: SqlReadBytes + Unpin,
     {
-        let mode = if ty == VarLenType::NChar {
+        let mode = if ty == VarLenType::NChar || ty == VarLenType::BigChar {
             ReadTyMode::FixedSize(len)
         } else {
             ReadTyMode::auto(len)
@@ -502,12 +502,16 @@ impl<'a> ColumnData<'a> {
         let data = Self::decode_plp_type(src, mode).await?;
 
         let res = if let Some(buf) = data {
-            if buf.len() % 2 != 0 {
-                return Err(Error::Protocol("nvarchar: invalid plp length".into()));
-            }
+            if ty == VarLenType::BigChar {
+                Some(String::from_utf8(buf)?)
+            } else {
+                if buf.len() % 2 != 0 {
+                    return Err(Error::Protocol("nvarchar: invalid plp length".into()));
+                }
 
-            let buf: Vec<_> = buf.chunks(2).map(LittleEndian::read_u16).collect();
-            Some(String::from_utf16(&buf)?)
+                let buf: Vec<_> = buf.chunks(2).map(LittleEndian::read_u16).collect();
+                Some(String::from_utf16(&buf)?)
+            }
         } else {
             None
         };

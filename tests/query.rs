@@ -156,6 +156,54 @@ async fn read_and_write_finnish_varchars() -> Result<()> {
 }
 
 #[tokio::test]
+async fn read_and_write_char() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.simple_query("CREATE TABLE ##ReadAndWriteChar (a char)")
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute("INSERT INTO ##ReadAndWriteChar (a) values (@P1)", &[&"a"])
+        .await?;
+
+    let row = conn
+        .query("SELECT a FROM ##ReadAndWriteChar", &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some("a"), row.get(0));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_and_write_nchar() -> Result<()> {
+    let mut conn = connect().await?;
+
+    conn.simple_query("CREATE TABLE ##ReadAndWriteNChar (a nchar)")
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute("INSERT INTO ##ReadAndWriteNChar (a) values (@P1)", &[&"ä"])
+        .await?;
+
+    let row = conn
+        .query("SELECT a FROM ##ReadAndWriteNChar", &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some("ä"), row.get(0));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn execute_insert_update_delete() -> Result<()> {
     let mut conn = connect().await?;
 
