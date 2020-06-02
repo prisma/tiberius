@@ -169,6 +169,7 @@ impl TypeInfo {
                     | VarLenType::Money
                     | VarLenType::Datetimen => src.read_u8().await? as usize,
                     VarLenType::NChar
+                    | VarLenType::BigChar
                     | VarLenType::NVarchar
                     | VarLenType::BigVarChar
                     | VarLenType::BigBinary
@@ -181,6 +182,7 @@ impl TypeInfo {
 
                 let collation = match ty {
                     VarLenType::NText
+                    | VarLenType::BigChar
                     | VarLenType::NChar
                     | VarLenType::NVarchar
                     | VarLenType::BigVarChar => Some(Collation::new(
