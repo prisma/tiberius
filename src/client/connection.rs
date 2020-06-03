@@ -299,8 +299,8 @@ impl Connection {
                 Ok(LoginResult::Ok)
             }
             AuthMethod::SqlServer(auth) => {
-                msg.username = auth.user.into();
-                msg.password = auth.password.into();
+                msg.username = auth.user().into();
+                msg.password = auth.password().into();
 
                 self.send(PacketHeader::login(&self.context), msg).await?;
 
