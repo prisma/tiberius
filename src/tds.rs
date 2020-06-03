@@ -47,12 +47,12 @@ uint_enum! {
 /// Context, that might be required to make sure we understand and are understood by the server
 #[derive(Debug)]
 pub(crate) struct Context {
-    pub version: FeatureLevel,
-    pub packet_size: AtomicU32,
-    pub packet_id: AtomicU8,
-    pub last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
+    version: FeatureLevel,
+    packet_size: AtomicU32,
+    packet_id: AtomicU8,
+    last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
     #[cfg(windows)]
-    pub spn: Option<String>,
+    spn: Option<String>,
 }
 
 impl Context {
@@ -73,6 +73,14 @@ impl Context {
 
     pub async fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
         *self.last_meta.lock().await = Some(meta);
+    }
+
+    pub async fn last_meta(&self) -> Option<Arc<TokenColMetaData>> {
+        self.last_meta.lock().await.as_ref().map(Arc::clone)
+    }
+
+    pub fn packet_size(&self) -> usize {
+        self.packet_size.load(Ordering::SeqCst) as usize
     }
 
     #[cfg(windows)]
