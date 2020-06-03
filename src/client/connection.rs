@@ -22,7 +22,7 @@ use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
 #[cfg(windows)]
 use std::time::Duration;
-use std::{cmp, fmt::Debug, io, net::SocketAddr, pin::Pin, sync::atomic::Ordering, task};
+use std::{cmp, fmt::Debug, io, net::SocketAddr, pin::Pin, task};
 use task::Poll;
 use tokio::{
     io::AsyncRead,
@@ -172,7 +172,7 @@ impl Connection {
         E: Sized + Encode<BytesMut>,
     {
         self.flushed = false;
-        let packet_size = self.context.packet_size.load(Ordering::SeqCst) as usize - HEADER_BYTES;
+        let packet_size = self.context.packet_size() - HEADER_BYTES;
 
         let mut payload = BytesMut::new();
         item.encode(&mut payload)?;
