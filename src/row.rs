@@ -310,7 +310,7 @@ impl Row {
     /// # }
     /// ```
     pub fn len(&self) -> usize {
-        self.data.columns.len()
+        self.data.len()
     }
 
     /// Retrieve a column value for a given column index, which can either be
@@ -367,7 +367,7 @@ impl Row {
             Error::Conversion(format!("Could not find column with index {}", idx).into())
         })?;
 
-        let data = self.data.columns.get(idx).unwrap();
+        let data = self.data.get(idx).unwrap();
 
         R::from_sql(data)
     }
@@ -378,6 +378,6 @@ impl IntoIterator for Row {
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.data.columns.into_iter()
+        self.data.into_iter()
     }
 }
