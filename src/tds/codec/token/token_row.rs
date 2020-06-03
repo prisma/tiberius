@@ -22,7 +22,7 @@ impl TokenRow {
     where
         R: SqlReadBytes + Unpin,
     {
-        let col_meta = src.context().last_meta().await.unwrap();
+        let col_meta = src.context().last_meta().unwrap();
 
         let mut row = Self {
             data: Vec::with_capacity(col_meta.columns.len()),
@@ -42,7 +42,7 @@ impl TokenRow {
     where
         R: SqlReadBytes + Unpin,
     {
-        let col_meta = src.context().last_meta().await.unwrap();
+        let col_meta = src.context().last_meta().unwrap();
         let row_bitmap = RowBitmap::decode(src, col_meta.columns.len()).await?;
 
         let mut row = Self {

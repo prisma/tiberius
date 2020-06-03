@@ -69,7 +69,7 @@ impl<'a> TokenStream<'a> {
 
     async fn get_col_metadata(&mut self) -> crate::Result<ReceivedToken> {
         let meta = Arc::new(TokenColMetaData::decode(self.conn).await?);
-        self.conn.context().set_last_meta(meta.clone()).await;
+        self.conn.context_mut().set_last_meta(meta.clone());
 
         event!(Level::TRACE, ?meta);
 

@@ -518,4 +518,9 @@ impl SqlReadBytes for Connection {
     fn context(&self) -> &Context {
         &self.context
     }
+
+    /// A mutable reference to the current execution context.
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
 }

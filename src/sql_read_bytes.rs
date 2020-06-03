@@ -73,6 +73,8 @@ pub(crate) trait SqlReadBytes: AsyncRead {
 
     fn context(&self) -> &Context;
 
+    fn context_mut(&mut self) -> &mut Context;
+
     fn read_f32<'a>(&'a mut self) -> ReadF32<&'a mut Self>
     where
         Self: Unpin,
