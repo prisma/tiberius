@@ -1,14 +1,9 @@
-use crate::{
-    tds::codec::{ColumnData, TokenColMetaData},
-    SqlReadBytes,
-};
-use std::sync::Arc;
+use crate::{tds::codec::ColumnData, SqlReadBytes};
 use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenRow {
-    pub meta: Arc<TokenColMetaData>,
-    pub columns: Vec<ColumnData<'static>>,
+    data: Vec<ColumnData<'static>>,
 }
 
 /// A bitmap of null values in the row. Sometimes SQL Server decides to pack the
@@ -60,7 +55,7 @@ impl IntoIterator for TokenRow {
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.columns.into_iter()
+        self.data.into_iter()
     }
 }
 
@@ -74,14 +69,12 @@ impl TokenRow {
         let col_meta = src.context().last_meta.lock().await.clone().unwrap();
 
         let mut row = TokenRow {
-            meta: col_meta.clone(),
-            columns: Vec::with_capacity(col_meta.columns.len()),
+            data: Vec::with_capacity(col_meta.columns.len()),
         };
 
         for column in col_meta.columns.iter() {
             let data = ColumnData::decode(src, &column.base.ty).await?;
-
-            row.columns.push(data);
+            row.data.push(data);
         }
 
         Ok(row)
@@ -97,8 +90,7 @@ impl TokenRow {
         let row_bitmap = RowBitmap::decode(src, col_meta.columns.len()).await?;
 
         let mut row = TokenRow {
-            meta: col_meta.clone(),
-            columns: Vec::with_capacity(col_meta.columns.len()),
+            data: Vec::with_capacity(col_meta.columns.len()),
         };
 
         for (i, column) in col_meta.columns.iter().enumerate() {
@@ -108,9 +100,20 @@ impl TokenRow {
                 ColumnData::decode(src, &column.base.ty).await?
             };
 
-            row.columns.push(data);
+            row.data.push(data);
         }
 
         Ok(row)
+    }
+
+    /// The number of columns.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Gives the columnar data with the given index. `None` if index out of
+    /// bounds.
+    pub fn get(&self, index: usize) -> Option<&ColumnData<'static>> {
+        self.data.get(index)
     }
 }
