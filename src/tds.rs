@@ -14,7 +14,6 @@ use std::{
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
     sync::Arc,
 };
-use tokio::sync::Mutex;
 
 /// The amount of bytes a packet header consists of
 pub(crate) const HEADER_BYTES: usize = 8;
@@ -50,7 +49,7 @@ pub(crate) struct Context {
     version: FeatureLevel,
     packet_size: AtomicU32,
     packet_id: AtomicU8,
-    last_meta: Mutex<Option<Arc<TokenColMetaData>>>,
+    last_meta: Option<Arc<TokenColMetaData>>,
     #[cfg(windows)]
     spn: Option<String>,
 }
@@ -61,7 +60,7 @@ impl Context {
             version: FeatureLevel::SqlServerN,
             packet_size: AtomicU32::new(4096),
             packet_id: AtomicU8::new(0),
-            last_meta: Mutex::new(None),
+            last_meta: None,
             #[cfg(windows)]
             spn: None,
         }
@@ -71,12 +70,12 @@ impl Context {
         PacketHeader::new(length, self.packet_id.fetch_add(1, Ordering::SeqCst))
     }
 
-    pub async fn set_last_meta(&self, meta: Arc<TokenColMetaData>) {
-        *self.last_meta.lock().await = Some(meta);
+    pub fn set_last_meta(&mut self, meta: Arc<TokenColMetaData>) {
+        self.last_meta.replace(meta);
     }
 
-    pub async fn last_meta(&self) -> Option<Arc<TokenColMetaData>> {
-        self.last_meta.lock().await.as_ref().map(Arc::clone)
+    pub fn last_meta(&self) -> Option<Arc<TokenColMetaData>> {
+        self.last_meta.as_ref().map(Arc::clone)
     }
 
     pub fn packet_size(&self) -> usize {
