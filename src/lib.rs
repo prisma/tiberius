@@ -30,9 +30,6 @@ pub use uuid::Uuid;
 use sql_read_bytes::*;
 use tds::codec::*;
 
-//#[cfg(any(windows, doc))]
-use std::{str, net, future, convert};
-
 /// An alias for a result that holds crate's error type as the error.
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -47,49 +44,113 @@ pub(crate) fn get_driver_version() -> u64 {
 }
 
 
-//#[cfg(windows)]
-use futures_timer;
-//#[cfg(windows)]
-use futures::{select, future::FutureExt};
+#[cfg(all(windows, feature = "named-instance-tokio"))]
+impl client::ClientBuilder {
 
-//#[cfg(any(windows, doc))]
-pub async fn find_tcp_port<FUT>(
-    mut addr: net::SocketAddr, 
-    instance_name: &str, 
-    //udp_sender: for<'a> fn(&'a str, &'a net::SocketAddr, &'a [u8], &'a mut [u8]) -> futures::future::BoxFuture<'a, Result<usize>>,
-    udp_sender: for<'a> fn(&'a str, &'a net::SocketAddr, &'a [u8], &'a mut [u8]) -> FUT,
-    //udp_sender: fn(&'a str, &'a net::SocketAddr, &'a [u8], &'a mut [u8]) -> FUT,
-    ) -> Result<net::SocketAddr> 
-where 
-    //'a: 'fut,
-    FUT: future::Future<Output = Result<usize>> ,
-    //for<'a> FUT: future::Future<Output = Result<usize>> + 'a,
-    //FUT: 'static,
-{
-    // First resolve the instance to a port via the
-    // SSRP protocol/MS-SQLR protocol [1]
-    // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
-    let local_bind = if addr.is_ipv4() {
-        "0.0.0.0:0"
-    } else {
-        "[::]:0"
-    };
+    pub async fn connect<'a>(&self) -> tiberius::Result<compat::Compat<net::TcpStream>>
+    {
+        use tokio::{net, time};
+        use tokio_util::compat::{self, Tokio02AsyncWriteCompatExt};
+        use futures::{future, TryFutureExt};
+        use std::io;
 
-    let msg = [&[4u8], instance_name.as_bytes()].concat();
-    let mut buf = vec![0u8; 4096];
+        let mut addr = tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+        })?;
 
-    let len = async {
-        let mut recieve = Box::pin(udp_sender(local_bind, &addr, &msg, &mut buf)).fuse();
+        if let Some(ref instance_name) = self.instance_name {
+            // First resolve the instance to a port via the
+            // SSRP protocol/MS-SQLR protocol [1]
+            // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
 
-        let mut timeout = futures_timer::Delay::new(std::time::Duration::from_millis(1000)).fuse();
-        let err = |name| format!("SQL browser timeout during resolving instance {}", name).into();
+            let local_bind: std::net::SocketAddr = if addr.is_ipv4() {
+                "0.0.0.0:0".parse().unwrap()
+            } else {
+                "[::]:0".parse().unwrap()
+            };
 
-        select! {
-            len = recieve => len.map_err(convert::Into::into),
-            _ = timeout => Err(error::Error::Conversion(err(instance_name))),
-        }
-    }.await?;
+            let msg = [&[4u8], instance_name.as_bytes()].concat();
+            let mut buf = vec![0u8; 4096];
 
+            let mut socket = net::UdpSocket::bind(&local_bind).await?;
+            socket.send_to(&msg, &addr).await?;
+
+            let timeout = time::Duration::from_millis(1000);
+
+            let len = time::timeout(timeout, socket.recv(&mut buf))
+                .map_err(|_: time::Elapsed| {
+                    tiberius::error::Error::Conversion(
+                        format!(
+                            "SQL browser timeout during resolving instance {}",
+                            instance_name
+                        )
+                        .into(),
+                    )
+                }).await??;
+
+            tiberius::consume_sql_browser_message(addr, buf, len, instance_name)
+        };
+        let stream = net::TcpStream::connect(addr).await?;
+        stream.set_nodelay(true)?;
+        Ok(stream.compat_write())
+    }
+}
+
+
+#[cfg(all(windows, feature = "named-instance-async"))]
+impl client::ClientBuilder {
+    
+    pub async fn connector<'a>(&self) -> crate::Result<net::TcpStream>
+    {
+        use futures::{future, TryFutureExt};
+        use async_std::net;
+        use std::{io, time};
+
+        let mut addr = addr.to_socket_addrs().await?.next().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+        })?;
+
+        if let Some(ref instance_name) = self.instance_name {
+            // First resolve the instance to a port via the
+            // SSRP protocol/MS-SQLR protocol [1]
+            // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
+
+            let local_bind: std::net::SocketAddr = if addr.is_ipv4() {
+                "0.0.0.0:0".parse().unwrap()
+            } else {
+                "[::]:0".parse().unwrap()
+            };
+
+            let msg = [&[4u8], instance_name.as_bytes()].concat();
+            let mut buf = vec![0u8; 4096];
+
+            let socket = net::UdpSocket::bind(&local_bind).await?;
+            socket.send_to(&msg, &addr).await?;
+
+            let timeout = time::Duration::from_millis(1000);
+
+            let len = async_std::io::timeout(timeout, socket.recv(&mut buf))
+                .map_err(|_| {
+                    tiberius::error::Error::Conversion(
+                        format!(
+                            "SQL browser timeout during resolving instance {}",
+                            instance_name
+                        )
+                        .into(),
+                    )
+                }).await?;
+
+            tiberius::consume_sql_browser_message(addr, buf, len, instance_name)
+        };
+
+        let stream = net::TcpStream::connect(addr).await?;
+        stream.set_nodelay(true)?;
+        Ok(stream)
+    }
+}
+
+#[cfg(windows)]
+fn consume_sql_browser_message(mut addr: net::SocketAddr, mut buf: Vec<u8>, len: usize, instance_name: &str) -> crate::Result<net::SocketAddr> {
     buf.truncate(len);
 
     let err = Error::Conversion(
@@ -112,61 +173,3 @@ where
 
     Ok(addr)
 }
-
-//#[cfg(any(windows, doc))]
-pub async fn find_tcp_port_closure<FN, FUT>(
-    mut addr: net::SocketAddr, 
-    instance_name: &str, 
-    udp_sender: FN,
-    ) -> Result<net::SocketAddr> 
-where
-    FN: for<'a> Fn(&'a str, &'a net::SocketAddr, &'a [u8],  &'a mut [u8]) -> FUT,
-    FUT: future::Future<Output = Result<usize>>,
-{
-    // First resolve the instance to a port via the
-    // SSRP protocol/MS-SQLR protocol [1]
-    // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
-    let local_bind = if addr.is_ipv4() {
-        "0.0.0.0:0"
-    } else {
-        "[::]:0"
-    };
-
-    let msg = [&[4u8], instance_name.as_bytes()].concat();
-    let mut buf = vec![0u8; 4096];
-
-    let len = async {
-        let mut recieve = Box::pin(udp_sender(local_bind, &addr, &msg, &mut buf)).fuse();
-
-        let mut timeout = futures_timer::Delay::new(std::time::Duration::from_millis(1000)).fuse();
-        let err = |name| format!("SQL browser timeout during resolving instance {}", name).into();
-
-        select! {
-            len = recieve => len.map_err(convert::Into::into),
-            _ = timeout => Err(error::Error::Conversion(err(instance_name))),
-        }
-    }.await?;
-
-    buf.truncate(len);
-
-    let err = Error::Conversion(
-        format!("Could not resolve SQL browser instance {}", instance_name).into(),
-    );
-
-    if len == 0 {
-        return Err(err);
-    }
-
-    let response = str::from_utf8(&buf[3..len])?;
-
-    let port: u16 = response
-        .find("tcp;")
-        .and_then(|pos| response[pos..].split(';').nth(1))
-        .ok_or(err)
-        .and_then(|val| Ok(val.parse()?))?;
-
-    addr.set_port(port);
-
-    Ok(addr)
-}
-

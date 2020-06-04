@@ -27,7 +27,11 @@ pretty-hex = "0.1"
 pin-project-lite = "0.1"
 futures_codec = "0.4"
 futures-sink = "0.3"
-futures-timer = "0.3" # windows only later
+
+[target.'cfg(windows)'.dependencies]
+winauth = "0.0.4"
+async-std = { version = "1", optional = true }
+tokio = { version = "0.2", optional = true, features = ["udp"] }
 
 [dependencies.chrono]
 version = "0.4"
@@ -55,8 +59,6 @@ version = "0.1"
 version = "1.6"
 optional = true
 
-[dependencies.winauth]
-version = "0.0.4"
 
 [dev-dependencies.tokio-util]
 version = "0.3"
@@ -82,3 +84,5 @@ env_logger = "0.7"
 default = ["tls", "chrono", "tds73"]
 tls = ["async-native-tls"]
 tds73 = []
+named-instance-async = ["async-std"]
+named-instance-tokio = ["tokio"]
