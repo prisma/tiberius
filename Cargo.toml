@@ -27,6 +27,7 @@ pretty-hex = "0.1"
 pin-project-lite = "0.1"
 futures_codec = "0.4"
 futures-sink = "0.3"
+futures-timer = "0.3" # windows only later
 
 [dependencies.chrono]
 version = "0.4"
@@ -68,6 +69,9 @@ version = "0.2"
 [dev-dependencies.async-std]
 features = ["attributes"]
 version = "1"
+
+[dev-dependencies.runtimes-macro]
+path = "./runtimes-macro"
 
 [dev-dependencies]
 names = "0.11"

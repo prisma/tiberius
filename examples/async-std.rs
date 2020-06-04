@@ -22,11 +22,12 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
+//#[cfg(windows)]
 mod with_named_instance {
     use futures::future;
     use async_std::net;
     use std::io;
+    use async_std::net::ToSocketAddrs;
     
     pub fn connector<'a>(addr: String, instance_name: Option<String>) -> future::BoxFuture<'a, tiberius::Result<net::TcpStream>>
     {
@@ -36,7 +37,7 @@ mod with_named_instance {
             })?;
 
             if let Some(ref instance_name) = instance_name {
-                addr = find_tcp_port(addr, instance_name).await?;
+                addr = tiberius::find_tcp_port(addr, instance_name, udp_sender).await?;
             };
 
             let stream = net::TcpStream::connect(addr).await?;
@@ -45,38 +46,51 @@ mod with_named_instance {
         };
         Box::pin(stream)
     }
-    async fn find_tcp_port(addr: std::net::SocketAddr, instance_name: &str) -> tiberius::Result<std::net::SocketAddr> {
-        use std::time;
-        use futures::TryFutureExt;
-        // First resolve the instance to a port via the
-        // SSRP protocol/MS-SQLR protocol [1]
-        // [1] https://msdn.microsoft.com/en-us/library/cc219703.aspx
-
-        let local_bind: std::net::SocketAddr = if addr.is_ipv4() {
-            "0.0.0.0:0".parse().unwrap()
-        } else {
-            "[::]:0".parse().unwrap()
-        };
-
-        let msg = [&[4u8], instance_name.as_bytes()].concat();
-        let mut buf = vec![0u8; 4096];
-
-        let socket = net::UdpSocket::bind(&local_bind).await?;
-        socket.send_to(&msg, &addr).await?;
-
-        let timeout = time::Duration::from_millis(1000);
-
-        let len = io::timeout(timeout, socket.recv(&mut buf))
-            .map_err(|_| {
-                tiberius::error::Error::Conversion(
-                    format!(
-                        "SQL browser timeout during resolving instance {}",
-                        instance_name
-                    )
-                    .into(),
-                )
-            }).await?;
-
-        tiberius::consume_sql_browser_message(addr, buf, len, instance_name)
-    }
+ 
+     async fn udp_sender(
+         local_bind: &str, 
+         server_addr: &std::net::SocketAddr,
+         msg: &[u8], 
+         buf: &mut [u8]) -> Result<usize, tiberius::error::Error> {
+         let socket: net::UdpSocket = net::UdpSocket::bind(local_bind).await?;
+         socket.send_to(&msg, server_addr).await?;
+ 
+         let len = socket.recv(&mut buf).await?;
+         Ok(len)
+     }
 }
+
+ mod with_named_instance_closure {
+     use futures::future;
+     use async_std::net;
+     use std::io;
+     use async_std::net::ToSocketAddrs;
+     
+     pub fn connector<'a>(addr: String, instance_name: Option<String>) -> future::BoxFuture<'a, tiberius::Result<net::TcpStream>>
+     {
+         let stream = async move {
+             let mut addr = addr.to_socket_addrs().await?.next().ok_or_else(|| {
+                 io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.")
+             })?;
+
+             let addr = if let Some(ref instance_name) = instance_name {
+                 let new_addr = tiberius::find_tcp_port_closure(addr, instance_name, |local_bind, server_addr, msg, buf| async {
+                     let socket = net::UdpSocket::bind(&local_bind).await?;
+                     socket.send_to(&msg, &server_addr).await?;
+ 
+                     let len = socket.recv(&mut buf).await?;
+                     Ok(len)
+                 }).await?;
+                 new_addr
+             } else {
+                 addr
+             };
+ 
+             let stream = net::TcpStream::connect(addr).await?;
+             stream.set_nodelay(true)?;
+             Ok(stream)
+         };
+         Box::pin(stream)
+     }
+ }
+ 
