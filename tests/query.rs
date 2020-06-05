@@ -40,12 +40,16 @@ static NAMED_INSTANCE_CONN_STR: Lazy<String> = Lazy::new(|| {
 #[test_on_runtimes(connection_string = "ENCRYPTED_CONN_STR")]
 async fn connect_with_full_encryption<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
-    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+    let row = conn
+        .query("SELECT @P1", &[&-4i32])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
-    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
-    assert_eq!(rows?, vec![-4i32]);
+    assert_eq!(Some(-4i32), row.get(0));
 
     Ok(())
 }
@@ -54,20 +58,24 @@ where
 #[test_on_runtimes(connection_string = "NAMED_INSTANCE_CONN_STR")]
 async fn connect_to_named_instance<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
-    let stream = conn.query("SELECT @P1", &[&-4i32]).await?;
+    let row = conn
+        .query("SELECT @P1", &[&-4i32])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
-    let rows: Result<Vec<i32>> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await;
-    assert_eq!(rows?, vec![-4i32]);
+    assert_eq!(Some(-4i32), row.get(0));
 
     Ok(())
 }
 
 #[test_on_runtimes]
-async fn test_kanji_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
+async fn read_and_write_kanji_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -86,15 +94,13 @@ where
             &[&kanji, &long_kanji],
         )
         .await?;
-assert_eq!(2, res.total());
 
-    let stream = conn
+    assert_eq!(2, res.total());
+
+    let rows = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
-
-    let results: Vec<String> = stream
-        .map_ok(|r| r.get::<_, String>(0))
-        .try_collect()
+        .await?
+        .into_first_result()
         .await?;
 
     assert_eq!(Some(kanji.as_str()), rows[0].get(0));
@@ -106,7 +112,7 @@ assert_eq!(2, res.total());
 #[test_on_runtimes]
 async fn read_and_write_finnish_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -127,29 +133,35 @@ where
 
     assert_eq!(1, res.total());
 
-    let stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(kalevala), row.get(0));
 
     Ok(())
 }
 
-#[tokio::test]
-async fn read_and_write_char() -> Result<()> {
-    let mut conn = connect().await?;
+#[test_on_runtimes]
+async fn read_and_write_char<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
 
-    conn.simple_query("CREATE TABLE ##ReadAndWriteChar (a char)")
+    conn.simple_query(format!("CREATE TABLE ##{} (a char)", table))
         .await?
         .into_results()
         .await?;
 
-    conn.execute("INSERT INTO ##ReadAndWriteChar (a) values (@P1)", &[&"a"])
+    conn.execute(format!("INSERT INTO ##{} (a) values (@P1)",table), &[&"a"])
         .await?;
 
     let row = conn
-        .query("SELECT a FROM ##ReadAndWriteChar", &[])
+        .query(format!("SELECT a FROM ##{}", table), &[])
         .await?
         .into_row()
         .await?
@@ -160,20 +172,23 @@ async fn read_and_write_char() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn read_and_write_nchar() -> Result<()> {
-    let mut conn = connect().await?;
+#[test_on_runtimes]
+async fn read_and_write_nchar<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
 
-    conn.simple_query("CREATE TABLE ##ReadAndWriteNChar (a nchar)")
+    conn.simple_query(format!("CREATE TABLE ##{} (a nchar)",table))
         .await?
         .into_results()
         .await?;
 
-    conn.execute("INSERT INTO ##ReadAndWriteNChar (a) values (@P1)", &[&"ä"])
+    conn.execute(format!("INSERT INTO ##{} (a) values (@P1)", table), &[&"ä"])
         .await?;
 
     let row = conn
-        .query("SELECT a FROM ##ReadAndWriteNChar", &[])
+        .query(format!("SELECT a FROM ##{}", table), &[])
         .await?
         .into_row()
         .await?
@@ -187,7 +202,7 @@ async fn read_and_write_nchar() -> Result<()> {
 #[test_on_runtimes]
 async fn execute_insert_update_delete<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -227,7 +242,7 @@ where
 #[test_on_runtimes]
 async fn execute_with_multiple_separate_results<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -250,7 +265,7 @@ where
 #[test_on_runtimes]
 async fn execute_multiple_count_total<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -276,7 +291,7 @@ where
 #[test_on_runtimes]
 async fn correct_row_handling_when_not_enough_data<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let mut stream = conn
         .query(
@@ -301,7 +316,7 @@ where
 #[test_on_runtimes]
 async fn multiple_stored_procedure_functions<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let mut stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'; EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1'", &[]).await?;
 
@@ -327,7 +342,7 @@ where
 #[test_on_runtimes]
 async fn multiple_queries<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let mut stream = conn
         .query("SELECT 'a' AS first; SELECT 'b' AS second;", &[])
@@ -356,11 +371,14 @@ where
 #[test_on_runtimes]
 async fn bool_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
-    let mut stream = conn
-        .query("SELECT @P1, @P2 ORDER BY 1", &[&false, &false])
-        .await?;
+    let row = conn
+        .query("SELECT @P1, @P2 ORDER BY 1", &[&false, &true])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(false), row.get(0));
     assert_eq!(Some(true), row.get(1));
@@ -371,7 +389,7 @@ where
 #[test_on_runtimes]
 async fn i8_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let row = conn
         .query("SELECT @P1", &[&-4i8])
@@ -386,7 +404,7 @@ where
 #[test_on_runtimes]
 async fn i16_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let row = conn
         .query("SELECT @P1", &[&-4i16])
@@ -403,7 +421,7 @@ where
 #[test_on_runtimes]
 async fn i32_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
 
     let row = conn
@@ -421,7 +439,7 @@ where
 #[test_on_runtimes]
 async fn i64_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
 
     let row = conn
@@ -439,7 +457,7 @@ where
 #[test_on_runtimes]
 async fn f32_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let row = conn
         .query("SELECT @P1", &[&4.20f32])
@@ -456,7 +474,7 @@ where
 #[test_on_runtimes]
 async fn f64_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
 
     let row = conn
@@ -474,8 +492,10 @@ where
 #[test_on_runtimes]
 async fn short_strings<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
+    let s = "Hallo";
+
     let row = conn
         .query("SELECT @P1", &[&s])
         .await?
@@ -490,7 +510,7 @@ where
 #[test_on_runtimes]
 async fn long_strings<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let string = "a".repeat(4001);
 
@@ -508,7 +528,7 @@ where
 #[test_on_runtimes]
 async fn stored_procedures<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let rows = conn
         .query(
@@ -531,7 +551,7 @@ async fn drop_stream_before_handling_all_results_should_not_cause_weird_things<S
     mut conn: tiberius::Client<S>,
 ) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     {
         let mut stream = conn
@@ -562,7 +582,7 @@ where
 #[test_on_runtimes]
 async fn nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let mut stream = conn
         .query(
@@ -604,7 +624,7 @@ where
 #[test_on_runtimes]
 async fn ntext_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -622,14 +642,12 @@ where
     )
     .await?;
 
-    let stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
-
-    let rows: Vec<String> = stream
-        .map_ok(|x| x.get::<_, String>(0))
-        .try_collect()
-        .await?;
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(string), row.get::<&str, _>(0));
 
@@ -639,7 +657,7 @@ where
 #[test_on_runtimes]
 async fn ntext_empty<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -652,16 +670,12 @@ where
     )
     .await?;
 
-    let mut stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
-
-    let mut rows: Vec<Option<String>> = Vec::new();
-
-    while let Some(row) = stream.try_next().await? {
-        let s: Option<String> = row.try_get(0)?;
-        rows.push(s);
-    }
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&str, _>(0));
 
@@ -671,7 +685,7 @@ where
 #[test_on_runtimes]
 async fn text_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
     let string = "a".repeat(10000);
@@ -685,30 +699,36 @@ where
     )
     .await?;
 
-    let stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(Some(string.as_str()), row.get(0));
 
     Ok(())
 }
 
-#[tokio::test]
-async fn varchar_empty() -> Result<()> {
-    let mut conn = connect().await?;
+#[test_on_runtimes]
+async fn varchar_empty<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
 
-    conn.execute("CREATE TABLE ##TestFoo (content NVARCHAR(max))", &[])
+    conn.execute(format!("CREATE TABLE ##{} (content NVARCHAR(max))", table), &[])
         .await?;
 
     conn.execute(
-        "INSERT INTO ##TestFoo (content) VALUES (@P1)",
+        format!("INSERT INTO ##{} (content) VALUES (@P1)",table),
         &[&Option::<String>::None],
     )
     .await?;
 
     let row = conn
-        .query("SELECT content FROM ##TestFoo", &[])
+        .query(format!("SELECT content FROM ##{}", table), &[])
         .await?
         .into_row()
         .await?
@@ -722,7 +742,7 @@ async fn varchar_empty() -> Result<()> {
 #[test_on_runtimes]
 async fn text_empty<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -735,16 +755,12 @@ where
     )
     .await?;
 
-    let mut stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
-
-    let mut rows: Vec<Option<String>> = Vec::new();
-
-    while let Some(row) = stream.try_next().await? {
-        let s: Option<String> = row.try_get(0)?;
-        rows.push(s);
-    }
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&str, _>(0));
 
@@ -754,7 +770,7 @@ where
 #[test_on_runtimes]
 async fn varbinary_empty<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -774,16 +790,12 @@ where
 
     assert_eq!(1, total);
 
-    let mut stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
-
-    let mut rows: Vec<Option<Vec<u8>>> = Vec::new();
-
-    while let Some(row) = stream.try_next().await? {
-        let s: Option<Vec<u8>> = row.try_get(0)?;
-        rows.push(s);
-    }
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     assert_eq!(None, row.get::<&[u8], _>(0));
 
@@ -793,7 +805,7 @@ where
 #[test_on_runtimes]
 async fn binary_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -816,9 +828,12 @@ where
 
     assert_eq!(1, inserted);
 
-    let mut stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -831,7 +846,7 @@ where
 #[test_on_runtimes]
 async fn varbinary_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -854,9 +869,12 @@ where
 
     assert_eq!(1, inserted);
 
-    let mut stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -869,7 +887,7 @@ where
 #[test_on_runtimes]
 async fn image_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -889,9 +907,12 @@ where
 
     assert_eq!(1, inserted);
 
-    let mut stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -904,7 +925,7 @@ where
 #[test_on_runtimes]
 async fn guid_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let id = Uuid::new_v4();
     let row = conn
@@ -922,7 +943,7 @@ where
 #[test_on_runtimes]
 async fn varbinary_max<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let table = random_table().await;
 
@@ -945,9 +966,12 @@ where
 
     assert_eq!(1, inserted);
 
-    let mut stream = conn
+    let row = conn
         .query(format!("SELECT content FROM ##{}", table), &[])
-        .await?;
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
     let result: &[u8] = row.get(0).unwrap();
 
@@ -960,9 +984,10 @@ where
 #[test_on_runtimes]
 async fn numeric_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let num = Numeric::new_with_scale(2, 1);
+
     let row = conn
         .query("SELECT @P1", &[&num])
         .await?
@@ -978,10 +1003,9 @@ where
 #[test_on_runtimes]
 async fn numeric_type_u64_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let num = Numeric::new_with_scale(std::i32::MAX as i128 + 10, 1);
-    let stream = conn.query("SELECT @P1", &[&num]).await?;
 
     let row = conn
         .query("SELECT @P1", &[&num])
@@ -998,10 +1022,9 @@ where
 #[test_on_runtimes]
 async fn numeric_type_u96_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let num = Numeric::new_with_scale(std::i64::MAX as i128, 19);
-    let stream = conn.query("SELECT @P1", &[&num]).await?;
 
     let row = conn
         .query("SELECT @P1", &[&num])
@@ -1018,10 +1041,9 @@ where
 #[test_on_runtimes]
 async fn numeric_type_u128_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let num = Numeric::new_with_scale(std::i64::MAX as i128, 37);
-    let stream = conn.query("SELECT @P1", &[&num]).await?;
 
     let row = conn
         .query("SELECT @P1", &[&num])
@@ -1041,7 +1063,7 @@ mod rust_decimal {
     #[test_on_runtimes]
     async fn decimal_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use rust_decimal::Decimal;
 
@@ -1061,7 +1083,7 @@ mod rust_decimal {
     #[test_on_runtimes]
     async fn decimal_type_u64_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use rust_decimal::Decimal;
 
@@ -1081,7 +1103,7 @@ mod rust_decimal {
     #[test_on_runtimes]
     async fn decimal_type_u96_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use rust_decimal::Decimal;
 
@@ -1101,7 +1123,7 @@ mod rust_decimal {
     #[test_on_runtimes]
     async fn decimal_type_u128_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use rust_decimal::Decimal;
 
@@ -1123,7 +1145,7 @@ mod rust_decimal {
 #[test_on_runtimes]
 async fn naive_date_time_tds72<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     use chrono::{NaiveDate, NaiveDateTime};
 
@@ -1142,7 +1164,7 @@ mod chrono {
     #[test_on_runtimes]
     async fn naive_small_date_time_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use chrono::{NaiveDate, NaiveDateTime};
 
@@ -1176,7 +1198,7 @@ mod chrono {
     #[test_on_runtimes]
     async fn naive_date_time2_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use chrono::{NaiveDate, NaiveDateTime};
 
@@ -1207,7 +1229,7 @@ mod chrono {
     #[test_on_runtimes]
     async fn naive_time<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use chrono::NaiveTime;
 
@@ -1228,7 +1250,7 @@ mod chrono {
     #[test_on_runtimes]
     async fn naive_date<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use chrono::NaiveDate;
 
@@ -1248,7 +1270,7 @@ mod chrono {
     #[test_on_runtimes]
     async fn date_time_utc<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use chrono::{offset::Utc, DateTime, NaiveDate};
 
@@ -1270,7 +1292,7 @@ mod chrono {
     #[test_on_runtimes]
     async fn date_time_fixed<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
-        S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+        S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
     {
         use chrono::{offset::FixedOffset, DateTime, NaiveDate};
 
@@ -1294,7 +1316,7 @@ mod chrono {
 #[test_on_runtimes]
 async fn xml_read_write<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     let xml = XmlData::new("<root><child attr=\"attr-value\"/></root>");
     let row = conn
@@ -1312,7 +1334,7 @@ where
 #[test_on_runtimes]
 async fn xml_read_null_xml<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin,
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
 
     let row = conn

@@ -16,10 +16,8 @@ async fn main() -> anyhow::Result<()> {
     tcp.set_nodelay(true)?;
     let mut client = tiberius::Client::connect(config, tcp).await?;
 
-    let stream = client.query("SELECT @P1", &[&1]).await?;
-    let rows: Vec<_> = stream.map_ok(|x| x.get::<_, i32>(0)).try_collect().await?;
-    println!("{:?}", rows);
-    assert_eq!(1, rows[0]);
+    let row = client.query("SELECT @P1", &[&1]).await?.into_row().await?.unwrap();
+    assert_eq!(Some(1), row.get(0));
     Ok(())
 }
 

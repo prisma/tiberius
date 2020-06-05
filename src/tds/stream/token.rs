@@ -32,12 +32,12 @@ pub enum ReceivedToken {
     SSPI(TokenSSPI),
 }
 
-pub(crate) struct TokenStream<'a, S: futures::AsyncRead + futures::AsyncWrite + Unpin> {
+pub(crate) struct TokenStream<'a, S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> {
     conn: &'a mut Connection<S>,
 }
 
 impl<'a, S> TokenStream<'a, S> 
-    where S: futures::AsyncRead + futures::AsyncWrite + Unpin
+    where S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send
 {
     pub(crate) fn new(conn: &'a mut Connection<S>) -> Self {
         Self { conn }
