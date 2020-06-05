@@ -150,7 +150,7 @@ impl client::ClientBuilder {
 }
 
 #[cfg(windows)]
-fn consume_sql_browser_message(mut addr: net::SocketAddr, mut buf: Vec<u8>, len: usize, instance_name: &str) -> crate::Result<net::SocketAddr> {
+fn consume_sql_browser_message(mut addr: std::net::SocketAddr, mut buf: Vec<u8>, len: usize, instance_name: &str) -> crate::Result<std::net::SocketAddr> {
     buf.truncate(len);
 
     let err = Error::Conversion(
@@ -161,7 +161,7 @@ fn consume_sql_browser_message(mut addr: net::SocketAddr, mut buf: Vec<u8>, len:
         return Err(err);
     }
 
-    let response = str::from_utf8(&buf[3..len])?;
+    let response = std::str::from_utf8(&buf[3..len])?;
 
     let port: u16 = response
         .find("tcp;")

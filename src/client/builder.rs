@@ -104,6 +104,7 @@ impl ClientBuilder
     }
 
 
+    /// Get the host address including port
     pub fn get_addr(&self) -> String {
         format!("{}:{}", self.get_host(), self.get_port())
     }

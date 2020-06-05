@@ -17,8 +17,7 @@ use bytes::BytesMut;
 use codec::TokenSSPI;
 use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
 use pretty_hex::*;
-use std::time::Duration;
-use std::{cmp, net::SocketAddr, fmt::Debug, io, pin::Pin, sync::atomic::Ordering, task};
+use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
 use futures_codec::Framed;
 use tracing::{event, Level};
@@ -50,14 +49,6 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Debug for Conne
             .field("buf", &self.buf.as_ref().hex_dump())
             .finish()
     }
-}
-
-pub(crate) struct ConnectOpts {
-    pub encryption: EncryptionLevel,
-    pub trust_cert: bool,
-    pub auth: AuthMethod,
-    pub database: Option<String>,
-    pub instance_name: Option<String>,
 }
 
 enum LoginResult {

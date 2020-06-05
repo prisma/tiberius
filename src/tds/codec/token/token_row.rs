@@ -1,8 +1,7 @@
 use crate::{
-    tds::codec::{ColumnData, TokenColMetaData},
+    tds::codec::ColumnData,
     SqlReadBytes,
 };
-use std::sync::Arc;
 use futures::io::AsyncReadExt;
 
 #[derive(Debug)]
