@@ -15,6 +15,20 @@ members = [
     "runtimes-macro",
 ]
 
+[[test]]
+path = "tests/query.rs"
+name = "query"
+
+[[test]]
+path = "tests/named-instance-async.rs"
+name = "named-instance-async"
+required-features = ["named-instance-async"]
+
+[[test]]
+path = "tests/named-instance-tokio.rs"
+name = "named-instance-tokio"
+required-features = ["named-instance-tokio"]
+
 [dependencies]
 async-stream = "0.2"
 bitflags = "1.0"

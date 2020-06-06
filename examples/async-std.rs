@@ -1,6 +1,5 @@
 use once_cell::sync::Lazy;
 use std::env;
-use futures::TryStreamExt;
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING")

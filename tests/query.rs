@@ -54,22 +54,56 @@ where
     Ok(())
 }
 
-#[cfg(windows)]
-#[test_on_runtimes(connection_string = "NAMED_INSTANCE_CONN_STR")]
-async fn connect_to_named_instance<S>(mut conn: tiberius::Client<S>) -> Result<()>
-where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
+#[cfg(all(windows, feature = "named-instance-async"))]
+#[test]
+async fn connect_to_named_instance_async_std() -> Result<()>
 {
-    let row = conn
-        .query("SELECT @P1", &[&-4i32])
-        .await?
-        .into_row()
-        .await?
-        .unwrap();
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+    async_std::task::block_on(async {
+        let config = tiberius::ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
+        let tcp = config.connect().await?;
+        tcp.set_nodelay(true)?;
+        let mut client = tiberius::Client::connect(config, tcp).await?;
 
-    assert_eq!(Some(-4i32), row.get(0));
+        let row = conn
+            .query("SELECT @P1", &[&-4i32])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
 
-    Ok(())
+        assert_eq!(Some(-4i32), row.get(0));
+        Ok(())
+    })
+}
+
+#[cfg(all(windows, feature = "named-instance-tokio"))]
+#[test]
+async fn connect_to_named_instance_tokio() -> Result<()>
+{
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+    use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    let mut rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let config = tiberius::ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
+        let tcp = config.connect().await?;
+        tcp.set_nodelay(true)?;
+        let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+
+        let row = conn
+            .query("SELECT @P1", &[&-4i32])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(-4i32), row.get(0));
+        Ok(())
+    })
 }
 
 #[test_on_runtimes]
