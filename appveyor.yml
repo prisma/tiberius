@@ -21,5 +21,5 @@ build: false
 
 test_script:
   - cargo test --target %TARGET% --all
-  - cargo test --target %TARGET% --test 'named-instance-async' --features 'named-instance-async' -- --ignored
-  - cargo test --target %TARGET% --test 'named-instance-tokio' --features 'named-instance-tokio' -- --ignored
+  - cargo test --target %TARGET% --test named-instance-async --features named-instance-async -- --ignored
+  - cargo test --target %TARGET% --test named-instance-tokio --features named-instance-tokio -- --ignored
