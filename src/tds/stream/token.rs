@@ -36,8 +36,9 @@ pub(crate) struct TokenStream<'a, S: futures::AsyncRead + futures::AsyncWrite + 
     conn: &'a mut Connection<S>,
 }
 
-impl<'a, S> TokenStream<'a, S> 
-    where S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send
+impl<'a, S> TokenStream<'a, S>
+where
+    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
 {
     pub(crate) fn new(conn: &'a mut Connection<S>) -> Self {
         Self { conn }

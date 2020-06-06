@@ -1,10 +1,10 @@
+mod auth;
 mod builder;
 mod connection;
 mod tls;
-mod auth;
 
-pub use builder::*;
 pub use auth::*;
+pub use builder::*;
 pub(crate) use connection::*;
 
 use crate::{
@@ -55,15 +55,11 @@ pub struct Client<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> {
 
 impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Client<S> {
     /// Uses an instance of [`ClientBuilder`] to specify the connection
-    /// options required to connect to the database using an established 
+    /// options required to connect to the database using an established
     /// tcp connection
     ///
     /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub async fn connect(
-        opts: ClientBuilder,
-        tcp_stream: S,
-        ) -> crate::Result<Client<S>>
-    {
+    pub async fn connect(opts: ClientBuilder, tcp_stream: S) -> crate::Result<Client<S>> {
         Ok(Client {
             connection: Connection::connect(opts, tcp_stream).await?,
         })

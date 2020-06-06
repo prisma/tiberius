@@ -1,7 +1,4 @@
-use crate::{
-    tds::codec::ColumnData,
-    SqlReadBytes,
-};
+use crate::{tds::codec::ColumnData, SqlReadBytes};
 use futures::io::AsyncReadExt;
 
 #[derive(Debug)]

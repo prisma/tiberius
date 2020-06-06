@@ -22,12 +22,12 @@ name = "query"
 [[test]]
 path = "tests/named-instance-async.rs"
 name = "named-instance-async"
-required-features = ["named-instance-async"]
+required-features = ["sql-browser-async-std"]
 
 [[test]]
 path = "tests/named-instance-tokio.rs"
 name = "named-instance-tokio"
-required-features = ["named-instance-tokio"]
+required-features = ["sql-browser-tokio"]
 
 [dependencies]
 async-stream = "0.2"
@@ -41,6 +41,7 @@ pretty-hex = "0.1"
 pin-project-lite = "0.1"
 futures_codec = "0.4"
 futures-sink = "0.3"
+async-trait = "0.1"
 
 winauth = "0.0.4"
 async-std = { version = "1", optional = true , features = ["attributes"] }
@@ -99,5 +100,5 @@ env_logger = "0.7"
 default = ["tls", "chrono", "tds73"]
 tls = ["async-native-tls"]
 tds73 = []
-named-instance-async = ["async-std"]
-named-instance-tokio = ["tokio", "tokio-util"]
+sql-browser-async-std = ["async-std"]
+sql-browser-tokio = ["tokio", "tokio-util"]

@@ -1,10 +1,10 @@
 use crate::tds::Context;
 use bytes::Buf;
+use futures::io::AsyncRead;
 use pin_project_lite::pin_project;
 use std::io::ErrorKind::UnexpectedEof;
 use std::{future::Future, io, mem::size_of, pin::Pin, task};
 use task::Poll;
-use futures::io::AsyncRead;
 
 macro_rules! bytes_reader {
     ($name:ident, $ty:ty, $reader:ident) => {

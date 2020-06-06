@@ -1,9 +1,11 @@
-#![cfg(all(windows, feature = "named-instance-tokio"))]
+#![cfg(all(windows, feature = "sql-browser-tokio"))]
 
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::Result;
+use tiberius::{ClientBuilder, Result, Client, SqlBrowser};
+use tokio::{runtime::Runtime, net::TcpStream};
+use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 
 // This is used in the testing macro :)
 #[allow(dead_code)]
@@ -20,17 +22,19 @@ static NAMED_INSTANCE_CONN_STR: Lazy<String> = Lazy::new(|| {
 });
 
 #[test]
-#[ignore]
 fn connect_to_named_instance() -> Result<()>
 {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
-    let mut rt = tokio::runtime::Runtime::new()?;
+    let mut rt = Runtime::new()?;
     rt.block_on(async {
-        let config = tiberius::ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
-        let tcp = config.connect_tokio().await?;
-        let mut client = tiberius::Client::connect(config, tcp).await?;
+        let config = ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
+
+        let tcp = TcpStream::connect_named(&config).await?;
+        tcp.set_nodelay(true)?;
+
+        let mut client = Client::connect(config, tcp.compat_write()).await?;
 
         let row = client
             .query("SELECT @P1", &[&-4i32])

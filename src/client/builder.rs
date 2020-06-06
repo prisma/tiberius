@@ -6,27 +6,24 @@ use std::collections::HashMap;
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html
-pub struct ClientBuilder
-{
-    pub (crate) host: Option<String>,
-    pub (crate) port: Option<u16>,
-    pub (crate) database: Option<String>,
+pub struct ClientBuilder {
+    pub(crate) host: Option<String>,
+    pub(crate) port: Option<u16>,
+    pub(crate) database: Option<String>,
     //#[cfg(windows)]
-    pub (crate) instance_name: Option<String>,
-    pub (crate) encryption: EncryptionLevel,
-    pub (crate) trust_cert: bool,
-    pub (crate) auth: AuthMethod,
+    pub(crate) instance_name: Option<String>,
+    pub(crate) encryption: EncryptionLevel,
+    pub(crate) trust_cert: bool,
+    pub(crate) auth: AuthMethod,
 }
 
-impl ClientBuilder
-{
+impl ClientBuilder {
     /// Create a `ClientBuilder` using a connector
     /// The `connector` must be able to create a TCP connection
     /// with the remote server. To do this it must implement `AsyncRead`
     /// and `AsyncWrite` but it is up to the user to ensure that it does
     /// this via the TCP protocol.
-    pub fn new(
-    ) -> ClientBuilder {
+    pub fn new() -> ClientBuilder {
         ClientBuilder {
             host: None,
             port: None,
@@ -92,17 +89,16 @@ impl ClientBuilder
         self.auth = auth;
     }
 
-    pub (crate) fn get_host(&self) -> &str {
+    pub(crate) fn get_host(&self) -> &str {
         self.host
             .as_ref()
             .map(|s| s.as_str())
             .unwrap_or("localhost")
     }
 
-    pub (crate) fn get_port(&self) -> u16 {
+    pub(crate) fn get_port(&self) -> u16 {
         self.port.unwrap_or(1433)
     }
-
 
     /// Get the host address including port
     pub fn get_addr(&self) -> String {
@@ -123,9 +119,7 @@ impl ClientBuilder
     /// |`database`|The name of the database.|
     /// |`TrustServerCertificate`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
     /// |`encrypt`|Specifies whether the driver uses TLS to encrypt communication.|
-    pub fn from_ado_string(
-        s: &str,
-    ) -> crate::Result<Self> {
+    pub fn from_ado_string(s: &str) -> crate::Result<Self> {
         let ado = AdoNetString::parse(s)?;
         let mut builder = Self::new();
 

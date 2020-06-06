@@ -4,8 +4,8 @@ use crate::{
 };
 use encoding::Encoding;
 use fmt::Debug;
-use std::{convert::TryFrom, fmt};
 use futures::io::AsyncReadExt;
+use std::{convert::TryFrom, fmt};
 
 uint_enum! {
     #[repr(u8)]

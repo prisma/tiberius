@@ -16,10 +16,10 @@ use bytes::BytesMut;
 #[cfg(windows)]
 use codec::TokenSSPI;
 use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
+use futures_codec::Framed;
 use pretty_hex::*;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
-use futures_codec::Framed;
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
@@ -59,12 +59,11 @@ enum LoginResult {
 
 impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
-    pub (crate) async fn connect(
+    pub(crate) async fn connect(
         opts: ClientBuilder,
         tcp_stream: S,
     ) -> crate::Result<Connection<S>>
-    where
-    {
+where {
         // need to do a create context in hre
         #[cfg(windows)]
         let context = {
@@ -74,9 +73,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Connection<S> {
         };
 
         #[cfg(not(windows))]
-        let context = {
-            Context::new()
-        };
+        let context = { Context::new() };
 
         let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
 
@@ -315,7 +312,9 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Connection<S> {
                 builder = builder.use_sni(false);
             }
 
-            let Self { transport, context, .. } = self;
+            let Self {
+                transport, context, ..
+            } = self;
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
                     builder.connect("", TlsPreloginWrapper::new(tcp)).await?
@@ -368,9 +367,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Connection<S> {
 
         Ok(())
     }
-
 }
-
 
 impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Stream for Connection<S> {
     type Item = crate::Result<Packet>;
@@ -389,7 +386,9 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Stream for Conn
     }
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncRead for Connection<S> {
+impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncRead
+    for Connection<S>
+{
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
