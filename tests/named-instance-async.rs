@@ -1,6 +1,5 @@
 #![cfg(all(windows, feature = "named-instance-async"))]
 
-use futures_util::{StreamExt, TryStreamExt};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
@@ -30,7 +29,6 @@ fn connect_to_named_instance() -> Result<()>
     async_std::task::block_on(async {
         let config = tiberius::ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
         let tcp = config.connect_async().await?;
-        tcp.set_nodelay(true)?;
         let mut client = tiberius::Client::connect(config, tcp).await?;
 
         let row = client
