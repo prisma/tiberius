@@ -30,12 +30,6 @@ static ENCRYPTED_CONN_STR: Lazy<String> = Lazy::new(|| {
     format!("{};encrypt=true", *CONN_STR)
 });
 
-#[cfg(windows)]
-static NAMED_INSTANCE_CONN_STR: Lazy<String> = Lazy::new(|| {
-    let instance_name = env::var("TIBERIUS_TEST_INSTANCE").unwrap_or("MSSQLSERVER".to_owned());
-    CONN_STR.replace(",1433", &format!("\\{}", instance_name))
-});
-
 #[cfg(feature = "tls")]
 #[test_on_runtimes(connection_string = "ENCRYPTED_CONN_STR")]
 async fn connect_with_full_encryption<S>(mut conn: tiberius::Client<S>) -> Result<()>
@@ -54,57 +48,6 @@ where
     Ok(())
 }
 
-#[cfg(all(windows, feature = "named-instance-async"))]
-#[test]
-async fn connect_to_named_instance_async_std() -> Result<()>
-{
-    LOGGER_SETUP.call_once(|| {
-        env_logger::init();
-    });
-    async_std::task::block_on(async {
-        let config = tiberius::ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
-        let tcp = config.connect().await?;
-        tcp.set_nodelay(true)?;
-        let mut client = tiberius::Client::connect(config, tcp).await?;
-
-        let row = conn
-            .query("SELECT @P1", &[&-4i32])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
-
-        assert_eq!(Some(-4i32), row.get(0));
-        Ok(())
-    })
-}
-
-#[cfg(all(windows, feature = "named-instance-tokio"))]
-#[test]
-async fn connect_to_named_instance_tokio() -> Result<()>
-{
-    LOGGER_SETUP.call_once(|| {
-        env_logger::init();
-    });
-    use tokio_util::compat::Tokio02AsyncWriteCompatExt;
-    let mut rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        let config = tiberius::ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
-        let tcp = config.connect().await?;
-        tcp.set_nodelay(true)?;
-        let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
-
-        let row = conn
-            .query("SELECT @P1", &[&-4i32])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
-
-        assert_eq!(Some(-4i32), row.get(0));
-        Ok(())
-    })
-}
 
 #[test_on_runtimes]
 async fn read_and_write_kanji_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
