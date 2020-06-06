@@ -8,31 +8,31 @@ struct MacroArgs {
 }
 
 #[proc_macro_attribute]
-pub fn test_on_runtimes(args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    // let attributes = parse_macro_input!(attr as syn::Attribute);
-    // todo: get altered connstr from attributes
-
+pub fn test_on_runtimes(
+    args: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     let attr_args = syn::parse_macro_input!(args as syn::AttributeArgs);
 
     let args = match MacroArgs::from_list(&attr_args) {
         Ok(v) => v,
-        Err(e) => { return proc_macro::TokenStream::from(e.write_errors()); }
+        Err(e) => {
+            return proc_macro::TokenStream::from(e.write_errors());
+        }
     };
 
     let func = syn::parse_macro_input!(input as syn::ItemFn);
 
     let conn_str_ident_str = args.connection_string.unwrap_or_else(|| "CONN_STR".into());
 
-
-    let conn_str_ident = proc_macro2::Ident::new(&conn_str_ident_str, proc_macro2::Span::call_site());
-
-    // todo: ensure func is async
+    let conn_str_ident =
+        proc_macro2::Ident::new(&conn_str_ident_str, proc_macro2::Span::call_site());
 
     let func_name = func.sig.ident.clone();
     let async_std_test = quote::format_ident!("{}_{}", func_name, "async_std");
     let tokio_test = quote::format_ident!("{}_{}", func_name, "tokio");
 
-    let tokens = quote::quote!{
+    let tokens = quote::quote! {
         #func
 
         #[test]

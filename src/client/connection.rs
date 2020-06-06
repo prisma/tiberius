@@ -15,7 +15,7 @@ use crate::{
 use bytes::BytesMut;
 #[cfg(windows)]
 use codec::TokenSSPI;
-use futures::{ready, SinkExt, Stream, TryStream, TryStreamExt};
+use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
 use futures_codec::Framed;
 use pretty_hex::*;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
@@ -33,14 +33,14 @@ use winauth::{windows::NtlmSspiBuilder, NextBytes};
 ///
 /// [`Client`]: struct.Encode.html
 /// [`Packet`]: ../protocol/codec/struct.Packet.html
-pub(crate) struct Connection<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> {
+pub(crate) struct Connection<S: AsyncRead + AsyncWrite + Unpin + Send> {
     transport: Framed<MaybeTlsStream<S>, PacketCodec>,
     flushed: bool,
     context: Context,
     buf: BytesMut,
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Debug for Connection<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> Debug for Connection<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Connection")
             .field("transport", &"Framed<..>")
@@ -57,14 +57,13 @@ enum LoginResult {
     Windows(Box<dyn NextBytes>),
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Connection<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
     pub(crate) async fn connect(
         opts: ClientBuilder,
         tcp_stream: S,
     ) -> crate::Result<Connection<S>>
 where {
-        // need to do a create context in hre
         #[cfg(windows)]
         let context = {
             let mut context = Context::new();
@@ -369,7 +368,7 @@ where {
     }
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Stream for Connection<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> Stream for Connection<S> {
     type Item = crate::Result<Packet>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
@@ -386,9 +385,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Stream for Conn
     }
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncRead
-    for Connection<S>
-{
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> futures::AsyncRead for Connection<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -428,7 +425,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncR
     }
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> SqlReadBytes for Connection<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> SqlReadBytes for Connection<S> {
     /// Hex dump of the current buffer.
     fn debug_buffer(&self) {
         dbg!(self.buf.as_ref().hex_dump());

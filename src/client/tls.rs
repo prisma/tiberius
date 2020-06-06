@@ -18,14 +18,16 @@ use std::{
 #[cfg(feature = "tls")]
 use tracing::{event, Level};
 
+use futures::{AsyncRead, AsyncWrite};
+
 /// A wrapper to handle either TLS or bare connections.
-pub(crate) enum MaybeTlsStream<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> {
+pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
     Raw(S),
     #[cfg(feature = "tls")]
     Tls(TlsStream<TlsPreloginWrapper<S>>),
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
     #[cfg(feature = "tls")]
     pub fn into_inner(self) -> S {
         match self {
@@ -35,9 +37,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> MaybeTlsStream<
     }
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncRead
-    for MaybeTlsStream<S>
-{
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for MaybeTlsStream<S> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -51,9 +51,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncR
     }
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncWrite
-    for MaybeTlsStream<S>
-{
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -123,9 +121,7 @@ impl<S> TlsPreloginWrapper<S> {
 }
 
 #[cfg(feature = "tls")]
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncRead
-    for TlsPreloginWrapper<S>
-{
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -188,9 +184,7 @@ impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncR
 }
 
 #[cfg(feature = "tls")]
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> futures::AsyncWrite
-    for TlsPreloginWrapper<S>
-{
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,

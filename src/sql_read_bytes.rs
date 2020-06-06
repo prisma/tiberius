@@ -68,7 +68,7 @@ macro_rules! bytes_reader {
     };
 }
 
-pub(crate) trait SqlReadBytes: futures::AsyncRead + Unpin {
+pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     fn debug_buffer(&self);
 
     fn context(&self) -> &Context;

@@ -6,7 +6,7 @@ use crate::{
     },
     Column, Row,
 };
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, AsyncRead, AsyncWrite, Stream, StreamExt, TryStreamExt};
 use std::{fmt::Debug, pin::Pin, task};
 use task::Poll;
 
@@ -232,7 +232,7 @@ pub struct ExecuteResult {
 }
 
 impl<'a> ExecuteResult {
-    pub(crate) async fn new<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send>(
+    pub(crate) async fn new<S: AsyncRead + AsyncWrite + Unpin + Send>(
         connection: &'a mut Connection<S>,
     ) -> crate::Result<Self> {
         let token_stream = TokenStream::new(connection).try_unfold();

@@ -10,7 +10,7 @@ pub struct ClientBuilder {
     pub(crate) host: Option<String>,
     pub(crate) port: Option<u16>,
     pub(crate) database: Option<String>,
-    //#[cfg(windows)]
+    #[cfg(windows)]
     pub(crate) instance_name: Option<String>,
     pub(crate) encryption: EncryptionLevel,
     pub(crate) trust_cert: bool,
@@ -28,7 +28,7 @@ impl ClientBuilder {
             host: None,
             port: None,
             database: None,
-            //#[cfg(windows)]
+            #[cfg(windows)]
             instance_name: None,
             #[cfg(feature = "tls")]
             encryption: EncryptionLevel::Required,

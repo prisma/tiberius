@@ -18,6 +18,7 @@ use crate::{
 use codec::{
     BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest,
 };
+use futures::{AsyncRead, AsyncWrite};
 use std::{borrow::Cow, fmt::Debug};
 
 /// `Client` is the main entry point to the SQL Server, providing query
@@ -49,11 +50,11 @@ use std::{borrow::Cow, fmt::Debug};
 ///
 /// [`ClientBuilder`]: struct.ClientBuilder.html
 #[derive(Debug)]
-pub struct Client<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> {
+pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
     connection: Connection<S>,
 }
 
-impl<S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> Client<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// Uses an instance of [`ClientBuilder`] to specify the connection
     /// options required to connect to the database using an established
     /// tcp connection

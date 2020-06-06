@@ -8,7 +8,7 @@ use crate::{
     },
     Error, SqlReadBytes, TokenType,
 };
-use futures::{stream::BoxStream, TryStreamExt};
+use futures::{stream::BoxStream, AsyncRead, AsyncWrite, TryStreamExt};
 use std::{
     convert::TryFrom,
     sync::{atomic::Ordering, Arc},
@@ -32,13 +32,13 @@ pub enum ReceivedToken {
     SSPI(TokenSSPI),
 }
 
-pub(crate) struct TokenStream<'a, S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send> {
+pub(crate) struct TokenStream<'a, S: AsyncRead + AsyncWrite + Unpin + Send> {
     conn: &'a mut Connection<S>,
 }
 
 impl<'a, S> TokenStream<'a, S>
 where
-    S: futures::AsyncRead + futures::AsyncWrite + Unpin + Send,
+    S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     pub(crate) fn new(conn: &'a mut Connection<S>) -> Self {
         Self { conn }
