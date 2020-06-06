@@ -1,5 +1,4 @@
 use crate::{tds::codec::read_varchar, SqlReadBytes};
-use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenInfo {

@@ -6,7 +6,7 @@ use crate::{
     },
     Column, Row,
 };
-use futures::{stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, AsyncRead, AsyncWrite, Stream, StreamExt, TryStreamExt};
 use std::{fmt::Debug, pin::Pin, task};
 use task::Poll;
 
@@ -24,6 +24,7 @@ use task::Poll;
 ///
 /// ```
 /// # use tiberius::ClientBuilder;
+/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 /// # use std::env;
 /// # use futures::{StreamExt, TryStreamExt};
 /// # #[tokio::main]
@@ -31,9 +32,11 @@ use task::Poll;
 /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
 /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
 /// # );
-/// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-/// # let mut conn = builder.build().await?;
-/// let mut stream = conn
+/// # let config = ClientBuilder::from_ado_string(&c_str)?;
+/// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+/// # tcp.set_nodelay(true)?;
+/// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+/// let mut stream = client
 ///     .query(
 ///         "SELECT @P1 AS first; SELECT @P2 AS second",
 ///         &[&1i32, &2i32],
@@ -95,15 +98,18 @@ impl<'a> QueryResult<'a> {
     ///
     /// ```no_run
     /// # use tiberius::ClientBuilder;
+    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-    /// # let mut conn = builder.build().await?;
-    /// let mut result_set = conn
+    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let mut result_set = client
     ///     .query(
     ///         "SELECT 1 AS foo; SELECT 2 AS bar",
     ///         &[&1i32, &2i32, &3i32],
@@ -193,15 +199,18 @@ impl<'a> Stream for QueryResult<'a> {
 ///
 /// ```no_run
 /// # use tiberius::ClientBuilder;
+/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 /// # use std::env;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
 /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
 /// # );
-/// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-/// # let mut conn = builder.build().await?;
-/// let stream = conn
+/// # let config = ClientBuilder::from_ado_string(&c_str)?;
+/// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+/// # tcp.set_nodelay(true)?;
+/// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+/// let stream = client
 ///     .execute(
 ///         "INSERT INTO #Test (id) VALUES (@P1); INSERT INTO #Test (id) VALUES (@P2, @P3)",
 ///         &[&1i32, &2i32, &3i32],
@@ -223,7 +232,9 @@ pub struct ExecuteResult {
 }
 
 impl<'a> ExecuteResult {
-    pub(crate) async fn new(connection: &'a mut Connection) -> crate::Result<Self> {
+    pub(crate) async fn new<S: AsyncRead + AsyncWrite + Unpin + Send>(
+        connection: &'a mut Connection<S>,
+    ) -> crate::Result<Self> {
         let token_stream = TokenStream::new(connection).try_unfold();
 
         let rows_affected = token_stream
@@ -247,15 +258,18 @@ impl<'a> ExecuteResult {
     ///
     /// ```no_run
     /// # use tiberius::ClientBuilder;
+    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-    /// # let mut conn = builder.build().await?;
-    /// let rows_affected = conn
+    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let rows_affected = client
     ///     .execute(
     ///         "INSERT INTO #Test (id) VALUES (@P1); INSERT INTO #Test (id) VALUES (@P2, @P3)",
     ///         &[&1i32, &2i32, &3i32],

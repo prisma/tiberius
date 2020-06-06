@@ -1,14 +1,14 @@
 use crate::tds::Context;
 use bytes::Buf;
+use futures::io::AsyncRead;
 use pin_project_lite::pin_project;
 use std::io::ErrorKind::UnexpectedEof;
 use std::{future::Future, io, mem::size_of, pin::Pin, task};
 use task::Poll;
-use tokio::io::AsyncRead;
 
-macro_rules! le_reader {
+macro_rules! bytes_reader {
     ($name:ident, $ty:ty, $reader:ident) => {
-        le_reader!($name, $ty, $reader, size_of::<$ty>());
+        bytes_reader!($name, $ty, $reader, size_of::<$ty>());
     };
     ($name:ident, $ty:ty, $reader:ident, $bytes:expr) => {
         pin_project! {
@@ -68,12 +68,33 @@ macro_rules! le_reader {
     };
 }
 
-pub(crate) trait SqlReadBytes: AsyncRead {
+pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     fn debug_buffer(&self);
 
     fn context(&self) -> &Context;
 
     fn context_mut(&mut self) -> &mut Context;
+
+    fn read_i8<'a>(&'a mut self) -> ReadI8<&'a mut Self>
+    where
+        Self: Unpin,
+    {
+        ReadI8::new(self)
+    }
+
+    fn read_u8<'a>(&'a mut self) -> ReadU8<&'a mut Self>
+    where
+        Self: Unpin,
+    {
+        ReadU8::new(self)
+    }
+
+    fn read_u32<'a>(&'a mut self) -> ReadU32Be<&'a mut Self>
+    where
+        Self: Unpin,
+    {
+        ReadU32Be::new(self)
+    }
 
     fn read_f32<'a>(&'a mut self) -> ReadF32<&'a mut Self>
     where
@@ -160,18 +181,22 @@ pub(crate) trait SqlReadBytes: AsyncRead {
     }
 }
 
-le_reader!(ReadU16Le, u16, get_u16_le);
-le_reader!(ReadU32Le, u32, get_u32_le);
-le_reader!(ReadU64Le, u64, get_u64_le);
-le_reader!(ReadU128Le, u128, get_u128_le);
+bytes_reader!(ReadI8, i8, get_i8);
+bytes_reader!(ReadU8, u8, get_u8);
+bytes_reader!(ReadU32Be, u32, get_u32);
 
-le_reader!(ReadI16Le, i16, get_i16_le);
-le_reader!(ReadI32Le, i32, get_i32_le);
-le_reader!(ReadI64Le, i64, get_i64_le);
-le_reader!(ReadI128Le, i128, get_i128_le);
+bytes_reader!(ReadU16Le, u16, get_u16_le);
+bytes_reader!(ReadU32Le, u32, get_u32_le);
+bytes_reader!(ReadU64Le, u64, get_u64_le);
+bytes_reader!(ReadU128Le, u128, get_u128_le);
 
-le_reader!(ReadF32, f32, get_f32);
-le_reader!(ReadF64, f64, get_f64);
+bytes_reader!(ReadI16Le, i16, get_i16_le);
+bytes_reader!(ReadI32Le, i32, get_i32_le);
+bytes_reader!(ReadI64Le, i64, get_i64_le);
+bytes_reader!(ReadI128Le, i128, get_i128_le);
 
-le_reader!(ReadF32Le, f32, get_f32_le);
-le_reader!(ReadF64Le, f64, get_f64_le);
+bytes_reader!(ReadF32, f32, get_f32);
+bytes_reader!(ReadF64, f64, get_f64);
+
+bytes_reader!(ReadF32Le, f32, get_f32_le);
+bytes_reader!(ReadF64Le, f64, get_f64_le);

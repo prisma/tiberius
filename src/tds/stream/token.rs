@@ -8,12 +8,11 @@ use crate::{
     },
     Error, SqlReadBytes, TokenType,
 };
-use futures::{stream::BoxStream, TryStreamExt};
+use futures::{stream::BoxStream, AsyncRead, AsyncWrite, TryStreamExt};
 use std::{
     convert::TryFrom,
     sync::{atomic::Ordering, Arc},
 };
-use tokio::io::AsyncReadExt;
 use tracing::{event, Level};
 
 #[derive(Debug)]
@@ -33,12 +32,15 @@ pub enum ReceivedToken {
     SSPI(TokenSSPI),
 }
 
-pub(crate) struct TokenStream<'a> {
-    conn: &'a mut Connection,
+pub(crate) struct TokenStream<'a, S: AsyncRead + AsyncWrite + Unpin + Send> {
+    conn: &'a mut Connection<S>,
 }
 
-impl<'a> TokenStream<'a> {
-    pub(crate) fn new(conn: &'a mut Connection) -> Self {
+impl<'a, S> TokenStream<'a, S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    pub(crate) fn new(conn: &'a mut Connection<S>) -> Self {
         Self { conn }
     }
 

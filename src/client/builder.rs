@@ -1,5 +1,5 @@
-use super::{connection::*, AuthMethod};
-use crate::{tds::Context, Client, EncryptionLevel};
+use super::AuthMethod;
+use crate::EncryptionLevel;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
@@ -7,19 +7,24 @@ use std::collections::HashMap;
 ///
 /// [`Client`]: struct.Client.html
 pub struct ClientBuilder {
-    host: Option<String>,
-    port: Option<u16>,
-    database: Option<String>,
+    pub(crate) host: Option<String>,
+    pub(crate) port: Option<u16>,
+    pub(crate) database: Option<String>,
     #[cfg(windows)]
-    instance_name: Option<String>,
-    encryption: EncryptionLevel,
-    trust_cert: bool,
-    auth: AuthMethod,
+    pub(crate) instance_name: Option<String>,
+    pub(crate) encryption: EncryptionLevel,
+    pub(crate) trust_cert: bool,
+    pub(crate) auth: AuthMethod,
 }
 
-impl Default for ClientBuilder {
-    fn default() -> Self {
-        Self {
+impl ClientBuilder {
+    /// Create a `ClientBuilder` using a connector
+    /// The `connector` must be able to create a TCP connection
+    /// with the remote server. To do this it must implement `AsyncRead`
+    /// and `AsyncWrite` but it is up to the user to ensure that it does
+    /// this via the TCP protocol.
+    pub fn new() -> ClientBuilder {
+        ClientBuilder {
             host: None,
             port: None,
             database: None,
@@ -33,9 +38,7 @@ impl Default for ClientBuilder {
             auth: AuthMethod::None,
         }
     }
-}
 
-impl ClientBuilder {
     /// A host or ip address to connect to.
     ///
     /// - Defaults to `localhost`.
@@ -86,48 +89,20 @@ impl ClientBuilder {
         self.auth = auth;
     }
 
-    fn get_host(&self) -> &str {
+    pub(crate) fn get_host(&self) -> &str {
         self.host
             .as_ref()
             .map(|s| s.as_str())
             .unwrap_or("localhost")
     }
 
-    fn get_port(&self) -> u16 {
+    pub(crate) fn get_port(&self) -> u16 {
         self.port.unwrap_or(1433)
     }
 
-    #[cfg(windows)]
-    fn create_context(&self) -> Context {
-        let mut context = Context::new();
-        context.set_spn(self.get_host(), self.get_port());
-        context
-    }
-
-    #[cfg(not(windows))]
-    fn create_context(&self) -> Context {
-        Context::new()
-    }
-
-    /// Creates a new client and connects to the server.
-    pub async fn build(self) -> crate::Result<Client> {
-        let context = self.create_context();
-        let addr = format!("{}:{}", self.get_host(), self.get_port());
-
-        let opts = ConnectOpts {
-            encryption: self.encryption,
-            trust_cert: self.trust_cert,
-            auth: self.auth,
-            database: self.database,
-            #[cfg(windows)]
-            instance_name: self.instance_name,
-            #[cfg(not(windows))]
-            instance_name: None,
-        };
-
-        let connection = Connection::connect_tcp(addr, context, opts).await?;
-
-        Ok(Client { connection })
+    /// Get the host address including port
+    pub fn get_addr(&self) -> String {
+        format!("{}:{}", self.get_host(), self.get_port())
     }
 
     /// Creates a new `ClientBuilder` from an [ADO.NET connection
@@ -135,18 +110,18 @@ impl ClientBuilder {
     ///
     /// # Supported parameters
     ///
-    /// | Parameters                | Description                                                                                                                                                                                                                 |
-    /// |---------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-    /// | `server`                  | The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance` |
-    /// | `IntegratedSecurity`      | Toggle between Windows authentication and SQL authentication.                                                                                                                                                               |
-    /// | `uid`, `username`, `user` | The SQL Server login account.                                                                                                                                                                                               |
-    /// | `password`, `pwd`         | The password for the SQL Server account logging on.                                                                                                                                                                         |
-    /// | `database`                | The name of the database.                                                                                                                                                                                                   |
-    /// | `TrustServerCertificate`  | Specifies whether the driver trusts the server certificate when connecting using TLS.                                                                                                                                       |
-    /// | `encrypt`                 | Specifies whether the driver uses TLS to encrypt communication.                                                                                                                                                             |
+    /// |Parameters|Description|
+    /// |--------|--------|
+    /// |`server`|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance`|
+    /// |`IntegratedSecurity`|Toggle between Windows authentication and SQL authentication.|
+    /// |`uid`, `username`, `user`|The SQL Server login account.|
+    /// |`password`, `pwd`|The password for the SQL Server account logging on.|
+    /// |`database`|The name of the database.|
+    /// |`TrustServerCertificate`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
+    /// |`encrypt`|Specifies whether the driver uses TLS to encrypt communication.|
     pub fn from_ado_string(s: &str) -> crate::Result<Self> {
         let ado = AdoNetString::parse(s)?;
-        let mut builder = Self::default();
+        let mut builder = Self::new();
 
         let server = ado.server()?;
 

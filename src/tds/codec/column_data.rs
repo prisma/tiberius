@@ -12,8 +12,8 @@ use crate::{
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
+use futures::io::AsyncReadExt;
 use std::{borrow::Cow, sync::Arc};
-use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
 const MAX_NVARCHAR_SIZE: usize = 1 << 30;

@@ -3,7 +3,6 @@ use crate::{
     tds::codec::{read_varchar, ColumnData},
     Error, SqlReadBytes,
 };
-use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenReturnValue {

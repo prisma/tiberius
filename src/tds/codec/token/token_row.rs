@@ -1,5 +1,5 @@
 use crate::{tds::codec::ColumnData, SqlReadBytes};
-use tokio::io::AsyncReadExt;
+use futures::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenRow {

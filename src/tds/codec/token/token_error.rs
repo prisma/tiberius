@@ -3,7 +3,6 @@ use crate::{
     SqlReadBytes,
 };
 use std::fmt;
-use tokio::io::AsyncReadExt;
 
 #[derive(Clone, Debug, thiserror::Error)]
 /// An error token returned from the server.
