@@ -188,16 +188,19 @@ impl From<&TypeInfo> for ColumnType {
 ///
 /// ```
 /// # use tiberius::{ClientBuilder, FromSqlOwned};
+/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 /// # use std::env;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
 /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
 /// # );
-/// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-/// # let mut conn = builder.build().await?;
+/// # let config = ClientBuilder::from_ado_string(&c_str)?;
+/// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+/// # tcp.set_nodelay(true)?;
+/// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
 /// // by-reference
-/// let row = conn
+/// let row = client
 ///     .query("SELECT @P1 AS col1", &[&"test"])
 ///     .await?
 ///     .into_row()
@@ -207,7 +210,7 @@ impl From<&TypeInfo> for ColumnType {
 /// assert_eq!(Some("test"), row.get("col1"));
 ///
 /// // ...or by-value
-/// let row = conn
+/// let row = client
 ///     .query("SELECT @P1 AS col1", &[&"test"])
 ///     .await?
 ///     .into_row()
@@ -260,15 +263,18 @@ impl Row {
     ///
     /// ```
     /// # use tiberius::ClientBuilder;
+    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-    /// # let mut conn = builder.build().await?;
-    /// let row = conn
+    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let row = client
     ///     .query("SELECT 1 AS foo, 2 AS bar", &[])
     ///     .await?
     ///     .into_row()
@@ -290,15 +296,18 @@ impl Row {
     ///
     /// ```
     /// # use tiberius::ClientBuilder;
+    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-    /// # let mut conn = builder.build().await?;
-    /// let row = conn
+    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let row = client
     ///     .query("SELECT 1, 2", &[])
     ///     .await?
     ///     .into_row()
@@ -320,15 +329,18 @@ impl Row {
     ///
     /// ```
     /// # use tiberius::ClientBuilder;
+    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let builder = ClientBuilder::from_ado_string(&c_str)?;
-    /// # let mut conn = builder.build().await?;
-    /// let row = conn
+    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let row = client
     ///     .query("SELECT @P1 AS col1", &[&1i32])
     ///     .await?
     ///     .into_row()
