@@ -99,14 +99,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// ```
     ///
     /// [`ExecuteResult`]: struct.ExecuteResult.html
-    pub async fn execute<'a, 'b>(
-        &'a mut self,
-        query: impl Into<Cow<'b, str>>,
-        params: &'b [&'b dyn ToSql],
-    ) -> crate::Result<ExecuteResult>
-    where
-        'a: 'b,
-    {
+    pub async fn execute<'a>(
+        &mut self,
+        query: impl Into<Cow<'a, str>>,
+        params: &[&dyn ToSql],
+    ) -> crate::Result<ExecuteResult> {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
