@@ -77,6 +77,9 @@
 //!     let tcp = TcpStream::connect(config.get_addr()).await?;
 //!     tcp.set_nodelay(true)?;
 //!
+//!     // To be able to use Tokio's tcp, we're using the `compat_write` from
+//!     // the `Tokio02AsyncWriteCompatExt` to get a stream compatible with the
+//!     // traits from the `futures` crate.
 //!     let mut client = Client::connect(config, tcp.compat_write()).await?;
 //!     # client.query("SELECT @P1", &[&-4i32]).await?;
 //!
