@@ -10,6 +10,9 @@ steps:
     - label: \":rust: Cargo test no default features\"
       command: ./.buildkite/docker.sh --no-default-features
 
+    - label: \":rust: Cargo test only chrono\"
+      command: ./.buildkite/docker.sh --no-default-features --features chrono
+
     - wait
 
     - label: \":rust: Publish Rustdoc\"
