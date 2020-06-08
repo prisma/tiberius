@@ -187,10 +187,7 @@ impl<'a> Stream for QueryResult<'a> {
     }
 }
 
-/// A `Stream` of counts of affected rows resulting from an `INSERT`, `UPDATE` or
-/// `DELETE` query. The `ExecuteResult` needs to be polled empty before sending
-/// another query to the [`Client`], failing to do so causes a flush before the
-/// next query, slowing it down in an undeterministic way.
+/// A result from a query execution, listing the number of affected rows.
 ///
 /// If executing multiple queries, the resulting counts will be come separately,
 /// marking the rows affected for each query.
@@ -210,15 +207,14 @@ impl<'a> Stream for QueryResult<'a> {
 /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
 /// # tcp.set_nodelay(true)?;
 /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
-/// let stream = client
+/// let result = client
 ///     .execute(
 ///         "INSERT INTO #Test (id) VALUES (@P1); INSERT INTO #Test (id) VALUES (@P2, @P3)",
 ///         &[&1i32, &2i32, &3i32],
 ///     )
 ///     .await?;
 ///
-/// let result: Vec<u64> = stream.into_iter().collect();
-/// assert_eq!(vec![1, 2], result);
+/// assert_eq!(&[1, 2], result.rows_affected());
 /// # Ok(())
 /// # }
 /// ```
@@ -250,6 +246,12 @@ impl<'a> ExecuteResult {
             .await?;
 
         Ok(Self { rows_affected })
+    }
+
+    /// A slice of numbers of rows affected in the same order as the given
+    /// queries.
+    pub fn rows_affected(&self) -> &[u64] {
+        self.rows_affected.as_slice()
     }
 
     /// Aggregates all resulting row counts into a sum.

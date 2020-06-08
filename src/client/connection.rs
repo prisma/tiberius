@@ -59,10 +59,7 @@ enum LoginResult {
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
-    pub(crate) async fn connect(
-        config: Config,
-        tcp_stream: S,
-    ) -> crate::Result<Connection<S>>
+    pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>>
 where {
         #[cfg(windows)]
         let context = {

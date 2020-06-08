@@ -151,7 +151,7 @@
 //!
 //! # Other features
 //!
-//! - If using a [ADO.NET connection string], it is possible to create a
+//! - If using an [ADO.NET connection string], it is possible to create a
 //!   [`Config`] from one. Please see the documentation for
 //!   [`from_ado_string`] for details.
 //! - For ergonomic use of date, time, datetime et.al. values, it is highly
