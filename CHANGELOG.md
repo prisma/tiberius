@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.4.2
+
+- Fixing old and wrong `ExecuteResult` docs
+- Adding `rows_affected` method to `ExecuteResult`
+
 ## Version 0.4.1
 
 - Add all feature flags for docs.rs build
