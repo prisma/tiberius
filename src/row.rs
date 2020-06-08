@@ -187,7 +187,7 @@ impl From<&TypeInfo> for ColumnType {
 /// methods, or moving by value using the [`IntoIterator`] implementation.
 ///
 /// ```
-/// # use tiberius::{ClientBuilder, FromSqlOwned};
+/// # use tiberius::{Config, FromSqlOwned};
 /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 /// # use std::env;
 /// # #[tokio::main]
@@ -195,7 +195,7 @@ impl From<&TypeInfo> for ColumnType {
 /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
 /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
 /// # );
-/// # let config = ClientBuilder::from_ado_string(&c_str)?;
+/// # let config = Config::from_ado_string(&c_str)?;
 /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
 /// # tcp.set_nodelay(true)?;
 /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
@@ -262,7 +262,7 @@ impl Row {
     /// # Example
     ///
     /// ```
-    /// # use tiberius::ClientBuilder;
+    /// # use tiberius::Config;
     /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
@@ -270,7 +270,7 @@ impl Row {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let config = Config::from_ado_string(&c_str)?;
     /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
     /// # tcp.set_nodelay(true)?;
     /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
@@ -295,7 +295,7 @@ impl Row {
     /// # Example
     ///
     /// ```
-    /// # use tiberius::ClientBuilder;
+    /// # use tiberius::Config;
     /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
@@ -303,7 +303,7 @@ impl Row {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let config = Config::from_ado_string(&c_str)?;
     /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
     /// # tcp.set_nodelay(true)?;
     /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
@@ -328,7 +328,7 @@ impl Row {
     /// # Example
     ///
     /// ```
-    /// # use tiberius::ClientBuilder;
+    /// # use tiberius::Config;
     /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
@@ -336,7 +336,7 @@ impl Row {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let config = Config::from_ado_string(&c_str)?;
     /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
     /// # tcp.set_nodelay(true)?;
     /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;

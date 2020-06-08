@@ -2,7 +2,7 @@ use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 use tokio::net::TcpStream;
 use once_cell::sync::Lazy;
 use std::env;
-use tiberius::{ClientBuilder, Client};
+use tiberius::{Config, Client};
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING")
@@ -13,7 +13,7 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
 #[cfg(not(all(windows, feature = "sql-browser-tokio")))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = ClientBuilder::from_ado_string(&CONN_STR)?;
+    let config = Config::from_ado_string(&CONN_STR)?;
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     use tiberius::SqlBrowser;
 
-    let config = ClientBuilder::from_ado_string(&CONN_STR)?;
+    let config = Config::from_ado_string(&CONN_STR)?;
 
     let tcp = TcpStream::connect_named(&config).await?;
     tcp.set_nodelay(true)?;

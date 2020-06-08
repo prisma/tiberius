@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use std::env;
-use tiberius::{Client, ClientBuilder};
+use tiberius::{Client, Config};
 use async_std::net::TcpStream;
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
@@ -12,7 +12,7 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
 #[cfg(not(all(windows, feature = "sql-browser-async-std")))]
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
-    let config = ClientBuilder::from_ado_string(&CONN_STR)?;
+    let config = Config::from_ado_string(&CONN_STR)?;
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     use tiberius::SqlBrowser;
 
-    let config = ClientBuilder::from_ado_string(&CONN_STR)?;
+    let config = Config::from_ado_string(&CONN_STR)?;
 
     let tcp = TcpStream::connect_named(&config).await?;
     tcp.set_nodelay(true)?;

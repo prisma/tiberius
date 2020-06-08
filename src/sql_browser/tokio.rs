@@ -1,5 +1,5 @@
 use super::SqlBrowser;
-use crate::client::ClientBuilder;
+use crate::client::Config;
 use async_trait::async_trait;
 use futures::TryFutureExt;
 use net::{TcpStream, UdpSocket};
@@ -12,7 +12,7 @@ impl SqlBrowser for TcpStream {
     /// This method can be used to connect to SQL Server named instances
     /// when on a Windows paltform with the `sql-browser-tokio` feature
     /// enabled. Please see the crate examples for more detailed examples.
-    async fn connect_named(builder: &ClientBuilder) -> crate::Result<Self> {
+    async fn connect_named(builder: &Config) -> crate::Result<Self> {
         let mut addr: SocketAddr = net::lookup_host(builder.get_addr())
             .await?
             .next()

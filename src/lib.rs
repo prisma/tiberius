@@ -7,13 +7,13 @@
 //! separately and injected to the [`Client`].
 //!
 //! ```no_run
-//! use tiberius::{Client, ClientBuilder, AuthMethod};
+//! use tiberius::{Client, Config, AuthMethod};
 //! use async_std::net::TcpStream;
 //!
 //! #[async_std::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     // Using the builder method to construct the options.
-//!     let mut config = ClientBuilder::new();
+//!     let mut config = Config::new();
 //!
 //!     config.host("localhost");
 //!     config.port(1433);
@@ -62,13 +62,13 @@
 //! needs to be wrapped in Tokio's `Compat` module.
 //!
 //! ```no_run
-//! use tiberius::{Client, ClientBuilder, AuthMethod};
+//! use tiberius::{Client, Config, AuthMethod};
 //! use tokio::net::TcpStream;
 //! use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 //!
 //! #[async_std::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let mut config = ClientBuilder::new();
+//!     let mut config = Config::new();
 //!     
 //!     config.host("localhost");
 //!     config.port(1433);
@@ -110,7 +110,7 @@
 //!
 //! ```no_run
 //! # #[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
-//! use tiberius::{Client, ClientBuilder, AuthMethod};
+//! use tiberius::{Client, Config, AuthMethod};
 //! # #[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
 //! use async_std::net::TcpStream;
 //!
@@ -122,7 +122,7 @@
 //! #[async_std::main]
 //! # #[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
 //! async fn main() -> anyhow::Result<()> {
-//!     let mut config = ClientBuilder::new();
+//!     let mut config = Config::new();
 //!
 //!     config.authentication(AuthMethod::sql_server("SA", "<password>"));
 //!     config.host("localhost");
@@ -149,7 +149,7 @@
 //! # Other features
 //!
 //! - If using a [ADO.NET connection string], it is possible to create a
-//!   [`ClientBuilder`] from one. Please see the documentation for
+//!   [`Config`] from one. Please see the documentation for
 //!   [`from_ado_string`] for details.
 //! - For ergonomic use of date, time, datetime et.al. values, it is highly
 //!   recommended to use the [`chrono`] library. Please see the documentation
@@ -159,8 +159,8 @@
 //!
 //! [`EncryptionLevel`]: enum.EncryptionLevel.html
 //! [`Client`]: struct.Client.html
-//! [`ClientBuilder`]: struct.ClientBuilder.html
-//! [`from_ado_string`]: struct.ClientBuilder.html#method.from_ado_string
+//! [`Config`]: struct.ClientBuilder.html
+//! [`from_ado_string`]: struct.Config.html#method.from_ado_string
 //! [`chrono`]: https://crates.io/chrono
 //! [`time`]: time/index.html
 //! [ways of authentication]: enum.AuthMethod.html
@@ -186,7 +186,7 @@ mod tds;
 
 mod sql_browser;
 
-pub use client::{AuthMethod, Client, ClientBuilder};
+pub use client::{AuthMethod, Client, Config};
 pub(crate) use error::Error;
 pub use from_sql::{FromSql, FromSqlOwned};
 pub use result::*;

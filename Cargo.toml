@@ -1,5 +1,5 @@
 [package]
-authors = ["Steffen Butzer <steffen.butzer@outlook.com>", "Julius de Bruijn <bruijn@prisma.io>"]
+authors = ["Steffen Butzer <steffen.butzer@outlook.com>", "Julius de Bruijn <bruijn@prisma.io>", "Eric Sheppard <eric@eigenmo.de>"]
 description = "A TDS (MSSQL) driver"
 documentation = "https://docs.rs/tiberius/"
 edition = "2018"
