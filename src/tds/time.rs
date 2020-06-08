@@ -477,6 +477,7 @@ mod chrono {
 
     #[cfg(feature = "tds73")]
     to_sql!(self_,
+            NaiveDate: (ColumnData::Date, Date::new(to_days(*self_, 1) as u32));
             NaiveTime: (ColumnData::Time, {
                 use chrono::Timelike;
 
