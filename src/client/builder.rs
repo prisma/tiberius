@@ -5,10 +5,10 @@ use std::collections::HashMap;
 #[derive(Clone, Debug)]
 /// The `Config` struct contains all configuration information
 /// required for connecting to the database with a [`Client`]. It also provides
-/// the server address when connecting to a `TcpStream` via the 
+/// the server address when connecting to a `TcpStream` via the
 /// [`get_addr`] method.
 ///
-/// When using an [ADO.NET connection string], it can be 
+/// When using an [ADO.NET connection string], it can be
 /// constructed using the [`from_ado_string`] function.
 ///
 /// [`Client`]: struct.Client.html
