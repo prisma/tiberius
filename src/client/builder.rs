@@ -3,7 +3,9 @@ use crate::EncryptionLevel;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
-/// A builder for creating a new [`Client`].
+/// A builder for creating the configuration required for [`Client`].
+/// It is also used to provide the address to connect to when creating
+/// a TcpStream to pass to the [`Client`].
 ///
 /// [`Client`]: struct.Client.html
 pub struct Config {
