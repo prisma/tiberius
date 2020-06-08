@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.4.1
+
+- Add all feature flags for docs.rs build
+
 ## Version 0.4.0
 
 - A complete rewrite from 0.3.0
