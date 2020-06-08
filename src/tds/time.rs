@@ -1,6 +1,6 @@
 //! Date and time handling.
 //!
-//! Wen using the `tds73` together with the `chrono` extension, the following
+//! When using the `tds73` together with the `chrono` extension, the following
 //! `chrono` mappings to and from the database are available:
 //!
 //! - `crate::time::Time` -> `chrono::NaiveTime`
