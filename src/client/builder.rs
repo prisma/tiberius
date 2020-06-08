@@ -16,14 +16,9 @@ pub struct ClientBuilder {
     pub(crate) auth: AuthMethod,
 }
 
-impl ClientBuilder {
-    /// Create a `ClientBuilder` using a connector
-    /// The `connector` must be able to create a TCP connection
-    /// with the remote server. To do this it must implement `AsyncRead`
-    /// and `AsyncWrite` but it is up to the user to ensure that it does
-    /// this via the TCP protocol.
-    pub fn new() -> ClientBuilder {
-        ClientBuilder {
+impl Default for ClientBuilder {
+    fn default() -> Self {
+        Self {
             host: None,
             port: None,
             database: None,
@@ -35,6 +30,17 @@ impl ClientBuilder {
             trust_cert: false,
             auth: AuthMethod::None,
         }
+    }
+}
+
+impl ClientBuilder {
+    /// Create a `ClientBuilder` using a connector
+    /// The `connector` must be able to create a TCP connection
+    /// with the remote server. To do this it must implement `AsyncRead`
+    /// and `AsyncWrite` but it is up to the user to ensure that it does
+    /// this via the TCP protocol.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// A host or ip address to connect to.
