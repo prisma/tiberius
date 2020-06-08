@@ -7,8 +7,6 @@
 
 A native Microsoft SQL Server (TDS) client for Rust.
 
-[Ticket to follow](https://github.com/prisma/tiberius/issues/12) for what is still left to be done to get 0.4.0 published.
-
 ### Supported SQL Server versions
 
 | Version | Support level | Notes                               |
