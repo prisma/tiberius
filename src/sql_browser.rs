@@ -1,13 +1,13 @@
-#[cfg(any(doc, all(windows, feature = "sql-browser-tokio")))]
+#[cfg(feature = "sql-browser-tokio")]
 mod tokio;
 
-#[cfg(any(doc, all(windows, feature = "sql-browser-async-std")))]
+#[cfg(feature = "sql-browser-async-std")]
 mod async_std;
 
 use crate::client::ClientBuilder;
 use async_trait::async_trait;
 
-/// An extension trait to a `TcpStream` to find a port and connectiong to a
+/// An extension trait to a `TcpStream` to find a port and connecting to a
 /// named database instance.
 ///
 /// Only needed on Windows platforms, where the server port is not known and the
@@ -24,7 +24,7 @@ pub trait SqlBrowser {
         Self: Sized + Send + Sync;
 }
 
-#[cfg(all(windows, any(feature = "sql-browser-async-std", feature = "sql-browser-tokio")))]
+#[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
 fn get_port_from_sql_browser_reply(
     mut buf: Vec<u8>,
     len: usize,

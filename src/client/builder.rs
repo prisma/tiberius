@@ -10,7 +10,6 @@ pub struct ClientBuilder {
     pub(crate) host: Option<String>,
     pub(crate) port: Option<u16>,
     pub(crate) database: Option<String>,
-    #[cfg(windows)]
     pub(crate) instance_name: Option<String>,
     pub(crate) encryption: EncryptionLevel,
     pub(crate) trust_cert: bool,
@@ -28,7 +27,6 @@ impl ClientBuilder {
             host: None,
             port: None,
             database: None,
-            #[cfg(windows)]
             instance_name: None,
             #[cfg(feature = "tls")]
             encryption: EncryptionLevel::Required,
@@ -65,7 +63,6 @@ impl ClientBuilder {
     ///
     /// If specified, the port is replaced with the value returned from the
     /// browser.
-    #[cfg(any(windows, doc))]
     pub fn instance_name(&mut self, name: impl ToString) {
         self.instance_name = Some(name.to_string());
     }
@@ -110,15 +107,17 @@ impl ClientBuilder {
     ///
     /// # Supported parameters
     ///
-    /// |Parameters|Description|
-    /// |--------|--------|
-    /// |`server`|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance`|
-    /// |`IntegratedSecurity`|Toggle between Windows authentication and SQL authentication.|
-    /// |`uid`, `username`, `user`|The SQL Server login account.|
-    /// |`password`, `pwd`|The password for the SQL Server account logging on.|
-    /// |`database`|The name of the database.|
-    /// |`TrustServerCertificate`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
-    /// |`encrypt`|Specifies whether the driver uses TLS to encrypt communication.|
+    /// All parameter keys are handled case-insensitive.
+    ///
+    /// |Parameter|Allowed values|Description|
+    /// |--------|--------|--------|
+    /// |`server`|`<string>`|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance`|
+    /// |`IntegratedSecurity`|`true`,`false`,`yes`,`no`|Toggle between Windows authentication and SQL authentication.|
+    /// |`uid`,`username`,`user`,`user id`|`<string>`|The SQL Server login account.|
+    /// |`password`,`pwd`|`<string>`|The password for the SQL Server account logging on.|
+    /// |`database`|`<string>`|The name of the database.|
+    /// |`TrustServerCertificate`|`true`,`false`,`yes`,`no`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
+    /// |`encrypt`|`true`,`false`,`yes`,`no`|Specifies whether the driver uses TLS to encrypt communication.|
     pub fn from_ado_string(s: &str) -> crate::Result<Self> {
         let ado = AdoNetString::parse(s)?;
         let mut builder = Self::new();
