@@ -34,11 +34,7 @@ impl Default for ClientBuilder {
 }
 
 impl ClientBuilder {
-    /// Create a `ClientBuilder` using a connector
-    /// The `connector` must be able to create a TCP connection
-    /// with the remote server. To do this it must implement `AsyncRead`
-    /// and `AsyncWrite` but it is up to the user to ensure that it does
-    /// this via the TCP protocol.
+    /// Create a new `ClientBuilder` with the default settings.
     pub fn new() -> Self {
         Self::default()
     }
