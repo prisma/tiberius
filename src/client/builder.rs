@@ -3,11 +3,18 @@ use crate::EncryptionLevel;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
-/// A builder for creating the configuration required for [`Client`].
-/// It is also used to provide the address to connect to when creating
-/// a TcpStream to pass to the [`Client`].
+/// The `Config` struct contains all configuration information
+/// required for connecting to the database with a [`Client`]. It also provides
+/// the server address when connecting to a `TcpStream` via the 
+/// [`get_addr`] method.
+///
+/// When using an [ADO.NET connection string], it can be 
+/// constructed using the [`from_ado_string`] function.
 ///
 /// [`Client`]: struct.Client.html
+/// [ADO.NET connection string]: https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings
+/// [`from_ado_string`]: struct.Config.html#method.from_ado_string
+/// [`get_addr`]: struct.Config.html#method.get_addr
 pub struct Config {
     pub(crate) host: Option<String>,
     pub(crate) port: Option<u16>,
