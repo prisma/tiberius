@@ -43,11 +43,12 @@ futures_codec = "0.4"
 futures-sink = "0.3"
 async-trait = "0.1"
 
-winauth = "0.0.4"
 async-std = { version = "1", optional = true , features = ["attributes"] }
 tokio = { version = "0.2", optional = true, features = ["udp"] }
 tokio-util = { version = "0.3", features = ["compat"], optional = true }
+
 [target.'cfg(windows)'.dependencies]
+winauth = "0.0.4"
 
 [dependencies.chrono]
 version = "0.4"
