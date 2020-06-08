@@ -65,11 +65,16 @@ impl ClientBuilder {
     ///
     /// If specified, the port is replaced with the value returned from the
     /// browser.
+    ///
+    /// - Defaults to no name specified.
     pub fn instance_name(&mut self, name: impl ToString) {
         self.instance_name = Some(name.to_string());
     }
 
     /// Set the preferred encryption level.
+    ///
+    /// - With `tls` feature, defaults to `Required`.
+    /// - Without `tls` feature, defaults to `NotSupported`.
     pub fn encryption(&mut self, encryption: EncryptionLevel) {
         self.encryption = encryption;
     }
@@ -79,11 +84,15 @@ impl ClientBuilder {
     ///
     /// On production setting, the certificate should be added to the local key
     /// storage, using this setting is potentially dangerous.
+    ///
+    /// - Defaults to `false`.
     pub fn trust_cert(&mut self) {
         self.trust_cert = true;
     }
 
     /// Sets the authentication method.
+    ///
+    /// - Defaults to `None`.
     pub fn authentication(&mut self, auth: AuthMethod) {
         self.auth = auth;
     }
