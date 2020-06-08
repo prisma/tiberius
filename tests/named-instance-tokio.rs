@@ -3,7 +3,7 @@
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{ClientBuilder, Result, Client, SqlBrowser};
+use tiberius::{Config, Result, Client, SqlBrowser};
 use tokio::{runtime::Runtime, net::TcpStream};
 use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 
@@ -29,7 +29,7 @@ fn connect_to_named_instance() -> Result<()>
     });
     let mut rt = Runtime::new()?;
     rt.block_on(async {
-        let config = ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
+        let config = Config::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
 
         let tcp = TcpStream::connect_named(&config).await?;
         tcp.set_nodelay(true)?;

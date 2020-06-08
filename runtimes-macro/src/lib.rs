@@ -41,7 +41,7 @@ pub fn test_on_runtimes(
                 env_logger::init();
             });
             async_std::task::block_on(async {
-                let config = tiberius::ClientBuilder::from_ado_string(&#conn_str_ident)?;
+                let config = tiberius::Config::from_ado_string(&#conn_str_ident)?;
                 let tcp = async_std::net::TcpStream::connect(config.get_addr()).await?;
                 tcp.set_nodelay(true)?;
                 let mut client = tiberius::Client::connect(config, tcp).await?;
@@ -59,7 +59,7 @@ pub fn test_on_runtimes(
             use tokio_util::compat::Tokio02AsyncWriteCompatExt;
             let mut rt = tokio::runtime::Runtime::new()?;
             rt.block_on(async {
-                let config = tiberius::ClientBuilder::from_ado_string(&#conn_str_ident)?;
+                let config = tiberius::Config::from_ado_string(&#conn_str_ident)?;
                 let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
                 tcp.set_nodelay(true)?;
                 let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;

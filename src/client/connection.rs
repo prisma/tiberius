@@ -1,7 +1,7 @@
 #[cfg(feature = "tls")]
 use crate::client::tls::TlsPreloginWrapper;
 use crate::{
-    client::{tls::MaybeTlsStream, AuthMethod, ClientBuilder},
+    client::{tls::MaybeTlsStream, AuthMethod, Config},
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -60,7 +60,7 @@ enum LoginResult {
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
     pub(crate) async fn connect(
-        opts: ClientBuilder,
+        opts: Config,
         tcp_stream: S,
     ) -> crate::Result<Connection<S>>
 where {
@@ -263,7 +263,7 @@ where {
             #[cfg(windows)]
             AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();
-                let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
+                let builder = winauth::NtlmV2Config::new().target_spn(spn);
                 let mut client = builder.build(auth.domain, auth.user, auth.password);
 
                 msg.integrated_security = client.next_bytes(None)?;

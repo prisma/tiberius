@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// A builder for creating a new [`Client`].
 ///
 /// [`Client`]: struct.Client.html
-pub struct ClientBuilder {
+pub struct Config {
     pub(crate) host: Option<String>,
     pub(crate) port: Option<u16>,
     pub(crate) database: Option<String>,
@@ -16,7 +16,7 @@ pub struct ClientBuilder {
     pub(crate) auth: AuthMethod,
 }
 
-impl Default for ClientBuilder {
+impl Default for Config {
     fn default() -> Self {
         Self {
             host: None,
@@ -33,8 +33,8 @@ impl Default for ClientBuilder {
     }
 }
 
-impl ClientBuilder {
-    /// Create a new `ClientBuilder` with the default settings.
+impl Config {
+    /// Create a new `Config` with the default settings.
     pub fn new() -> Self {
         Self::default()
     }
@@ -113,7 +113,7 @@ impl ClientBuilder {
         format!("{}:{}", self.get_host(), self.get_port())
     }
 
-    /// Creates a new `ClientBuilder` from an [ADO.NET connection
+    /// Creates a new `Config` from an [ADO.NET connection
     /// string](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings).
     ///
     /// # Supported parameters

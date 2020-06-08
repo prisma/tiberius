@@ -4,7 +4,7 @@ mod tokio;
 #[cfg(feature = "sql-browser-async-std")]
 mod async_std;
 
-use crate::client::ClientBuilder;
+use crate::client::Config;
 use async_trait::async_trait;
 
 /// An extension trait to a `TcpStream` to find a port and connecting to a
@@ -19,7 +19,7 @@ pub trait SqlBrowser {
     /// is not defined, connects directly to the given host and port.
     ///
     /// [`Client`]: struct.Client.html
-    async fn connect_named(builder: &ClientBuilder) -> crate::Result<Self>
+    async fn connect_named(builder: &Config) -> crate::Result<Self>
     where
         Self: Sized + Send + Sync;
 }

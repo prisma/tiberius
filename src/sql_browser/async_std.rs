@@ -12,7 +12,7 @@ impl SqlBrowser for net::TcpStream {
     /// This method can be used to connect to SQL Server named instances
     /// when on a Windows platform with the `sql-browser-async-std` feature
     /// enabled. Please see the crate examples for more detailed examples.
-    async fn connect_named(builder: &crate::client::ClientBuilder) -> crate::Result<Self> {
+    async fn connect_named(builder: &crate::client::Config) -> crate::Result<Self> {
         let mut addr = builder
             .get_addr()
             .to_socket_addrs()

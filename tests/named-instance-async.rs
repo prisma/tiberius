@@ -27,7 +27,7 @@ fn connect_to_named_instance() -> Result<()> {
         env_logger::init();
     });
     async_std::task::block_on(async {
-        let config = tiberius::ClientBuilder::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
+        let config = tiberius::Config::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
         let tcp = TcpStream::connect_named(&config).await?;
         let mut client = tiberius::Client::connect(config, tcp).await?;
 

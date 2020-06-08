@@ -24,17 +24,17 @@ use std::{borrow::Cow, fmt::Debug};
 /// `Client` is the main entry point to the SQL Server, providing query
 /// execution capabilities.
 ///
-/// A `Client` is created using the [`ClientBuilder`], defining the needed
+/// A `Client` is created using the [`Config`], defining the needed
 /// connection options and capabilities.
 ///
 /// # Example
 ///
 /// ```no_run
-/// # use tiberius::{ClientBuilder, AuthMethod};
+/// # use tiberius::{Config, AuthMethod};
 /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut config = ClientBuilder::new();
+/// let mut config = Config::new();
 ///
 /// config.host("0.0.0.0");
 /// config.port(1433);
@@ -48,19 +48,19 @@ use std::{borrow::Cow, fmt::Debug};
 /// # }
 /// ```
 ///
-/// [`ClientBuilder`]: struct.ClientBuilder.html
+/// [`Config`]: struct.ClientBuilder.html
 #[derive(Debug)]
 pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
     connection: Connection<S>,
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
-    /// Uses an instance of [`ClientBuilder`] to specify the connection
+    /// Uses an instance of [`Config`] to specify the connection
     /// options required to connect to the database using an established
     /// tcp connection
     ///
-    /// [`ClientBuilder`]: struct.ClientBuilder.html
-    pub async fn connect(opts: ClientBuilder, tcp_stream: S) -> crate::Result<Client<S>> {
+    /// [`Config`]: struct.ClientBuilder.html
+    pub async fn connect(opts: Config, tcp_stream: S) -> crate::Result<Client<S>> {
         Ok(Client {
             connection: Connection::connect(opts, tcp_stream).await?,
         })
@@ -76,7 +76,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # Example
     ///
     /// ```no_run
-    /// # use tiberius::ClientBuilder;
+    /// # use tiberius::Config;
     /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
@@ -84,7 +84,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let config = Config::from_ado_string(&c_str)?;
     /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
     /// # tcp.set_nodelay(true)?;
     /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
@@ -123,7 +123,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # Example
     ///
     /// ```
-    /// # use tiberius::ClientBuilder;
+    /// # use tiberius::Config;
     /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
@@ -131,7 +131,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let config = Config::from_ado_string(&c_str)?;
     /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
     /// # tcp.set_nodelay(true)?;
     /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
@@ -174,7 +174,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # Example
     ///
     /// ```
-    /// # use tiberius::ClientBuilder;
+    /// # use tiberius::Config;
     /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
@@ -182,7 +182,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
     /// # );
-    /// # let config = ClientBuilder::from_ado_string(&c_str)?;
+    /// # let config = Config::from_ado_string(&c_str)?;
     /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
     /// # tcp.set_nodelay(true)?;
     /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
