@@ -1122,11 +1122,11 @@ async fn naive_date_time_tds72<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
-    use chrono::{NaiveDate, NaiveDateTime};
+    use chrono::NaiveDate;
 
     let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-
     let stream = conn.query("SELECT @P1", &[&dt]).await?;
+    let row = stream.into_row().await?.unwrap();
 
     assert_eq!(Some(dt), row.get(0));
 

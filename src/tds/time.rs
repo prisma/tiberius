@@ -397,16 +397,17 @@ mod chrono {
     use crate::tds::codec::ColumnData;
     #[cfg(feature = "tds73")]
     use chrono::offset::{FixedOffset, Utc};
-    use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+    use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
     #[inline]
     fn from_days(days: i64, start_year: i32) -> NaiveDate {
-        NaiveDate::from_ymd(start_year, 1, 1) + Duration::days(days as i64)
+        NaiveDate::from_ymd(start_year, 1, 1) + chrono::Duration::days(days as i64)
     }
 
     #[inline]
     fn from_sec_fragments(sec_fragments: i64) -> NaiveTime {
-        NaiveTime::from_hms(0, 0, 0) + Duration::nanoseconds(sec_fragments * (1e9 as i64) / 300)
+        NaiveTime::from_hms(0, 0, 0)
+            + chrono::Duration::nanoseconds(sec_fragments * (1e9 as i64) / 300)
     }
 
     #[inline]
@@ -440,7 +441,7 @@ mod chrono {
             )),
             ColumnData::DateTime2(ref dt) => dt.map(|dt| NaiveDateTime::new(
                 from_days(dt.date.days() as i64, 1),
-                NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(dt.time.increments as i64 * 10i64.pow(9 - dt.time.scale as u32))
+                NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(dt.time.increments as i64 * 10i64.pow(9 - dt.time.scale as u32))
             )),
             ColumnData::DateTime(ref dt) => dt.map(|dt| NaiveDateTime::new(
                 from_days(dt.days as i64, 1900),
@@ -449,7 +450,7 @@ mod chrono {
         NaiveTime:
             ColumnData::Time(ref time) => time.map(|time| {
                 let ns = time.increments as i64 * 10i64.pow(9 - time.scale as u32);
-                NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(ns)
+                NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns)
             });
         NaiveDate:
             ColumnData::Date(ref date) => date.map(|date| from_days(date.days() as i64, 1));
@@ -458,7 +459,7 @@ mod chrono {
                 let date = from_days(dto.datetime2.date.days() as i64, 1);
                 let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
 
-                let time = NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(ns) - Duration::minutes(dto.offset as i64);
+                let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns) - chrono::Duration::minutes(dto.offset as i64);
                 let naive = NaiveDateTime::new(date, time);
 
                 chrono::DateTime::from_utc(naive, Utc)
@@ -466,7 +467,7 @@ mod chrono {
         chrono::DateTime<FixedOffset>: ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
             let date = from_days(dto.datetime2.date.days() as i64, 1);
             let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
-            let time = NaiveTime::from_hms(0,0,0) + Duration::nanoseconds(ns) - Duration::minutes(dto.offset as i64);
+            let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns) - chrono::Duration::minutes(dto.offset as i64);
 
             let offset = FixedOffset::east((dto.offset as i32) * 60);
             let naive = NaiveDateTime::new(date, time);
@@ -533,10 +534,19 @@ mod chrono {
                 let date = self_.date();
                 let time = self_.time();
 
-                let days = to_days(&date, 1900) as i32;
-                let seconds_fragments = to_sec_fragments(&time);
+                let days = to_days(date, 1900) as i32;
+                let seconds_fragments = to_sec_fragments(time);
 
                 DateTime::new(days, seconds_fragments as u32)
             });
+    );
+
+    #[cfg(not(feature = "tds73"))]
+    from_sql!(
+        NaiveDateTime:
+            ColumnData::DateTime(ref dt) => dt.map(|dt| NaiveDateTime::new(
+                from_days(dt.days as i64, 1900),
+                from_sec_fragments(dt.seconds_fragments as i64)
+            ))
     );
 }
