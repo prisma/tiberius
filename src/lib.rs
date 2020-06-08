@@ -159,7 +159,7 @@
 //!
 //! [`EncryptionLevel`]: enum.EncryptionLevel.html
 //! [`Client`]: struct.Client.html
-//! [`Config`]: struct.ClientBuilder.html
+//! [`Config`]: struct.Config.html
 //! [`from_ado_string`]: struct.Config.html#method.from_ado_string
 //! [`chrono`]: https://crates.io/chrono
 //! [`time`]: time/index.html

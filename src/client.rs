@@ -48,7 +48,7 @@ use std::{borrow::Cow, fmt::Debug};
 /// # }
 /// ```
 ///
-/// [`Config`]: struct.ClientBuilder.html
+/// [`Config`]: struct.Config.html
 #[derive(Debug)]
 pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
     connection: Connection<S>,
@@ -59,7 +59,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// options required to connect to the database using an established
     /// tcp connection
     ///
-    /// [`Config`]: struct.ClientBuilder.html
+    /// [`Config`]: struct.Config.html
     pub async fn connect(opts: Config, tcp_stream: S) -> crate::Result<Client<S>> {
         Ok(Client {
             connection: Connection::connect(opts, tcp_stream).await?,
