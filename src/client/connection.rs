@@ -60,14 +60,14 @@ enum LoginResult {
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
     pub(crate) async fn connect(
-        opts: Config,
+        config: Config,
         tcp_stream: S,
     ) -> crate::Result<Connection<S>>
 where {
         #[cfg(windows)]
         let context = {
             let mut context = Context::new();
-            context.set_spn(opts.get_host(), opts.get_port());
+            context.set_spn(config.get_host(), config.get_port());
             context
         };
 
@@ -83,14 +83,14 @@ where {
             buf: BytesMut::new(),
         };
 
-        let prelogin = connection.prelogin(opts.encryption).await?;
-        let encryption = prelogin.negotiated_encryption(opts.encryption);
+        let prelogin = connection.prelogin(config.encryption).await?;
+        let encryption = prelogin.negotiated_encryption(config.encryption);
 
         let mut connection = connection
-            .tls_handshake(encryption, opts.trust_cert)
+            .tls_handshake(encryption, config.trust_cert)
             .await?;
 
-        let login_result = connection.login(opts.auth, opts.database).await?;
+        let login_result = connection.login(config.auth, config.database).await?;
         connection = connection.post_login_encryption(encryption);
 
         match login_result {
@@ -263,7 +263,7 @@ where {
             #[cfg(windows)]
             AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();
-                let builder = winauth::NtlmV2Config::new().target_spn(spn);
+                let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
                 let mut client = builder.build(auth.domain, auth.user, auth.password);
 
                 msg.integrated_security = client.next_bytes(None)?;

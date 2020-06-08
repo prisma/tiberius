@@ -60,9 +60,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// tcp connection
     ///
     /// [`Config`]: struct.Config.html
-    pub async fn connect(opts: Config, tcp_stream: S) -> crate::Result<Client<S>> {
+    pub async fn connect(config: Config, tcp_stream: S) -> crate::Result<Client<S>> {
         Ok(Client {
-            connection: Connection::connect(opts, tcp_stream).await?,
+            connection: Connection::connect(config, tcp_stream).await?,
         })
     }
 
