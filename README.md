@@ -54,9 +54,10 @@ settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx)
 (disabled by default).
 
 To use named pipes, [Miow](https://crates.io/crates/miow) provides the
-`NamedPipe` that implements sync `Read` and `Write` traits. Using the `Async`
-construct in `Smol` this would then implement `AsyncRead` and `AsyncWrite`,
-being then possible at least in theory to be used in Tiberius.
+`NamedPipe` that implements sync `Read` and `Write` traits. With some extra work
+one could write a crate that implements the `AsyncRead` and `AsyncWrite` traits
+to it. When this happens, Tiberius will support named pipes without any changes
+to the crate code.
 
 The shared memory protocol is not documented and seems there is no Rust crates
 implementing the protocol.
