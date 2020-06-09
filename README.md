@@ -51,7 +51,8 @@ Currently there are good async implementations for TCP in the
 with Tiberius on Windows platforms with SQL Server, the TCP should be enabled in
 the [server
 settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx)
-(disabled by default).
+(disabled by default). In the offficial [Docker image](https://hub.docker.com/_/microsoft-mssql-server)
+TCP is is enabled by default.
 
 To use named pipes, [Miow](https://crates.io/crates/miow) provides the
 `NamedPipe` that implements sync `Read` and `Write` traits. With some extra work
