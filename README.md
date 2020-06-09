@@ -37,10 +37,29 @@ things:
 | `tds73`        | Support for new date and time types in TDS version 7.3. Disable if using version 7.2. | `enabled`  |
 | `rust_decimal` | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
 
-### Enable TCP for SQL Server
-As of now only TCP is supported, which is **disabled by default**.  
-Make sure to enable TCP in your [MSSQL
-settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx).
+### Supported protocols
+
+Tiberius does not rely on any protocol when connecting to an SQL Server
+instance. Instead the `Client` takes a socket that implements the `AsyncRead`
+and `AsyncWrite` traits from the [futures-rs](https://crates.io/crates/futures)
+crate.
+
+Currently there are good async implementations for TCP in the
+[async-std](https://crates.io/crates/async-std),
+[Tokio](https://crates.io/crates/tokio) and
+[Smol](https://crates.io/crates/smol) projects. To be able to use them together
+with Tiberius on Windows platforms with SQL Server, the TCP should be enabled in
+the [server
+settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx)
+(disabled by default).
+
+To use named pipes, [Miow](https://crates.io/crates/miow) provides the
+`NamedPipe` that implements sync `Read` and `Write` traits. Using the `Async`
+construct in `Smol` this would then implement `AsyncRead` and `AsyncWrite`,
+being then possible at least in theory to be used in Tiberius.
+
+The shared memory protocol is not documented and seems there is no Rust crates
+implementing the protocol.
 
 ### Encryption (TLS/SSL)
 
