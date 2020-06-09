@@ -36,8 +36,8 @@ things:
 | `chrono`       | Support for Chrono's datetime structures.                                             | `enabled`  |
 | `tds73`        | Support for new date and time types in TDS version 7.3. Disable if using version 7.2. | `enabled`  |
 | `rust_decimal` | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
-| `sql-browser-async-std | SQL Browser implementation for the `TcpStream` of async-std.                  | `disabled` |
-| `sql-browser-tokio     | SQL Browser implementation for the `TcpStream` of Tokio.                      | `disabled` |
+| `sql-browser-async-std` | SQL Browser implementation for the `TcpStream` of async-std.                  | `disabled` |
+| `sql-browser-tokio`     | SQL Browser implementation for the `TcpStream` of Tokio.                      | `disabled` |
 
 ### Supported protocols
 
