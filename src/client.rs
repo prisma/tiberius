@@ -10,14 +10,12 @@ pub(crate) use connection::*;
 use crate::{
     result::{ExecuteResult, QueryResult},
     tds::{
-        codec::{self, RpcOptionFlags, RpcStatusFlags},
+        codec::{self, RpcStatusFlags},
         stream::TokenStream,
     },
     SqlReadBytes, ToSql,
 };
-use codec::{
-    BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, RpcProcIdValue, TokenRpcRequest,
-};
+use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use futures::{AsyncRead, AsyncWrite};
 use std::{borrow::Cow, fmt::Debug};
 
@@ -207,9 +205,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     {
         self.connection.flush_stream().await?;
 
-        let req = BatchRequest {
-            queries: query.into(),
-        };
+        let req = BatchRequest::new(query, self.connection.context().transaction_id());
 
         self.connection
             .send(PacketHeader::batch(self.connection.context()), req)
@@ -268,11 +264,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             params.value = ColumnData::String(Some(param_str.into()));
         }
 
-        let req = TokenRpcRequest {
-            proc_id: RpcProcIdValue::Id(proc_id),
-            flags: RpcOptionFlags::empty(),
-            params: rpc_params,
-        };
+        let req = TokenRpcRequest::new(
+            proc_id,
+            rpc_params,
+            self.connection.context().transaction_id(),
+        );
 
         self.connection
             .send(PacketHeader::rpc(self.connection.context()), req)

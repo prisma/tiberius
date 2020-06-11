@@ -81,6 +81,9 @@ pub enum TokenEnvChange {
         old: CollationInfo,
         new: CollationInfo,
     },
+    BeginTransaction(u64),
+    CommitTransaction(u64),
+    RollbackTransaction(u64),
 }
 
 impl fmt::Display for TokenEnvChange {
@@ -95,6 +98,9 @@ impl fmt::Display for TokenEnvChange {
             Self::SqlCollation { old, new } => {
                 write!(f, "SQL collation change from {} to {}", old, new)
             }
+            Self::BeginTransaction(_) => write!(f, "Begin transaction"),
+            Self::CommitTransaction(_) => write!(f, "Commit transaction"),
+            Self::RollbackTransaction(_) => write!(f, "Rollback transaction"),
         }
     }
 }
@@ -142,6 +148,21 @@ impl TokenEnvChange {
                     new: CollationInfo::new(new_value.as_slice()),
                     old: CollationInfo::new(old_value.as_slice()),
                 }
+            }
+            EnvChangeTy::BeginTransaction => {
+                src.read_u8().await?;
+                let desc = src.read_u64_le().await?;
+                TokenEnvChange::BeginTransaction(desc)
+            }
+            EnvChangeTy::CommitTransaction => {
+                src.read_u8().await?;
+                let desc = src.read_u64_le().await?;
+                TokenEnvChange::CommitTransaction(desc)
+            }
+            EnvChangeTy::RollbackTransaction => {
+                src.read_u8().await?;
+                let desc = src.read_u64_le().await?;
+                TokenEnvChange::RollbackTransaction(desc)
             }
             ty => panic!("skipping env change type {:?}", ty),
         };
