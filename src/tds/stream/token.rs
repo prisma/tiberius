@@ -9,10 +9,7 @@ use crate::{
     Error, SqlReadBytes, TokenType,
 };
 use futures::{stream::BoxStream, AsyncRead, AsyncWrite, TryStreamExt};
-use std::{
-    convert::TryFrom,
-    sync::{atomic::Ordering, Arc},
-};
+use std::{convert::TryFrom, sync::Arc};
 use tracing::{event, Level};
 
 #[derive(Debug)]
@@ -136,12 +133,18 @@ where
     async fn get_env_change(&mut self) -> crate::Result<ReceivedToken> {
         let change = TokenEnvChange::decode(self.conn).await?;
 
-        if let TokenEnvChange::PacketSize(new_size, _) = change {
-            self.conn
-                .context()
-                .packet_size
-                .store(new_size, Ordering::SeqCst);
-        };
+        match change {
+            TokenEnvChange::PacketSize(new_size, _) => {
+                self.conn.context().set_packet_size(new_size);
+            }
+            TokenEnvChange::BeginTransaction(desc) => {
+                self.conn.context().set_transaction_id(desc);
+            }
+            TokenEnvChange::CommitTransaction(_) | TokenEnvChange::RollbackTransaction(_) => {
+                self.conn.context().set_transaction_id(0);
+            }
+            _ => (),
+        }
 
         event!(Level::INFO, "{}", change);
 

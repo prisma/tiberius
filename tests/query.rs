@@ -48,6 +48,27 @@ where
 }
 
 #[test_on_runtimes]
+async fn transactions<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    conn.simple_query("BEGIN TRAN").await?;
+
+    let row = conn
+        .query("SELECT @P1", &[&-4i32])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(-4i32), row.get(0));
+
+    conn.simple_query("COMMIT").await?;
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn read_and_write_kanji_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,

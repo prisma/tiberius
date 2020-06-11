@@ -147,7 +147,7 @@ where {
         E: Sized + Encode<BytesMut>,
     {
         self.flushed = false;
-        let packet_size = self.context.packet_size() - HEADER_BYTES;
+        let packet_size = (self.context.packet_size() as usize) - HEADER_BYTES;
 
         let mut payload = BytesMut::new();
         item.encode(&mut payload)?;
