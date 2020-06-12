@@ -31,7 +31,7 @@ impl TokenDone {
             .ok_or(Error::Protocol("done(variant): invalid status".into()))?;
 
         let cur_cmd = src.read_u16_le().await?;
-        let done_row_count_bytes = src.context().version.done_row_count_bytes();
+        let done_row_count_bytes = src.context().version().done_row_count_bytes();
 
         let done_rows = match done_row_count_bytes {
             8 => src.read_u64_le().await?,
