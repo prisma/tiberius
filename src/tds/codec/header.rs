@@ -1,5 +1,5 @@
 use super::{Decode, Encode};
-use crate::{tds::Context, Error};
+use crate::Error;
 use bytes::{Buf, BufMut, BytesMut};
 use std::convert::TryFrom;
 
@@ -68,35 +68,35 @@ impl PacketHeader {
         }
     }
 
-    pub fn rpc(ctx: &Context) -> Self {
+    pub fn rpc(id: u8) -> Self {
         Self {
             ty: PacketType::RPC,
             status: PacketStatus::NormalMessage,
-            ..ctx.new_header(0)
+            ..Self::new(0, id)
         }
     }
 
-    pub fn pre_login(ctx: &Context) -> Self {
+    pub fn pre_login(id: u8) -> Self {
         Self {
             ty: PacketType::PreLogin,
             status: PacketStatus::EndOfMessage,
-            ..ctx.new_header(0)
+            ..Self::new(0, id)
         }
     }
 
-    pub fn login(ctx: &Context) -> Self {
+    pub fn login(id: u8) -> Self {
         Self {
             ty: PacketType::TDSv7Login,
             status: PacketStatus::EndOfMessage,
-            ..ctx.new_header(0)
+            ..Self::new(0, id)
         }
     }
 
-    pub fn batch(ctx: &Context) -> Self {
+    pub fn batch(id: u8) -> Self {
         Self {
             ty: PacketType::SQLBatch,
             status: PacketStatus::NormalMessage,
-            ..ctx.new_header(0)
+            ..Self::new(0, id)
         }
     }
 

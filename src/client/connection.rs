@@ -226,8 +226,8 @@ where {
         let mut msg = PreloginMessage::new();
         msg.encryption = encryption;
 
-        self.send(PacketHeader::pre_login(&self.context), msg)
-            .await?;
+        let id = self.context.next_packet_id();
+        self.send(PacketHeader::pre_login(id), msg).await?;
 
         Ok(codec::collect_from(self).await?)
     }
@@ -253,7 +253,9 @@ where {
                     .build()?;
 
                 msg.integrated_security = client.next_bytes(None)?;
-                self.send(PacketHeader::login(&self.context), msg).await?;
+
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), msg).await?;
 
                 Ok(LoginResult::Windows(Box::new(client)))
             }
@@ -264,12 +266,15 @@ where {
                 let mut client = builder.build(auth.domain, auth.user, auth.password);
 
                 msg.integrated_security = client.next_bytes(None)?;
-                self.send(PacketHeader::login(&self.context), msg).await?;
+
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), msg).await?;
 
                 Ok(LoginResult::Windows(Box::new(client)))
             }
             AuthMethod::None => {
-                self.send(PacketHeader::login(&self.context), msg).await?;
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), msg).await?;
 
                 Ok(LoginResult::Ok)
             }
@@ -277,7 +282,8 @@ where {
                 msg.username = auth.user().into();
                 msg.password = auth.password().into();
 
-                self.send(PacketHeader::login(&self.context), msg).await?;
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), msg).await?;
 
                 Ok(LoginResult::Ok)
             }
@@ -354,7 +360,9 @@ where {
             Some(sspi_response) => {
                 event!(Level::TRACE, sspi_response_len = sspi_response.len());
 
-                let header = PacketHeader::login(&self.context);
+                let id = self.context.next_packet_id();
+                let header = PacketHeader::login(id);
+
                 let token = TokenSSPI::new(sspi_response);
                 self.send(header, token).await?;
             }
