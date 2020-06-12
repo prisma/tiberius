@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.4.3
+
+- Starting transactions with `simple_query` now works without crashing ([#55](https://github.com/prisma/tiberius/pull/55))
+
 ## Version 0.4.2
 
 - Fixing old and wrong `ExecuteResult` docs
