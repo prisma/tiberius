@@ -39,7 +39,7 @@ impl TokenError {
         let procedure_len = src.read_u8().await?;
         let procedure = read_varchar(src, procedure_len).await?;
 
-        let line = if src.context().version > FeatureLevel::SqlServer2005 {
+        let line = if src.context().version() > FeatureLevel::SqlServer2005 {
             src.read_u32_le().await?
         } else {
             src.read_u16_le().await? as u32

@@ -135,13 +135,13 @@ where
 
         match change {
             TokenEnvChange::PacketSize(new_size, _) => {
-                self.conn.context().set_packet_size(new_size);
+                self.conn.context_mut().set_packet_size(new_size);
             }
             TokenEnvChange::BeginTransaction(desc) => {
-                self.conn.context().set_transaction_id(desc);
+                self.conn.context_mut().set_transaction_id(desc);
             }
             TokenEnvChange::CommitTransaction(_) | TokenEnvChange::RollbackTransaction(_) => {
-                self.conn.context().set_transaction_id(0);
+                self.conn.context_mut().set_transaction_id(0);
             }
             _ => (),
         }
