@@ -207,9 +207,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
 
         let req = BatchRequest::new(query, self.connection.context().transaction_id());
 
-        self.connection
-            .send(PacketHeader::batch(self.connection.context()), req)
-            .await?;
+        let id = self.connection.context_mut().next_packet_id();
+        self.connection.send(PacketHeader::batch(id), req).await?;
 
         let ts = TokenStream::new(&mut self.connection);
         let mut result = QueryResult::new(ts.try_unfold());
@@ -270,9 +269,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             self.connection.context().transaction_id(),
         );
 
-        self.connection
-            .send(PacketHeader::rpc(self.connection.context()), req)
-            .await?;
+        let id = self.connection.context_mut().next_packet_id();
+        self.connection.send(PacketHeader::rpc(id), req).await?;
 
         Ok(())
     }
