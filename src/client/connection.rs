@@ -51,12 +51,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Debug for Connection<S> {
     }
 }
 
-enum LoginResult {
-    Ok,
-    #[cfg(windows)]
-    Windows(Box<dyn NextBytes>),
-}
-
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
     pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>>
@@ -83,20 +77,13 @@ where {
         let prelogin = connection.prelogin(config.encryption).await?;
         let encryption = prelogin.negotiated_encryption(config.encryption);
 
-        let mut connection = connection
+        let connection = connection
             .tls_handshake(encryption, config.trust_cert)
             .await?;
 
-        let login_result = connection.login(config.auth, config.database).await?;
-        connection = connection.post_login_encryption(encryption);
-
-        match login_result {
-            LoginResult::Ok => (),
-            #[cfg(windows)]
-            LoginResult::Windows(client) => {
-                connection.windows_postlogin(client).await?;
-            }
-        }
+        let mut connection = connection
+            .login(config.auth, encryption, config.database)
+            .await?;
 
         connection.flush_done().await?;
 
@@ -235,10 +222,11 @@ where {
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
     async fn login<'a>(
-        &'a mut self,
+        mut self,
         auth: AuthMethod,
+        encryption: EncryptionLevel,
         db: Option<String>,
-    ) -> crate::Result<LoginResult> {
+    ) -> crate::Result<Self> {
         let mut msg = LoginMessage::new();
 
         if let Some(db) = db {
@@ -257,7 +245,22 @@ where {
                 let id = self.context.next_packet_id();
                 self.send(PacketHeader::login(id), msg).await?;
 
-                Ok(LoginResult::Windows(Box::new(client)))
+                self = self.post_login_encryption(encryption);
+
+                let sspi_bytes = self.flush_sspi().await?;
+
+                match client.next_bytes(Some(sspi_bytes.as_ref()))? {
+                    Some(sspi_response) => {
+                        event!(Level::TRACE, sspi_response_len = sspi_response.len());
+
+                        let id = self.context.next_packet_id();
+                        let header = PacketHeader::login(id);
+
+                        let token = TokenSSPI::new(sspi_response);
+                        self.send(header, token).await?;
+                    }
+                    None => unreachable!(),
+                }
             }
             #[cfg(windows)]
             AuthMethod::Windows(auth) => {
@@ -270,13 +273,27 @@ where {
                 let id = self.context.next_packet_id();
                 self.send(PacketHeader::login(id), msg).await?;
 
-                Ok(LoginResult::Windows(Box::new(client)))
+                self = self.post_login_encryption(encryption);
+
+                let sspi_bytes = self.flush_sspi().await?;
+
+                match client.next_bytes(Some(sspi_bytes.as_ref()))? {
+                    Some(sspi_response) => {
+                        event!(Level::TRACE, sspi_response_len = sspi_response.len());
+
+                        let id = self.context.next_packet_id();
+                        let header = PacketHeader::login(id);
+
+                        let token = TokenSSPI::new(sspi_response);
+                        self.send(header, token).await?;
+                    }
+                    None => unreachable!(),
+                }
             }
             AuthMethod::None => {
                 let id = self.context.next_packet_id();
                 self.send(PacketHeader::login(id), msg).await?;
-
-                Ok(LoginResult::Ok)
+                self = self.post_login_encryption(encryption);
             }
             AuthMethod::SqlServer(auth) => {
                 msg.username = auth.user().into();
@@ -284,10 +301,11 @@ where {
 
                 let id = self.context.next_packet_id();
                 self.send(PacketHeader::login(id), msg).await?;
-
-                Ok(LoginResult::Ok)
+                self = self.post_login_encryption(encryption);
             }
         }
+
+        Ok(self)
     }
 
     /// Implements the TLS handshake with the SQL Server.
@@ -349,27 +367,6 @@ where {
     #[cfg(not(feature = "tls"))]
     async fn tls_handshake(self, _: EncryptionLevel, _: bool) -> crate::Result<Self> {
         Ok(self)
-    }
-
-    /// Performs needed handshakes for Windows-based authentications.
-    #[cfg(windows)]
-    async fn windows_postlogin(&mut self, mut client: Box<dyn NextBytes>) -> crate::Result<()> {
-        let sspi_bytes = self.flush_sspi().await?;
-
-        match client.next_bytes(Some(sspi_bytes.as_ref()))? {
-            Some(sspi_response) => {
-                event!(Level::TRACE, sspi_response_len = sspi_response.len());
-
-                let id = self.context.next_packet_id();
-                let header = PacketHeader::login(id);
-
-                let token = TokenSSPI::new(sspi_response);
-                self.send(header, token).await?;
-            }
-            None => unreachable!(),
-        }
-
-        Ok(())
     }
 }
 
