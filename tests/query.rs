@@ -912,6 +912,7 @@ where
 
     let result: &[u8] = row.get(0).unwrap();
 
+    assert_eq!("content", row.columns()[0].name());
     assert_eq!(80, result.len());
     assert_eq!(binary, result);
 
