@@ -1,8 +1,14 @@
 # Changes
 
+## Version 0.4.4
+
+- Fixing multi-part table names in `IMAGE`, `TEXT` and `NTEXT` column metadata
+  ([#58](https://github.com/prisma/tiberius/pull/58))
+
 ## Version 0.4.3
 
-- Starting transactions with `simple_query` now works without crashing ([#55](https://github.com/prisma/tiberius/pull/55))
+- Starting transactions with `simple_query` now works without crashing
+  ([#55](https://github.com/prisma/tiberius/pull/55))
 
 ## Version 0.4.2
 
