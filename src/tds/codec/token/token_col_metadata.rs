@@ -131,12 +131,6 @@ impl TokenColMetaData {
         let mut columns = Vec::with_capacity(column_count as usize);
 
         if column_count > 0 && column_count < 0xffff {
-            /*// CekTable (Column Encryption Keys)
-            let cek_count = try!(self.read_u16::<LittleEndian>());
-            // TODO: Cek/encryption stuff not implemented yet
-            assert_eq!(cek_count, 0);*/
-
-            // read all metadata for each column
             for _ in 0..column_count {
                 let base = BaseMetaDataColumn::decode(src).await?;
                 let col_name_len = src.read_u8().await?;
@@ -168,40 +162,37 @@ impl BaseMetaDataColumn {
             TypeInfo::VarLenSized(VarLenType::Text, _, _) => {
                 src.read_u16_le().await?;
                 src.read_u16_le().await?;
-                src.read_u16_le().await?;
+                src.read_u8().await?;
+
+                let num_of_parts = src.read_u8().await?;
 
                 // table name
-                let len = src.read_u16_le().await?;
-                read_varchar(src, len).await?;
+                for _ in 0..num_of_parts {
+                    let len = src.read_u16_le().await?;
+                    read_varchar(src, len as usize).await?;
+                }
             }
             TypeInfo::VarLenSized(VarLenType::NText, _, _) => {
-                src.read_u8().await?;
-                // table name
-                let len = src.read_u16_le().await?;
-                read_varchar(src, len as usize).await?;
-            }
-            TypeInfo::VarLenSized(VarLenType::Image, _, _) => {
-                src.read_u8().await?;
+                let num_of_parts = src.read_u8().await?;
 
                 // table name
-                let len = src.read_u16_le().await?;
-                read_varchar(src, len).await?;
+                for _ in 0..num_of_parts {
+                    let len = src.read_u16_le().await?;
+                    read_varchar(src, len as usize).await?;
+                }
+            }
+            TypeInfo::VarLenSized(VarLenType::Image, _, _) => {
+                let num_of_parts = src.read_u8().await?;
+
+                // table name
+                for _ in 0..num_of_parts {
+                    let len = src.read_u16_le().await?;
+                    read_varchar(src, len as usize).await?;
+                }
             }
             _ => (),
         }
 
-        // TODO: for type={text, ntext, and image} TABLENAME
-
-        /*// CryptoMetaData
-        let cmd_ordinal = try!(self.read_u16::<LittleEndian>());
-        let cmd_user_ty = try!(self.read_u32::<LittleEndian>());
-        let cmd_ty_info: TypeInfo = try!(self.unserialize(ctx));
-        let cmd_encryption_algo = try!(self.read_u8());
-        // TODO:
-        assert_eq!(cmd_encryption_algo, 0);
-        let cmd_algo_name = try!(self.read_varchar::<u8>());
-        let cmd_algo_type = try!(self.read_u8());
-        let cmd_norm_version = try!(self.read_u8());*/
         Ok(BaseMetaDataColumn { flags, ty })
     }
 }
