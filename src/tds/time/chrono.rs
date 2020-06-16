@@ -1,4 +1,5 @@
-//! Mappings between TDS and and Chrono types.
+//! Mappings between TDS and and Chrono types (with `chrono` feature flag
+//! enabled).
 //!
 //! The chrono library offers better ergonomy and are highly recommended if
 //! needing to modify and deal with date and time in SQL Server.

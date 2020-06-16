@@ -1,7 +1,7 @@
 //! Date and time handling.
 //!
-//! When using the `tds73` the following [`chrono`] mappings to and from the
-//! database are available:
+//! When using the `tds73` feature flag together with SQL Server 2008 or later,
+//! the following [`chrono`] mappings to and from the database are available:
 //!
 //! - `Time` -> [`NaiveTime`]
 //! - `Date` -> [`NaiveDate`]
@@ -10,12 +10,19 @@
 //! - `SmallDateTime` -> [`NaiveDateTime`]
 //! - `DateTimeOffset` -> [`DateTime`]
 //!
+//! With SQL Server 2005 and the `tds73` feature flag disabled, the mapping is
+//! different:
+//!
+//! - `DateTime` -> [`NaiveDateTime`]
+//! - `SmallDateTime` -> [`NaiveDateTime`]
+//!
 //! [`chrono`]: chrono/index.html
 //! [`NaiveTime`]: chrono/struct.NaiveTime.html
 //! [`NaiveDate`]: chrono/struct.NaiveDate.html
 //! [`NaiveDateTime`]: chrono/struct.NaiveDateTime.html
 //! [`DateTime`]: chrono/struct.DateTime.html
 
+#[cfg(feature = "chrono")]
 pub mod chrono;
 
 use crate::{tds::codec::Encode, SqlReadBytes};

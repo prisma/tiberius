@@ -65,6 +65,7 @@ features = ["attributes"]
 
 [dependencies.chrono]
 version = "0.4"
+optional = true
 
 [dependencies.uuid]
 version = "0.8"
@@ -109,7 +110,7 @@ anyhow = "1"
 env_logger = "0.7"
 
 [package.metadata.docs.rs]
-features = ["tls", "tds73", "sql-browser-async-std", "sql-browser-tokio"]
+features = ["tls", "chrono", "tds73", "sql-browser-async-std", "sql-browser-tokio"]
 
 [features]
 default = ["tls", "tds73"]
