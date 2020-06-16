@@ -27,13 +27,13 @@ use uuid::Uuid;
 /// |`Vec<u8>`/`&[u8]`|`varbinary(max)`|
 /// |[`Uuid`]|`uniqueidentifier`|
 /// |[`Numeric`]|`numeric`/`decimal`|
-/// |[`Decimal`]|`numeric`/`decimal`|
+/// |[`Decimal`] (with feature flag `rust_decimal`)|`numeric`/`decimal`|
 /// |[`XmlData`]|`xml`|
-/// |[`NaiveDate`] (TDS 7.3 >)|`date`|
-/// |[`NaiveTime`] (TDS 7.3 >)|`time`|
-/// |[`DateTime`] (TDS 7.3 >)|`datetimeoffset`|
-/// |[`NaiveDateTime`] (TDS 7.3 >)|`datetime2`|
-/// |[`NaiveDateTime`] (TDS 7.2)|`datetime`|
+/// |[`NaiveDate`] (with `chrono` feature, TDS 7.3 >)|`date`|
+/// |[`NaiveTime`] (with `chrono` feature, TDS 7.3 >)|`time`|
+/// |[`DateTime`] (with `chrono` feature, TDS 7.3 >)|`datetimeoffset`|
+/// |[`NaiveDateTime`] (with `chrono` feature, TDS 7.3 >)|`datetime2`|
+/// |[`NaiveDateTime`] (with `chrono` feature, TDS 7.2)|`datetime`|
 ///
 /// It is possible to use some of the types to write into columns that are not
 /// of the same type. For example on systems following the TDS 7.3 standard (SQL
