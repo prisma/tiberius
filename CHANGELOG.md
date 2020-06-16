@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.4.5
+
+- Documenting type conversions and re-exporting chrono types
+  ([#60](https://github.com/prisma/tiberius/pull/60))
+
 ## Version 0.4.4
 
 - Fixing multi-part table names in `IMAGE`, `TEXT` and `NTEXT` column metadata
