@@ -78,7 +78,7 @@ where {
         let encryption = prelogin.negotiated_encryption(config.encryption);
 
         let connection = connection
-            .tls_handshake(encryption, config.trust_cert)
+            .tls_handshake(config.get_host(), encryption, config.trust_cert)
             .await?;
 
         let mut connection = connection
@@ -312,13 +312,13 @@ where {
     #[cfg(feature = "tls")]
     async fn tls_handshake(
         self,
+        host: &str,
         encryption: EncryptionLevel,
         trust_cert: bool,
     ) -> crate::Result<Self> {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            //let mut builder = native_tls::TlsConnector::builder();
             let mut builder = async_native_tls::TlsConnector::new();
 
             if trust_cert {
@@ -337,7 +337,7 @@ where {
             } = self;
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
-                    builder.connect("", TlsPreloginWrapper::new(tcp)).await?
+                    builder.connect(host, TlsPreloginWrapper::new(tcp)).await?
                 }
                 _ => unreachable!(),
             };
