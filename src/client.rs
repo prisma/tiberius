@@ -71,6 +71,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// executing multiple queries at a time, delimit them with `;` and refer to
     /// [`ExecuteResult`] how to get results for the separate queries.
     ///
+    /// For mapping of Rust types when writing, see the documentation for
+    /// [`ToSql`]. For reading data from the database, see the documentation for
+    /// [`FromSql`].
+    ///
     /// # Example
     ///
     /// ```no_run
@@ -97,6 +101,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// ```
     ///
     /// [`ExecuteResult`]: struct.ExecuteResult.html
+    /// [`ToSql`]: trait.ToSql.html
+    /// [`FromSql`]: trait.FromSql.html
     pub async fn execute<'a>(
         &mut self,
         query: impl Into<Cow<'a, str>>,
@@ -117,6 +123,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// parameter, starting from `1`. If executing multiple queries at a time,
     /// delimit them with `;` and refer to [`QueryResult`] on proper stream
     /// handling.
+    ///
+    /// For mapping of Rust types when writing, see the documentation for
+    /// [`ToSql`]. For reading data from the database, see the documentation for
+    /// [`FromSql`].
     ///
     /// # Example
     ///
@@ -144,6 +154,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// ```
     ///
     /// [`QueryResult`]: struct.QueryResult.html
+    /// [`ToSql`]: trait.ToSql.html
+    /// [`FromSql`]: trait.FromSql.html
     pub async fn query<'a, 'b>(
         &'a mut self,
         query: impl Into<Cow<'b, str>>,

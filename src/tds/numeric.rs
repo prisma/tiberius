@@ -4,6 +4,8 @@ use super::codec::Encode;
 use crate::{sql_read_bytes::SqlReadBytes, Error};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
+#[cfg(feature = "rust_decimal")]
+pub use rust_decimal::Decimal;
 use std::cmp::PartialEq;
 use std::fmt::{self, Debug, Display, Formatter};
 
@@ -228,9 +230,8 @@ impl PartialEq for Numeric {
 
 #[cfg(feature = "rust_decimal")]
 mod decimal {
-    use super::Numeric;
+    use super::{Decimal, Numeric};
     use crate::ColumnData;
-    use rust_decimal::Decimal;
 
     #[cfg(feature = "tds73")]
     from_sql!(Decimal: ColumnData::Numeric(ref num) => num.map(|num| {

@@ -1138,7 +1138,7 @@ mod rust_decimal {
     }
 }
 
-#[cfg(all(feature = "chrono", not(feature = "tds73")))]
+#[cfg(all(not(feature = "tds73"), feature = "chrono"))]
 #[test_on_runtimes]
 async fn naive_date_time_tds72<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
@@ -1155,7 +1155,7 @@ where
     Ok(())
 }
 
-#[cfg(all(feature = "chrono", feature = "tds73"))]
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 #[cfg(tests)]
 mod chrono {
     #[test_on_runtimes]

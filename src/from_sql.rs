@@ -2,6 +2,44 @@ use crate::{tds::Numeric, xml::XmlData, ColumnData};
 use uuid::Uuid;
 
 /// A conversion trait from a TDS type by-reference.
+///
+/// A `FromSql` implementation for a Rust type is needed for using it as a
+/// return parameter from [`Row#get`] or [`Row#try_get`] methods. The following
+/// Rust types are already implemented to match the given server types:
+///
+/// |Rust type|Server type|
+/// |--------|--------|
+/// |`i8`|`tinyint`|
+/// |`i16`|`smallint`|
+/// |`i32`|`int`|
+/// |`i64`|`bigint`|
+/// |`f32`|`float(24)`|
+/// |`f64`|`float(53)`|
+/// |`bool`|`bit`|
+/// |`String`/`&str`|`nvarchar`/`varchar`/`nchar`/`char`/`ntext`/`text`|
+/// |`Vec<u8>`/`&[u8]`|`binary`/`varbinary`/`image`|
+/// |[`Uuid`]|`uniqueidentifier`|
+/// |[`Numeric`]|`numeric`/`decimal`|
+/// |[`Decimal`] (with feature flag `rust_decimal`)|`numeric`/`decimal`|
+/// |[`XmlData`]|`xml`|
+/// |[`NaiveDateTime`] (with feature flag `chrono`)|`datetime`/`datetime2`/`smalldatetime`|
+/// |[`NaiveDate`] (with feature flag `chrono`)|`date`|
+/// |[`NaiveTime`] (with feature flag `chrono`)|`time`|
+/// |[`DateTime`] (with feature flag `chrono`)|`datetimeoffset`|
+///
+/// See the [`time`] module for more information about the date and time structs.
+///
+/// [`Row#get`]: struct.Row.html#method.get
+/// [`Row#try_get`]: struct.Row.html#method.try_get
+/// [`time`]: time/index.html
+/// [`Uuid`]: struct.Uuid.html
+/// [`Numeric`]: numeric/struct.Numeric.html
+/// [`Decimal`]: numeric/struct.Decimal.html
+/// [`XmlData`]: xml/struct.XmlData.html
+/// [`NaiveDateTime`]: time/chrono/struct.NaiveDateTime.html
+/// [`NaiveDate`]: time/chrono/struct.NaiveDate.html
+/// [`NaiveTime`]: time/chrono/struct.NaiveTime.html
+/// [`DateTime`]: time/chrono/struct.DateTime.html
 pub trait FromSql<'a>
 where
     Self: Sized + 'a,
