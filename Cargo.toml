@@ -45,16 +45,26 @@ futures_codec = "0.4"
 futures-sink = "0.3"
 async-trait = "0.1"
 
-async-std = { version = "1", optional = true , features = ["attributes"] }
-tokio = { version = "0.2", optional = true, features = ["udp"] }
-tokio-util = { version = "0.3", features = ["compat"], optional = true }
-
 [target.'cfg(windows)'.dependencies]
 winauth = "0.0.4"
 
+[dependencies.tokio]
+version = "0.2"
+optional = true
+features = ["udp"]
+
+[dependencies.tokio-util]
+version = "0.3"
+features = ["compat"]
+optional = true
+
+[dependencies.async-std]
+version = "1"
+optional = true
+features = ["attributes"]
+
 [dependencies.chrono]
 version = "0.4"
-optional = true
 
 [dependencies.uuid]
 version = "0.8"
@@ -99,10 +109,10 @@ anyhow = "1"
 env_logger = "0.7"
 
 [package.metadata.docs.rs]
-features = ["tls", "chrono", "tds73", "sql-browser-async-std", "sql-browser-tokio"]
+features = ["tls", "tds73", "sql-browser-async-std", "sql-browser-tokio"]
 
 [features]
-default = ["tls", "chrono", "tds73"]
+default = ["tls", "tds73"]
 tls = ["async-native-tls"]
 tds73 = []
 sql-browser-async-std = ["async-std"]

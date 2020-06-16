@@ -154,9 +154,6 @@
 //! - If using an [ADO.NET connection string], it is possible to create a
 //!   [`Config`] from one. Please see the documentation for
 //!   [`from_ado_string`] for details.
-//! - For ergonomic use of date, time, datetime et.al. values, it is highly
-//!   recommended to use the [`chrono`] library. Please see the documentation
-//!   for [`time`] module for details.
 //! - If wanting to use Tiberius with SQL Server version 2005, one must
 //!   disable the `tds73` feature.
 //!
@@ -164,7 +161,6 @@
 //! [`Client`]: struct.Client.html
 //! [`Config`]: struct.Config.html
 //! [`from_ado_string`]: struct.Config.html#method.from_ado_string
-//! [`chrono`]: https://crates.io/chrono
 //! [`time`]: time/index.html
 //! [ways of authentication]: enum.AuthMethod.html
 //! [ADO.NET connection string]: https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings
