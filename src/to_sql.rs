@@ -6,6 +6,48 @@ use std::borrow::Cow;
 use uuid::Uuid;
 
 /// A conversion trait to a TDS type.
+///
+/// A `ToSql` implementation for a Rust type is needed for using it as a
+/// parameter in the [`Client#query`] or [`Client#execute`] methods. The
+/// following Rust types are already implemented to match the given server
+/// types:
+///
+/// |Rust type|Server type|
+/// |--------|--------|
+/// |`i8`|`tinyint`|
+/// |`i16`|`smallint`|
+/// |`i32`|`int`|
+/// |`i64`|`bigint`|
+/// |`f32`|`float(24)`|
+/// |`f64`|`float(53)`|
+/// |`bool`|`bit`|
+/// |`String`/`&str` (< 4000 characters)|`nvarchar(4000)`|
+/// |`String`/`&str`|`nvarchar(max)`|
+/// |`Uuid`|`uniqueidentifier`|
+/// |`Vec<u8>`/`&[u8]` (< 8000 bytes)|`varbinary(8000)`|
+/// |`Vec<u8>`/`&[u8]`|`varbinary(max)`|
+/// |`Numeric`|`numeric`/`decimal`|
+/// |`Decimal`|`numeric`/`decimal`|
+/// |`XmlData`|`xml`|
+/// |`NaiveDate` (TDS 7.3 >)|`date`|
+/// |`NaiveTime` (TDS 7.3 >)|`time`|
+/// |`DateTime<Utc>`/`DateTime<FixedOffset>` (TDS 7.3 >)|`datetimeoffset`|
+/// |`NaiveDateTime` (TDS 7.3 >)|`datetime2`|
+/// |`NaiveDateTime` (TDS 7.2)|`datetime`|
+///
+/// It is possible to use some of the types to write into columns that are not
+/// of the same type. For example on systems following the TDS 7.3 standard (SQL
+/// Server 2008 and later), the chrono type `NaiveDateTime` can also be used to
+/// write to `datetime`, `datetime2` and `smalldatetime` columns. All string
+/// types can also be used with `ntext`, `text`, `varchar`, `nchar` and `char`
+/// columns. All binary types can also be used with `binary` and `image`
+/// columns.
+///
+/// See the [`time`] module for more information about the date and time structs.
+///
+/// [`Client#query`]: struct.Client.html#method.query
+/// [`Client#execute`]: struct.Client.html#method.execute
+/// [`time`]: time/index.html
 pub trait ToSql: Send + Sync {
     /// Convert to a value understood by the SQL Server. Conversion
     /// by-reference.

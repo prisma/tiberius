@@ -1,7 +1,8 @@
 //! Date and time handling.
 //!
-//! When using the `tds73` together with the `chrono` extension, the following
-//! `chrono` mappings to and from the database are available:
+//! When using the `tds73` together with the `chrono` feature flag, the
+//! following [`chrono`](https://crates.io/crates/chrono) mappings to and from
+//! the database are available:
 //!
 //! - `crate::time::Time` -> `chrono::NaiveTime`
 //! - `crate::time::Date` -> `chrono::NaiveDate`

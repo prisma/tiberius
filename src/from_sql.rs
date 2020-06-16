@@ -2,6 +2,36 @@ use crate::{tds::Numeric, xml::XmlData, ColumnData};
 use uuid::Uuid;
 
 /// A conversion trait from a TDS type by-reference.
+///
+/// A `FromSql` implementation for a Rust type is needed for using it as a
+/// return parameter from [`Row#get`] or [`Row#try_get`] methods. The following
+/// Rust types are already implemented to match the given server types:
+///
+/// |Rust type|Server type|
+/// |--------|--------|
+/// |`i8`|`tinyint`|
+/// |`i16`|`smallint`|
+/// |`i32`|`int`|
+/// |`i64`|`bigint`|
+/// |`f32`|`float(24)`|
+/// |`f64`|`float(53)`|
+/// |`bool`|`bit`|
+/// |`String`/`&str`|`nvarchar`/`varchar`/`nchar`/`char`/`ntext`/`text`|
+/// |`Uuid`|`uniqueidentifier`|
+/// |`Vec<u8>`/`&[u8]`|`binary`/`varbinary`/`image`|
+/// |`Numeric`|`numeric`/`decimal`|
+/// |`Decimal`|`numeric`/`decimal`|
+/// |`XmlData`|`xml`|
+/// |`NaiveDateTime`|`datetime`/`datetime2`/`smalldatetime`|
+/// |`NaiveDate`|`date`|
+/// |`NaiveTime`|`time`|
+/// |`DateTime<Utc>`/`DateTime<FixedOffset>`|`datetimeoffset`|
+///
+/// See the [`time`] module for more information about the date and time structs.
+///
+/// [`Row#get`]: struct.Row.html#method.get
+/// [`Row#try_get`]: struct.Row.html#method.try_get
+/// [`time`]: time/index.html
 pub trait FromSql<'a>
 where
     Self: Sized + 'a,
