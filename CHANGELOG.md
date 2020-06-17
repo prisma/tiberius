@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.4.6
+
+- Return of IntoSql
+
 ## Version 0.4.5
 
 - Documenting type conversions and re-exporting chrono types
