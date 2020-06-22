@@ -366,7 +366,7 @@ where {
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(not(feature = "tls"))]
-    async fn tls_handshake(self, _: EncryptionLevel, _: bool) -> crate::Result<Self> {
+    async fn tls_handshake(self, _: &Config, _: EncryptionLevel, _: bool) -> crate::Result<Self> {
         Ok(self)
     }
 }
