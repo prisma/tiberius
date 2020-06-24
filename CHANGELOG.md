@@ -1,8 +1,10 @@
 # Changes
 
-## Version 0.4.6
+## Version 0.4.7
 
-- Return of IntoSql
+- Pass hostname to TLS handshake, allowing usage with AzureSQL using
+  `TrustServerCertificate=no`
+  ([#62](https://github.com/prisma/tiberius/pull/62))
 
 ## Version 0.4.5
 
