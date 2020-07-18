@@ -66,7 +66,7 @@ impl<'a> QueryStream<'a> {
 
                     return Ok(());
                 }
-                Some(ReceivedToken::DoneInProc(_)) | Some(ReceivedToken::DoneProc(_)) | Some(ReceivedToken::Done(_)) => {
+                Some(ReceivedToken::DoneInProc(_)) | Some(ReceivedToken::DoneProc(_))  => {
                     return Ok(());
                 }
                 _ => {
