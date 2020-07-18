@@ -13,6 +13,7 @@ pub(crate) enum QueryStreamState {
     Initial,
     HasPotentiallyNext,
     HasNext,
+    GotRowsAffected,
     Done,
 }
 
@@ -65,6 +66,9 @@ impl<'a> QueryStream<'a> {
 
                     return Ok(());
                 }
+                Some(ReceivedToken::DoneInProc(_)) | Some(ReceivedToken::DoneProc(_)) | Some(ReceivedToken::Done(_)) => {
+                    return Ok(());
+                }
                 _ => {
                     if self.columns().is_none() {
                         self.state = QueryStreamState::Done;
@@ -106,7 +110,7 @@ impl<'a> Stream for QueryStream<'a> {
 
         loop {
             match this.state {
-                QueryStreamState::Initial | QueryStreamState::HasPotentiallyNext => (),
+                QueryStreamState::Initial | QueryStreamState::HasPotentiallyNext | QueryStreamState::GotRowsAffected => (),
                 _ => return Poll::Ready(None),
             }
 
@@ -140,7 +144,21 @@ impl<'a> Stream for QueryStream<'a> {
                     if !done.status.contains(DoneStatus::MORE) {
                         this.state = QueryStreamState::Done;
                     } else {
-                        this.state = QueryStreamState::HasPotentiallyNext;
+                        // Justification here: if there are no columns set this is because
+                        // we haven't yet recieved any tabular resultsets from the server.
+                        // and therefore we can just skip to ensure that we don't cause the
+                        // QueryResult implementation to start a new resultset.
+                        //
+                        // Otherwise, any received DoneInProc etc tokens will just add 0 more rows
+                        // into the end of the resultset, so they wont' affect it and this means
+                        // we don't need to handle those cases.
+                        // Later if we decide to include the rows affected amounts we woud need
+                        // to create a new resultset each time.
+                        if this.current_columns.is_none() {
+                            this.state = QueryStreamState::GotRowsAffected;
+                        } else {
+                            this.state = QueryStreamState::HasPotentiallyNext;
+                        }
                     }
                     continue;
                 }
