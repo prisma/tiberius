@@ -4,6 +4,7 @@ use crate::tds::{Collation, DateTime, SmallDateTime};
 use crate::tds::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
     tds::{
+        codec::guid,
         xml::{XmlData, XmlSchema},
         Numeric,
     },
@@ -406,7 +407,8 @@ impl<'a> ColumnData<'a> {
                     data[i] = src.read_u8().await?;
                 }
 
-                ColumnData::Guid(Some(Uuid::from_slice(&data)?))
+                guid::reorder_bytes(&mut data);
+                ColumnData::Guid(Some(Uuid::from_bytes(data)))
             }
             _ => {
                 return Err(Error::Protocol(
@@ -696,7 +698,9 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
 
                 dst.extend_from_slice(&header);
-                dst.extend_from_slice(uuid.as_bytes());
+                let mut data = uuid.as_bytes().clone();
+                guid::reorder_bytes(&mut data);
+                dst.extend_from_slice(&data);
             }
             ColumnData::String(Some(ref s)) if s.len() <= 4000 => {
                 dst.put_u8(VarLenType::NVarchar as u8);

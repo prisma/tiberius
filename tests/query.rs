@@ -984,13 +984,31 @@ where
 }
 
 #[test_on_runtimes]
-async fn guid_type<S>(mut conn: tiberius::Client<S>) -> Result<()>
+async fn guid_type_roundtrip<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     let id = Uuid::new_v4();
     let row = conn
         .query("SELECT @P1", &[&id])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(id), row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn guid_type_byte_ordering<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let id = Uuid::parse_str("c97dbc01-fb45-4384-a194-e39a4560cf4a").unwrap();
+    let row = conn
+        .simple_query("SELECT CAST('c97dbc01-fb45-4384-a194-e39a4560cf4a' AS UNIQUEIDENTIFIER)")
         .await?
         .into_row()
         .await?
