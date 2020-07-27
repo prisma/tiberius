@@ -2,6 +2,7 @@ mod batch_request;
 mod column_data;
 mod decode;
 mod encode;
+mod guid;
 mod header;
 mod login;
 mod packet;
