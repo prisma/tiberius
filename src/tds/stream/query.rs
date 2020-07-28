@@ -66,7 +66,7 @@ impl<'a> QueryStream<'a> {
 
                     return Ok(());
                 }
-                Some(ReceivedToken::DoneInProc(_)) | Some(ReceivedToken::DoneProc(_))  => {
+                Some(ReceivedToken::DoneInProc(_)) | Some(ReceivedToken::DoneProc(_)) => {
                     return Ok(());
                 }
                 _ => {
@@ -110,7 +110,9 @@ impl<'a> Stream for QueryStream<'a> {
 
         loop {
             match this.state {
-                QueryStreamState::Initial | QueryStreamState::HasPotentiallyNext | QueryStreamState::GotRowsAffected => (),
+                QueryStreamState::Initial
+                | QueryStreamState::HasPotentiallyNext
+                | QueryStreamState::GotRowsAffected => (),
                 _ => return Poll::Ready(None),
             }
 

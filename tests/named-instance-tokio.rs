@@ -3,8 +3,8 @@
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{Config, Result, Client, SqlBrowser};
-use tokio::{runtime::Runtime, net::TcpStream};
+use tiberius::{Client, Config, Result, SqlBrowser};
+use tokio::{net::TcpStream, runtime::Runtime};
 use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 
 // This is used in the testing macro :)
@@ -12,8 +12,9 @@ use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 static LOGGER_SETUP: Once = Once::new();
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
-    env::var("TIBERIUS_TEST_CONNECTION_STRING")
-        .unwrap_or_else(|_| "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned())
+    env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
+        "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
+    })
 });
 
 static NAMED_INSTANCE_CONN_STR: Lazy<String> = Lazy::new(|| {
@@ -22,8 +23,7 @@ static NAMED_INSTANCE_CONN_STR: Lazy<String> = Lazy::new(|| {
 });
 
 #[test]
-fn connect_to_named_instance() -> Result<()>
-{
+fn connect_to_named_instance() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
