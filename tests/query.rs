@@ -383,17 +383,17 @@ where
 }
 
 #[test_on_runtimes]
-async fn i8_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
+async fn u8_token<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     let row = conn
-        .query("SELECT @P1", &[&-4i8])
+        .query("SELECT @P1", &[&4u8])
         .await?
         .into_row()
         .await?
         .unwrap();
-    assert_eq!(Some(-4i8), row.get(0));
+    assert_eq!(Some(4u8), row.get(0));
     Ok(())
 }
 

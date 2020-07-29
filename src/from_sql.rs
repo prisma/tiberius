@@ -9,7 +9,7 @@ use uuid::Uuid;
 ///
 /// |Rust type|Server type|
 /// |--------|--------|
-/// |`i8`|`tinyint`|
+/// |`u8`|`tinyint`|
 /// |`i16`|`smallint`|
 /// |`i32`|`int`|
 /// |`i64`|`bigint`|
@@ -58,7 +58,7 @@ where
 }
 
 from_sql!(bool: ColumnData::Bit(val) => (*val, val));
-from_sql!(i8: ColumnData::I8(val) => (*val, val));
+from_sql!(u8: ColumnData::U8(val) => (*val, val));
 from_sql!(i16: ColumnData::I16(val) => (*val, val));
 from_sql!(i32: ColumnData::I32(val) => (*val, val));
 from_sql!(i64: ColumnData::I64(val) => (*val, val));
