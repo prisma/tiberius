@@ -381,11 +381,10 @@ impl DateTimeOffset {
         self.offset
     }
 
-    pub(crate) async fn decode<R>(src: &mut R, n: usize) -> crate::Result<Self>
+    pub(crate) async fn decode<R>(src: &mut R, n: usize, rlen: u8) -> crate::Result<Self>
     where
         R: SqlReadBytes + Unpin,
     {
-        let rlen = src.read_u8().await? - 5;
         let datetime2 = DateTime2::decode(src, n, rlen as usize).await?;
         let offset = src.read_i16_le().await?;
 
