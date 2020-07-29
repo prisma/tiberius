@@ -338,7 +338,9 @@ where {
             } = self;
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
-                    builder.connect(config.get_host(), TlsPreloginWrapper::new(tcp)).await?
+                    builder
+                        .connect(config.get_host(), TlsPreloginWrapper::new(tcp))
+                        .await?
                 }
                 _ => unreachable!(),
             };

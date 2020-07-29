@@ -1,14 +1,14 @@
-use tokio_util::compat::Tokio02AsyncWriteCompatExt;
-use tokio::net::TcpStream;
 use once_cell::sync::Lazy;
 use std::env;
-use tiberius::{Config, Client};
+use tiberius::{Client, Config};
+use tokio::net::TcpStream;
+use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
-    env::var("TIBERIUS_TEST_CONNECTION_STRING")
-        .unwrap_or_else(|_| "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned())
+    env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
+        "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
+    })
 });
-
 
 #[cfg(not(all(windows, feature = "sql-browser-tokio")))]
 #[tokio::main]
@@ -49,4 +49,3 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-

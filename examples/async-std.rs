@@ -1,13 +1,13 @@
+use async_std::net::TcpStream;
 use once_cell::sync::Lazy;
 use std::env;
 use tiberius::{Client, Config};
-use async_std::net::TcpStream;
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
-    env::var("TIBERIUS_TEST_CONNECTION_STRING")
-        .unwrap_or_else(|_| "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned())
+    env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
+        "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
+    })
 });
-
 
 #[cfg(not(all(windows, feature = "sql-browser-async-std")))]
 #[async_std::main]

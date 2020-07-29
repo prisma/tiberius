@@ -69,6 +69,70 @@ where
 }
 
 #[test_on_runtimes]
+async fn multistatement_query_with_exec_proc<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+    let proc = random_table().await;
+
+    conn.simple_query(format!(
+        r#"
+        create table ##{} (
+            id int identity(1,1),
+            other varchar(50),
+        )
+    "#,
+        table
+    ))
+    .await?;
+
+    conn.simple_query(format!(
+        r#"
+        create or alter procedure {} 
+          @Param1 varchar(50)
+        as
+            insert into ##{} (other)
+            values (@Param1)
+
+            return scope_identity()
+    "#,
+        proc, table,
+    ))
+    .await?;
+
+    let stream = conn
+        .query(
+            format!(
+                "set nocount off; declare @rc int; exec @rc = {} @P1; select @rc as Id;",
+                proc
+            ),
+            &[&"test insert"],
+        )
+        .await?;
+
+    let row = stream.into_row().await?.unwrap();
+
+    assert_eq!(Some(1), row.get(0));
+
+    let stream = conn
+        .query(
+            format!(
+                "set nocount on; declare @rc int; exec @rc = {} @P1; select @rc as Id;",
+                proc
+            ),
+            &[&"test insert"],
+        )
+        .await?;
+
+    let row = stream.into_row().await?.unwrap();
+
+    assert_eq!(Some(2), row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn read_and_write_kanji_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
