@@ -14,7 +14,7 @@ use uuid::Uuid;
 ///
 /// |Rust type|Server type|
 /// |--------|--------|
-/// |`i8`|`tinyint`|
+/// |`u8`|`tinyint`|
 /// |`i16`|`smallint`|
 /// |`i32`|`int`|
 /// |`i64`|`bigint`|
@@ -76,7 +76,7 @@ into_sql!(self_,
 
 to_sql!(self_,
         bool: (ColumnData::Bit, *self_);
-        i8: (ColumnData::I8, *self_);
+        u8: (ColumnData::U8, *self_);
         i16: (ColumnData::I16, *self_);
         i32: (ColumnData::I32, *self_);
         i64: (ColumnData::I64, *self_);

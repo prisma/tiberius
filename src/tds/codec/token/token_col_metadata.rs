@@ -26,7 +26,7 @@ impl BaseMetaDataColumn {
         match self.ty {
             TypeInfo::FixedLen(ty) => match ty {
                 FixedLenType::Null => ColumnData::I32(None),
-                FixedLenType::Int1 => ColumnData::I8(None),
+                FixedLenType::Int1 => ColumnData::U8(None),
                 FixedLenType::Bit => ColumnData::Bit(None),
                 FixedLenType::Int2 => ColumnData::I16(None),
                 FixedLenType::Int4 => ColumnData::I32(None),

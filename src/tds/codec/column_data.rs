@@ -21,8 +21,8 @@ const MAX_NVARCHAR_SIZE: usize = 1 << 30;
 #[derive(Clone, Debug)]
 /// A container of a value that can be represented as a TDS value.
 pub enum ColumnData<'a> {
-    /// 8-bit integer, signed.
-    I8(Option<i8>),
+    /// 8-bit integer, unsigned.
+    U8(Option<u8>),
     /// 16-bit integer, signed.
     I16(Option<i16>),
     /// 32-bit integer, signed.
@@ -66,7 +66,7 @@ pub enum ColumnData<'a> {
 impl<'a> ColumnData<'a> {
     pub(crate) fn type_name(&self) -> Cow<'static, str> {
         match self {
-            ColumnData::I8(_) => "tinyint".into(),
+            ColumnData::U8(_) => "tinyint".into(),
             ColumnData::I16(_) => "smallint".into(),
             ColumnData::I32(_) => "int".into(),
             ColumnData::I64(_) => "bigint".into(),
@@ -188,7 +188,7 @@ impl<'a> ColumnData<'a> {
         let ret = match ty {
             FixedLenType::Null => ColumnData::Bit(None),
             FixedLenType::Bit => ColumnData::Bit(Some(src.read_u8().await? != 0)),
-            FixedLenType::Int1 => ColumnData::I8(Some(src.read_i8().await?)),
+            FixedLenType::Int1 => ColumnData::U8(Some(src.read_u8().await?)),
             FixedLenType::Int2 => ColumnData::I16(Some(src.read_i16_le().await?)),
             FixedLenType::Int4 => ColumnData::I32(Some(src.read_i32_le().await?)),
             FixedLenType::Int8 => ColumnData::I64(Some(src.read_i64_le().await?)),
@@ -360,8 +360,8 @@ impl<'a> ColumnData<'a> {
         let recv_len = src.read_u8().await? as usize;
 
         let res = match recv_len {
-            0 => ColumnData::I8(None),
-            1 => ColumnData::I8(Some(src.read_i8().await?)),
+            0 => ColumnData::U8(None),
+            1 => ColumnData::U8(Some(src.read_u8().await?)),
             2 => ColumnData::I16(Some(src.read_i16_le().await?)),
             4 => ColumnData::I32(Some(src.read_i32_le().await?)),
             8 => ColumnData::I64(Some(src.read_i64_le().await?)),
@@ -656,11 +656,11 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.extend_from_slice(&header);
                 dst.put_u8(val as u8);
             }
-            ColumnData::I8(Some(val)) => {
+            ColumnData::U8(Some(val)) => {
                 let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
 
                 dst.extend_from_slice(&header);
-                dst.put_i8(val);
+                dst.put_u8(val);
             }
             ColumnData::I16(Some(val)) => {
                 let header = [&[VarLenType::Intn as u8, 2, 2][..]].concat();
