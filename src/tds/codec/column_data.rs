@@ -488,7 +488,7 @@ impl<'a> ColumnData<'a> {
         let ptr_len = src.read_u8().await? as usize;
 
         if ptr_len == 0 {
-            Ok(ColumnData::String(None))
+            Ok(ColumnData::Binary(None))
         } else {
             let _ = src.read_exact(&mut vec![0; ptr_len][0..ptr_len]).await?; // text ptr
 
