@@ -1156,158 +1156,190 @@ where
 }
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
-#[cfg(tests)]
-mod chrono {
-    #[test_on_runtimes]
-    async fn naive_small_date_time_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send,
-    {
-        use chrono::{NaiveDate, NaiveDateTime};
+#[test_on_runtimes]
+async fn naive_small_date_time_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::NaiveDate;
 
-        let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-        let table = random_table().await;
+    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let table = random_table().await;
 
-        conn.execute(
-            format!("CREATE TABLE ##{} (date smalldatetime)", table),
-            &[],
-        )
+    conn.execute(
+        format!("CREATE TABLE ##{} (date smalldatetime)", table),
+        &[],
+    )
+    .await?;
+
+    conn.execute(
+        format!("INSERT INTO ##{} (date) VALUES (@P1)", table),
+        &[&dt],
+    )
+    .await?
+    .total();
+
+    let row = conn
+        .query(format!("SELECT date FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn naive_date_time2_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::NaiveDate;
+
+    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let table = random_table().await;
+
+    conn.execute(format!("CREATE TABLE ##{} (date datetime2)", table), &[])
         .await?;
 
-        conn.execute(
-            format!("INSERT INTO ##{} (date) VALUES (@P1)", table),
-            &[&dt],
-        )
+    conn.execute(
+        format!("INSERT INTO ##{} (date) VALUES (@P1)", table),
+        &[&dt],
+    )
+    .await?
+    .total();
+
+    let row = conn
+        .query(format!("SELECT date FROM ##{}", table), &[])
         .await?
-        .total();
-
-        let row = conn
-            .query(format!("SELECT date FROM ##{}", table), &[])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
-
-        assert_eq!(Some(dt), row.get(0));
-        Ok(())
-    }
-
-    #[test_on_runtimes]
-    async fn naive_date_time2_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send,
-    {
-        use chrono::{NaiveDate, NaiveDateTime};
-
-        let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-        let table = random_table().await;
-
-        conn.execute(format!("CREATE TABLE ##{} (date datetime2)", table), &[])
-            .await?;
-
-        conn.execute(
-            format!("INSERT INTO ##{} (date) VALUES (@P1)", table),
-            &[&dt],
-        )
+        .into_row()
         .await?
-        .total();
+        .unwrap();
 
-        let row = conn
-            .query(format!("SELECT date FROM ##{}", table), &[])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
+    assert_eq!(Some(dt), row.get(0));
+    Ok(())
+}
 
-        assert_eq!(Some(dt), row.get(0));
-        Ok(())
-    }
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn datetime_as_datetime2_tds73<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let dt = chrono::DateTime::parse_from_rfc3339("2020-02-27T19:10:00Z").unwrap();
+    let table = random_table().await;
 
-    #[test_on_runtimes]
-    async fn naive_time<S>(mut conn: tiberius::Client<S>) -> Result<()>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send,
-    {
-        use chrono::NaiveTime;
+    conn.execute(format!("CREATE TABLE ##{} (date datetime2)", table), &[])
+        .await?;
 
-        let time = NaiveTime::from_hms(16, 20, 0);
+    conn.execute(
+        format!("INSERT INTO ##{} (date) VALUES (@P1)", table),
+        &[&dt],
+    )
+    .await?
+    .total();
 
-        let row = conn
-            .query("SELECT @P1", &[&time])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
+    let row = conn
+        .query(format!("SELECT date FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
-        assert_eq!(Some(time), row.get(0));
+    assert_eq!(Some(dt.naive_utc()), row.get(0));
+    Ok(())
+}
 
-        Ok(())
-    }
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn naive_time<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::NaiveTime;
 
-    #[test_on_runtimes]
-    async fn naive_date<S>(mut conn: tiberius::Client<S>) -> Result<()>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send,
-    {
-        use chrono::NaiveDate;
+    let time = NaiveTime::from_hms(16, 20, 0);
 
-        let date = NaiveDate::from_ymd(2020, 4, 20);
+    let row = conn
+        .query("SELECT @P1", &[&time])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
-        let row = conn
-            .query("SELECT @P1", &[&date])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
+    assert_eq!(Some(time), row.get(0));
 
-        assert_eq!(Some(date), row.get(0));
-        Ok(())
-    }
+    Ok(())
+}
 
-    #[test_on_runtimes]
-    async fn date_time_utc<S>(mut conn: tiberius::Client<S>) -> Result<()>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send,
-    {
-        use chrono::{offset::Utc, DateTime, NaiveDate};
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn naive_date<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::NaiveDate;
 
-        let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-        let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+    let date = NaiveDate::from_ymd(2020, 4, 20);
 
-        let row = conn
-            .query("SELECT @P1", &[&dt])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
+    let row = conn
+        .query("SELECT @P1", &[&date])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
-        assert_eq!(Some(dt), row.get(0));
+    assert_eq!(Some(date), row.get(0));
+    Ok(())
+}
 
-        Ok(())
-    }
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn date_time_utc<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::{offset::Utc, DateTime, NaiveDate};
 
-    #[test_on_runtimes]
-    async fn date_time_fixed<S>(mut conn: tiberius::Client<S>) -> Result<()>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send,
-    {
-        use chrono::{offset::FixedOffset, DateTime, NaiveDate};
+    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 
-        let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-        let fixed = FixedOffset::east(3600 * 3);
-        let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+    let row = conn
+        .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
 
-        let row = conn
-            .query("SELECT @P1", &[&dt])
-            .await?
-            .into_row()
-            .await?
-            .unwrap();
+    assert_eq!(Some(dt), row.get(0));
 
-        assert_eq!(Some(dt), row.get(0));
+    Ok(())
+}
 
-        Ok(())
-    }
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn date_time_fixed<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::{offset::FixedOffset, DateTime, NaiveDate};
+
+    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let fixed = FixedOffset::east(3600 * 3);
+    let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+
+    let row = conn
+        .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+
+    Ok(())
 }
 
 #[test_on_runtimes]
