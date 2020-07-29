@@ -244,23 +244,39 @@ impl<'a> ColumnData<'a> {
             #[cfg(feature = "tds73")]
             VarLenType::Timen => {
                 let rlen = src.read_u8().await?;
-                let time = Time::decode(src, len as usize, rlen as usize).await?;
 
-                ColumnData::Time(Some(time))
+                match rlen {
+                    0 => ColumnData::Time(None),
+                    _ => {
+                        let time = Time::decode(src, len as usize, rlen as usize).await?;
+                        ColumnData::Time(Some(time))
+                    }
+                }
             }
 
             #[cfg(feature = "tds73")]
             VarLenType::Datetime2 => {
-                let rlen = src.read_u8().await? - 3;
-                let dt = DateTime2::decode(src, len as usize, rlen as usize).await?;
-
-                ColumnData::DateTime2(Some(dt))
+                let rlen = src.read_u8().await?;
+                match rlen {
+                    0 => ColumnData::DateTime2(None),
+                    rlen => {
+                        let dt = DateTime2::decode(src, len as usize, rlen as usize - 3).await?;
+                        ColumnData::DateTime2(Some(dt))
+                    }
+                }
             }
 
             #[cfg(feature = "tds73")]
             VarLenType::DatetimeOffsetn => {
-                let dto = DateTimeOffset::decode(src, len as usize).await?;
-                ColumnData::DateTimeOffset(Some(dto))
+                let rlen = src.read_u8().await?;
+
+                match rlen {
+                    0 => ColumnData::DateTimeOffset(None),
+                    _ => {
+                        let dto = DateTimeOffset::decode(src, len, rlen - 5).await?;
+                        ColumnData::DateTimeOffset(Some(dto))
+                    }
+                }
             }
 
             VarLenType::BigBinary | VarLenType::BigVarBin => Self::decode_binary(src, len).await?,
