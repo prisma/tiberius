@@ -1,5 +1,14 @@
 # Changes
 
+## Version 0.4.8
+
+- BREAKING: `ColumnData::I8(i8)` is now `ColumnData::U8(u8)` due to misunderstanding how `tinyint` works. (#71)
+- Skip any received `done_rows` amounts and avoid creating extra resultsets (#67)
+- Actually run the chrono tests (#72)
+- Fix GUID byte ordering (#69)
+- Fix null time/datetime2/datetimeoffset handling (#73)
+- Null image data should be `Binary`, not `String`
+
 ## Version 0.4.7
 
 - Pass hostname to TLS handshake, allowing usage with AzureSQL using
