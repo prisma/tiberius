@@ -51,7 +51,7 @@ winauth = "0.0.4"
 [dependencies.tokio]
 version = "0.2"
 optional = true
-features = ["udp"]
+features = ["udp", "dns"]
 
 [dependencies.tokio-util]
 version = "0.3"
