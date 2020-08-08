@@ -69,6 +69,30 @@ where
 }
 
 #[test_on_runtimes]
+async fn transactions_300<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    for _ in 1..300 {
+
+        conn.simple_query("BEGIN TRAN").await?;
+
+        let row = conn
+            .query("SELECT @P1", &[&-4i32])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(-4i32), row.get(0));
+
+        conn.simple_query("COMMIT").await?;
+    }
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn multistatement_query_with_exec_proc<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
