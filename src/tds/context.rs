@@ -28,7 +28,7 @@ impl Context {
 
     pub fn next_packet_id(&mut self) -> u8 {
         let id = self.packet_id;
-        self.packet_id += 1;
+        self.packet_id = self.packet_id.wrapping_add(1);
         id
     }
 
