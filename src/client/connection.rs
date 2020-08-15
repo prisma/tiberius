@@ -13,7 +13,6 @@ use crate::{
     EncryptionLevel, SqlReadBytes,
 };
 use bytes::BytesMut;
-#[cfg(windows)]
 use codec::TokenSSPI;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
 use futures_codec::Framed;
@@ -23,6 +22,14 @@ use task::Poll;
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
+#[cfg(unix)]
+use libgssapi::{
+    name::Name,
+    credential::{Cred, CredUsage},
+    context::{CtxFlags, ClientCtx},
+    oid::{OidSet, GSS_NT_KRB5_PRINCIPAL, GSS_MECH_KRB5}
+};
+use std::ops::Deref;
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
@@ -55,15 +62,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
     pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>>
 where {
-        #[cfg(windows)]
         let context = {
             let mut context = Context::new();
             context.set_spn(config.get_host(), config.get_port());
             context
         };
-
-        #[cfg(not(windows))]
-        let context = { Context::new() };
 
         let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
 
@@ -95,7 +98,6 @@ where {
         TokenStream::new(self).flush_done().await
     }
 
-    #[cfg(windows)]
     /// Flush the incoming token stream until receiving `SSPI` token.
     async fn flush_sspi(&mut self) -> crate::Result<TokenSSPI> {
         TokenStream::new(self).flush_sspi().await
@@ -262,6 +264,48 @@ where {
                     None => unreachable!(),
                 }
             }
+            #[cfg(unix)]
+            AuthMethod::Integrated => {
+                let mut s = OidSet::new()?;
+                s.add(&GSS_MECH_KRB5)?;
+
+                let client_cred = Cred::acquire(
+                    None, None, CredUsage::Initiate, Some(&s)
+                )?;
+
+                let ctx = ClientCtx::new(
+                    client_cred,
+                    Name::new(self.context.spn().as_bytes(), Some(&GSS_NT_KRB5_PRINCIPAL))?,
+                    CtxFlags::GSS_C_MUTUAL_FLAG | CtxFlags::GSS_C_SEQUENCE_FLAG,
+                    None,
+                );
+
+                let init_token = ctx.step(None)?;
+
+                msg.integrated_security = Some(Vec::from(init_token.unwrap().deref()));
+
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), msg).await?;
+
+                self = self.post_login_encryption(encryption);
+
+                let auth_bytes = self.flush_sspi().await?;
+
+                let next_token = match ctx.step(Some(auth_bytes.as_ref()))? {
+                    Some(response) => {
+                        TokenSSPI::new(Vec::from(response.deref()))
+                    },
+                    None => {
+                        TokenSSPI::new(Vec::new())
+                    }
+                };
+
+                let id = self.context.next_packet_id();
+                let header = PacketHeader::login(id);
+
+                self.send(header, next_token).await?;
+
+            },
             #[cfg(windows)]
             AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();

@@ -40,6 +40,10 @@ pub enum Error {
     #[error("Error forming TLS connection: {}", _0)]
     /// An error in the TLS handshake.
     Tls(String),
+    #[cfg(any(unix, doc))]
+    /// An error from the GSSAPI library.
+    #[error("GSSAPI Error: {}", _0)]
+    Gssapi(String)
 }
 
 impl From<uuid::Error> for Error {
@@ -91,5 +95,12 @@ impl From<std::string::FromUtf8Error> for Error {
 impl From<std::string::FromUtf16Error> for Error {
     fn from(_err: std::string::FromUtf16Error) -> Error {
         Error::Utf16
+    }
+}
+
+#[cfg(unix)]
+impl From<libgssapi::error::Error> for Error {
+    fn from(err: libgssapi::error::Error) -> Error {
+        Error::Gssapi(format!("{}", err))
     }
 }

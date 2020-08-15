@@ -1,4 +1,3 @@
-#[cfg(windows)]
 use crate::tds::codec::TokenSSPI;
 use crate::{
     client::Connection,
@@ -25,7 +24,6 @@ pub enum ReceivedToken {
     EnvChange(TokenEnvChange),
     Info(TokenInfo),
     LoginAck(TokenLoginAck),
-    #[cfg(windows)]
     SSPI(TokenSSPI),
 }
 
@@ -53,7 +51,6 @@ where
         }
     }
 
-    #[cfg(windows)]
     pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSSPI> {
         let mut stream = self.try_unfold();
 
@@ -163,7 +160,6 @@ where
         Ok(ReceivedToken::LoginAck(ack))
     }
 
-    #[cfg(windows)]
     async fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
         let sspi = TokenSSPI::decode_async(self.conn).await?;
         event!(Level::TRACE, "SSPI response");
@@ -195,7 +191,6 @@ where
                 TokenType::EnvChange => this.get_env_change().await?,
                 TokenType::Info => this.get_info().await?,
                 TokenType::LoginAck => this.get_login_ack().await?,
-                #[cfg(windows)]
                 TokenType::SSPI => this.get_sspi().await?,
                 _ => panic!("Token {:?} unimplemented!", ty),
             };

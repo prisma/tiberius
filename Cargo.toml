@@ -48,6 +48,9 @@ async-trait = "0.1"
 [target.'cfg(windows)'.dependencies]
 winauth = "0.0.4"
 
+[target.'cfg(unix)'.dependencies]
+libgssapi = "0.4"
+
 [dependencies.tokio]
 version = "0.2"
 optional = true
