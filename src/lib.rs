@@ -66,7 +66,7 @@
 //! use tokio::net::TcpStream;
 //! use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 //!
-//! #[async_std::main]
+//! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let mut config = Config::new();
 //!     

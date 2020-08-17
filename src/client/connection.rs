@@ -319,7 +319,6 @@ where {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            //let mut builder = native_tls::TlsConnector::builder();
             let mut builder = async_native_tls::TlsConnector::new();
 
             if trust_cert {
