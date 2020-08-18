@@ -92,10 +92,9 @@
 //! Tiberius supports different [ways of authentication] to the SQL Server:
 //!
 //! - SQL Server authentication uses the facilities of the database to
-//! authenticate the user. This is also the only cross-platform method that
-//! works outside of Windows platforms.
+//! authenticate the user.
 //! - Authentication with Windows credentials
-//! - Authentication with currently logged in Windows user
+//! - Authentication with currently logged in Windows user / Kerberos credentials
 //!
 //! # TLS
 //!

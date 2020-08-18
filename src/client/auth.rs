@@ -59,7 +59,7 @@ pub enum AuthMethod {
     /// platforms.
     WindowsIntegrated,
     #[cfg(any(unix, doc))]
-    /// Authenticate as the currently logged in user. Only available on Unix platforms.
+    /// Authenticate as the currently logged in (Kerberos) user. Only available on Unix platforms.
     Integrated,
     #[doc(hidden)]
     None,

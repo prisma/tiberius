@@ -132,7 +132,7 @@ impl Config {
     /// |Parameter|Allowed values|Description|
     /// |--------|--------|--------|
     /// |`server`|`<string>`|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance`|
-    /// |`IntegratedSecurity`|`true`,`false`,`yes`,`no`|Toggle between Windows authentication and SQL authentication.|
+    /// |`IntegratedSecurity`|`true`,`false`,`yes`,`no`|Toggle between Windows/Kerberos authentication and SQL authentication.|
     /// |`uid`,`username`,`user`,`user id`|`<string>`|The SQL Server login account.|
     /// |`password`,`pwd`|`<string>`|The password for the SQL Server account logging on.|
     /// |`database`|`<string>`|The name of the database.|
@@ -281,6 +281,8 @@ impl AdoNetString {
                 (None, None) => Ok(AuthMethod::WindowsIntegrated),
                 _ => Ok(AuthMethod::windows(user.unwrap_or(""), pw.unwrap_or(""))),
             },
+            #[cfg(unix)]
+            Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => Ok(AuthMethod::Integrated),
             _ => Ok(AuthMethod::sql_server(user.unwrap_or(""), pw.unwrap_or(""))),
         }
     }
