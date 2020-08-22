@@ -293,9 +293,11 @@ where {
 
                 let next_token = match ctx.step(Some(auth_bytes.as_ref()))? {
                     Some(response) => {
+                        event!(Level::TRACE, response_len = response.len());
                         TokenSSPI::new(Vec::from(response.deref()))
                     },
                     None => {
+                        event!(Level::TRACE, response_len = 0);
                         TokenSSPI::new(Vec::new())
                     }
                 };
