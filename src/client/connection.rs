@@ -1,4 +1,4 @@
-#[cfg(feature = "tls")]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 use crate::client::tls::TlsPreloginWrapper;
 use crate::{
     client::{tls::MaybeTlsStream, AuthMethod, Config},
@@ -366,6 +366,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
             let mut builder = async_native_tls::TlsConnector::new();
 
+
             if trust_cert {
                 event!(
                     Level::WARN,
@@ -392,7 +393,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             stream.get_mut().handshake_complete();
             event!(Level::INFO, "TLS handshake successful");
 
-            let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
+            let transport = Framed::new(MaybeTlsStream::NativeTls(stream), PacketCodec);
 
             Ok(Self {
                 transport,
@@ -411,7 +412,70 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     /// Implements the TLS handshake with the SQL Server.
-    #[cfg(not(feature = "tls"))]
+    #[cfg(feature = "rustls")]
+    async fn tls_handshake(
+        self,
+        config: &Config,
+        encryption: EncryptionLevel,
+        trust_cert: bool,
+    ) -> crate::Result<Self> {
+        if encryption != EncryptionLevel::NotSupported {
+            event!(Level::INFO, "Performing a TLS handshake");
+
+	    let mut builder = rustls_crate::ClientConfig::new();
+            if trust_cert {
+		struct ExtremelyBadVerifier();
+		impl rustls_crate::ServerCertVerifier for ExtremelyBadVerifier {
+			fn verify_server_cert(
+			    &self,
+			    _: &rustls_crate::RootCertStore,
+			    _: &[rustls_crate::Certificate],
+			    _: webpki::DNSNameRef<'_>,
+			    _: &[u8]
+			) -> Result<rustls_crate::ServerCertVerified, rustls_crate::TLSError> {
+				Ok(rustls_crate::ServerCertVerified::assertion())
+			}
+		}
+		let bad_verifier = ExtremelyBadVerifier();
+		builder.dangerous()
+			.set_certificate_verifier(std::sync::Arc::new(bad_verifier));
+	    };
+
+            let Self {
+                transport, context, ..
+            } = self;
+            let mut stream = match transport.release().0 {
+                MaybeTlsStream::Raw(tcp) => {
+                    async_tls::TlsConnector::from(builder)
+                        .connect(config.get_host(), TlsPreloginWrapper::new(tcp))
+                        .await?
+                }
+                _ => unreachable!(),
+            };
+
+            stream.get_mut().handshake_complete();
+            event!(Level::INFO, "TLS handshake successful");
+
+            let transport = Framed::new(MaybeTlsStream::Rustls(stream), PacketCodec);
+
+            Ok(Self {
+                transport,
+                context,
+                flushed: false,
+                buf: BytesMut::new(),
+            })
+        } else {
+            event!(
+                Level::WARN,
+                "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
+            );
+
+            Ok(self)
+        }
+    }
+
+    /// Implements the TLS handshake with the SQL Server.
+    #[cfg(not(any(feature = "tls", feature = "rustls")))]
     async fn tls_handshake(self, _: &Config, _: EncryptionLevel, _: bool) -> crate::Result<Self> {
         Ok(self)
     }

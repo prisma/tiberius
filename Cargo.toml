@@ -87,6 +87,22 @@ version = "0.3"
 optional = true
 version = "0.3"
 
+[dependencies.async-tls]
+optional = true
+version = "0.9"
+default-features = false
+features = ["client"]
+
+[dependencies.rustls-crate]
+optional = true
+version = "0.18"
+package = "rustls"
+features = ["dangerous_configuration"]
+
+[dependencies.webpki]
+optional = true
+version = "0.21"
+
 [dependencies.tracing]
 features = ["log"]
 version = "0.1"
@@ -142,6 +158,7 @@ all = [
 ]
 default = ["tls", "tds73"]
 tls = ["async-native-tls"]
+rustls = ["async-tls", "rustls-crate", "webpki"]
 tds73 = []
 docs = []
 sql-browser-async-std = ["async-std"]
