@@ -13,6 +13,7 @@ use crate::{
     EncryptionLevel, SqlReadBytes,
 };
 use bytes::BytesMut;
+#[cfg(any(windows, feature = "integrated-auth-gssapi"))]
 use codec::TokenSSPI;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
 use futures_codec::Framed;
@@ -22,13 +23,14 @@ use task::Poll;
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
-#[cfg(unix)]
+#[cfg(feature = "integrated-auth-gssapi")]
 use libgssapi::{
     name::Name,
     credential::{Cred, CredUsage},
     context::{CtxFlags, ClientCtx},
     oid::{OidSet, GSS_NT_KRB5_PRINCIPAL, GSS_MECH_KRB5}
 };
+#[cfg(feature = "integrated-auth-gssapi")]
 use std::ops::Deref;
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
@@ -98,6 +100,7 @@ where {
         TokenStream::new(self).flush_done().await
     }
 
+    #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
     /// Flush the incoming token stream until receiving `SSPI` token.
     async fn flush_sspi(&mut self) -> crate::Result<TokenSSPI> {
         TokenStream::new(self).flush_sspi().await
@@ -264,7 +267,7 @@ where {
                     None => unreachable!(),
                 }
             }
-            #[cfg(unix)]
+            #[cfg(feature = "integrated-auth-gssapi")]
             AuthMethod::Integrated => {
                 let mut s = OidSet::new()?;
                 s.add(&GSS_MECH_KRB5)?;

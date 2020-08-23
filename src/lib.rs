@@ -95,6 +95,8 @@
 //! authenticate the user.
 //! - Authentication with Windows credentials
 //! - Authentication with currently logged in Windows user / Kerberos credentials
+//! - Authentication with currently logged in Kerberos credentials via GSSAPI (feature =
+//! `integrated-auth-gssapi`)
 //!
 //! # TLS
 //!

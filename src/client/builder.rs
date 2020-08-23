@@ -281,7 +281,7 @@ impl AdoNetString {
                 (None, None) => Ok(AuthMethod::WindowsIntegrated),
                 _ => Ok(AuthMethod::windows(user.unwrap_or(""), pw.unwrap_or(""))),
             },
-            #[cfg(unix)]
+            #[cfg(feature = "integrated-auth-gssapi")]
             Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => Ok(AuthMethod::Integrated),
             _ => Ok(AuthMethod::sql_server(user.unwrap_or(""), pw.unwrap_or(""))),
         }

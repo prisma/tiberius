@@ -58,8 +58,9 @@ pub enum AuthMethod {
     /// Authenticate as the currently logged in user. Only available on Windows
     /// platforms.
     WindowsIntegrated,
-    #[cfg(any(unix, doc))]
-    /// Authenticate as the currently logged in (Kerberos) user. Only available on Unix platforms.
+    #[cfg(any(feature = "integrated-auth-gssapi", doc))]
+    /// Authenticate as the currently logged in (Kerberos) user. (Enable feature
+    /// `integrated-auth-gssapi`) to enable.
     Integrated,
     #[doc(hidden)]
     None,

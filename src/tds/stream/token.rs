@@ -51,6 +51,7 @@ where
         }
     }
 
+    #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
     pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSSPI> {
         let mut stream = self.try_unfold();
 

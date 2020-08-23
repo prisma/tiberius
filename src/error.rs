@@ -40,7 +40,7 @@ pub enum Error {
     #[error("Error forming TLS connection: {}", _0)]
     /// An error in the TLS handshake.
     Tls(String),
-    #[cfg(any(unix, doc))]
+    #[cfg(any(feature = "integrated-auth-gssapi", doc))]
     /// An error from the GSSAPI library.
     #[error("GSSAPI Error: {}", _0)]
     Gssapi(String)
@@ -98,7 +98,7 @@ impl From<std::string::FromUtf16Error> for Error {
     }
 }
 
-#[cfg(unix)]
+#[cfg(feature = "integrated-auth-gssapi")]
 impl From<libgssapi::error::Error> for Error {
     fn from(err: libgssapi::error::Error) -> Error {
         Error::Gssapi(format!("{}", err))
