@@ -17,21 +17,21 @@ use bytes::BytesMut;
 use codec::TokenSSPI;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
 use futures_codec::Framed;
+#[cfg(feature = "integrated-auth-gssapi")]
+use libgssapi::{
+    context::{ClientCtx, CtxFlags},
+    credential::{Cred, CredUsage},
+    name::Name,
+    oid::{OidSet, GSS_MECH_KRB5, GSS_NT_KRB5_PRINCIPAL},
+};
 use pretty_hex::*;
+#[cfg(feature = "integrated-auth-gssapi")]
+use std::ops::Deref;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
-#[cfg(feature = "integrated-auth-gssapi")]
-use libgssapi::{
-    name::Name,
-    credential::{Cred, CredUsage},
-    context::{CtxFlags, ClientCtx},
-    oid::{OidSet, GSS_NT_KRB5_PRINCIPAL, GSS_MECH_KRB5}
-};
-#[cfg(feature = "integrated-auth-gssapi")]
-use std::ops::Deref;
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
@@ -240,7 +240,7 @@ where {
 
         match auth {
             #[cfg(windows)]
-            AuthMethod::WindowsIntegrated => {
+            AuthMethod::Integrated => {
                 let mut client = NtlmSspiBuilder::new()
                     .target_spn(self.context.spn())
                     .build()?;
@@ -267,14 +267,12 @@ where {
                     None => unreachable!(),
                 }
             }
-            #[cfg(feature = "integrated-auth-gssapi")]
+            #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
             AuthMethod::Integrated => {
                 let mut s = OidSet::new()?;
                 s.add(&GSS_MECH_KRB5)?;
 
-                let client_cred = Cred::acquire(
-                    None, None, CredUsage::Initiate, Some(&s)
-                )?;
+                let client_cred = Cred::acquire(None, None, CredUsage::Initiate, Some(&s))?;
 
                 let ctx = ClientCtx::new(
                     client_cred,
@@ -298,7 +296,7 @@ where {
                     Some(response) => {
                         event!(Level::TRACE, response_len = response.len());
                         TokenSSPI::new(Vec::from(response.deref()))
-                    },
+                    }
                     None => {
                         event!(Level::TRACE, response_len = 0);
                         TokenSSPI::new(Vec::new())
@@ -309,8 +307,7 @@ where {
                 let header = PacketHeader::login(id);
 
                 self.send(header, next_token).await?;
-
-            },
+            }
             #[cfg(windows)]
             AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();
