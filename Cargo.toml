@@ -113,7 +113,7 @@ anyhow = "1"
 env_logger = "0.7"
 
 [package.metadata.docs.rs]
-features = ["tls", "chrono", "tds73", "sql-browser-async-std", "sql-browser-tokio", "integrated-auth-gssapi"]
+features = ["tls", "chrono", "tds73", "sql-browser-async-std", "sql-browser-tokio"]
 
 [features]
 default = ["tls", "tds73"]

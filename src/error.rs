@@ -43,7 +43,7 @@ pub enum Error {
     #[cfg(any(feature = "integrated-auth-gssapi", doc))]
     /// An error from the GSSAPI library.
     #[error("GSSAPI Error: {}", _0)]
-    Gssapi(String)
+    Gssapi(String),
 }
 
 impl From<uuid::Error> for Error {

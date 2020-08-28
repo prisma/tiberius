@@ -93,10 +93,10 @@
 //!
 //! - SQL Server authentication uses the facilities of the database to
 //! authenticate the user.
-//! - Authentication with Windows credentials
-//! - Authentication with currently logged in Windows user / Kerberos credentials
-//! - Authentication with currently logged in Kerberos credentials via GSSAPI (feature =
-//! `integrated-auth-gssapi`)
+//! - On Windows, you can authenticate using the currently logged in user or
+//! specified Windows credentials.
+//! - If enabling the `integrated-auth-gssapi` feature, it is possible to login
+//! with the currently active Kerberos credentials.
 //!
 //! # TLS
 //!

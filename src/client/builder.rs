@@ -278,11 +278,13 @@ impl AdoNetString {
             #[cfg(windows)]
             Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => match (user, pw)
             {
-                (None, None) => Ok(AuthMethod::WindowsIntegrated),
+                (None, None) => Ok(AuthMethod::Integrated),
                 _ => Ok(AuthMethod::windows(user.unwrap_or(""), pw.unwrap_or(""))),
             },
             #[cfg(feature = "integrated-auth-gssapi")]
-            Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => Ok(AuthMethod::Integrated),
+            Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => {
+                Ok(AuthMethod::Integrated)
+            }
             _ => Ok(AuthMethod::sql_server(user.unwrap_or(""), pw.unwrap_or(""))),
         }
     }
@@ -482,7 +484,18 @@ mod tests {
         let test_str = "IntegratedSecurity=SSPI";
         let ado = AdoNetString::parse(test_str)?;
 
-        assert_eq!(AuthMethod::WindowsIntegrated, ado.authentication()?);
+        assert_eq!(AuthMethod::Integrated, ado.authentication()?);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(all(feature = "integrated-auth-gssapi", unix))]
+    fn parsing_sspi_authentication() -> crate::Result<()> {
+        let test_str = "IntegratedSecurity=true";
+        let ado = AdoNetString::parse(test_str)?;
+
+        assert_eq!(AuthMethod::Integrated, ado.authentication()?);
 
         Ok(())
     }
