@@ -1,5 +1,13 @@
 # Changes
 
+## Version 0.4.9
+
+- BREAKING: `AuthMethod::WindowsIntegrated` renamed to `AuthMethod::Integrated`.
+- Use GSSAPI for IntegratedSecurity on Unix platforms
+- Fix module docs for examples
+- Make `packet_id` wrapping explicit
+- Add DNS feature to Tokio
+
 ## Version 0.4.8
 
 - BREAKING: `ColumnData::I8(i8)` is now `ColumnData::U8(u8)` due to misunderstanding how `tinyint` works. (#71)
