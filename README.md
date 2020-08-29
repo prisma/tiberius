@@ -37,6 +37,7 @@ things:
 | `rust_decimal` | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
 | `sql-browser-async-std` | SQL Browser implementation for the `TcpStream` of async-std.                  | `disabled` |
 | `sql-browser-tokio`     | SQL Browser implementation for the `TcpStream` of Tokio.                      | `disabled` |
+| `integrated-auth-gssapi`     | Support for using Integrated Auth via GSSAPI                            | `disabled` |
 
 ### Supported protocols
 
@@ -76,6 +77,17 @@ tiberius = { version = "0.X", default-features=false, features=["chrono"] }
 ```
 
 **This will disable encryption for your ENTIRE crate**  
+
+### Integrated Authentication (TrustedConnection) on \*nix
+
+With the `integrated-auth-gssapi` feature enabled, the crate requires the GSSAPI/Kerberos libraries/headers installed:
+  * [CentOS](https://pkgs.org/download/krb5-devel)
+  * [Arch](https://www.archlinux.org/packages/core/x86_64/krb5/)
+  * [Debian](https://tracker.debian.org/pkg/krb5) (you need the -dev packages to build)
+  * [Ubuntu](https://packages.ubuntu.com/bionic-updates/libkrb5-dev)
+  * [Mac - Homebrew](https://formulae.brew.sh/formula/krb5)
+
+Additionally, your runtime system will need to be trusted by and configured for the Active Directory domain your SQL Server is part of. In particular, you'll need to be able to get a valid TGT for your identity, via `kinit` or a keytab. This setup varies by environment and OS, but your friendly network/system administrator should be able to help figure out the specifics.
 
 ## Security
 

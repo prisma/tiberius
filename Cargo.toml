@@ -48,6 +48,9 @@ async-trait = "0.1"
 [target.'cfg(windows)'.dependencies]
 winauth = "0.0.4"
 
+[target.'cfg(unix)'.dependencies]
+libgssapi = { version = "0.4", optional = true }
+
 [dependencies.tokio]
 version = "0.2"
 optional = true
@@ -118,3 +121,4 @@ tls = ["async-native-tls"]
 tds73 = []
 sql-browser-async-std = ["async-std"]
 sql-browser-tokio = ["tokio", "tokio-util"]
+integrated-auth-gssapi = ["libgssapi"]
