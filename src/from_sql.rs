@@ -59,9 +59,6 @@ where
 
 from_sql!(bool: ColumnData::Bit(val) => (*val, val));
 from_sql!(u8: ColumnData::U8(val) => (*val, val));
-from_sql!(i16: ColumnData::I16(val) => (*val, val));
-// from_sql!(i32: ColumnData::I32(val) => (*val, val));
-from_sql!(i64: ColumnData::I64(val) => (*val, val));
 from_sql!(f32: ColumnData::F32(val) => (*val, val));
 from_sql!(f64: ColumnData::F64(val) => (*val, val));
 from_sql!(Uuid: ColumnData::Guid(val) => (*val, val));
@@ -85,6 +82,52 @@ impl crate::FromSqlOwned for i32 {
             ColumnData::I32(val) => Ok(val),
             v => Err(crate::Error::Conversion(
                 format!("cannot interpret {:?} as i32 value", v).into(),
+            )),
+        }
+    }
+}
+
+impl<'a> crate::FromSql<'a> for i16 {
+    fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
+        match value {
+            ColumnData::U8(None) => Ok(None),
+            ColumnData::I16(val) => Ok(*val),
+            v => Err(crate::Error::Conversion(
+                format!("cannot interpret {:?} as i16 value", v).into(),
+            )),
+        }
+    }
+}
+impl crate::FromSqlOwned for i16 {
+    fn from_sql_owned(value: ColumnData<'static>) -> crate::Result<Option<Self>> {
+        match value {
+            ColumnData::U8(None) => Ok(None),
+            ColumnData::I16(val) => Ok(val),
+            v => Err(crate::Error::Conversion(
+                format!("cannot interpret {:?} as i16 value", v).into(),
+            )),
+        }
+    }
+}
+
+impl<'a> crate::FromSql<'a> for i64 {
+    fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
+        match value {
+            ColumnData::U8(None) => Ok(None),
+            ColumnData::I64(val) => Ok(*val),
+            v => Err(crate::Error::Conversion(
+                format!("cannot interpret {:?} as i64 value", v).into(),
+            )),
+        }
+    }
+}
+impl crate::FromSqlOwned for i64 {
+    fn from_sql_owned(value: ColumnData<'static>) -> crate::Result<Option<Self>> {
+        match value {
+            ColumnData::U8(None) => Ok(None),
+            ColumnData::I64(val) => Ok(val),
+            v => Err(crate::Error::Conversion(
+                format!("cannot interpret {:?} as i64 value", v).into(),
             )),
         }
     }
