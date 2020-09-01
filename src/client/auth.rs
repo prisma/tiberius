@@ -54,10 +54,11 @@ pub enum AuthMethod {
     /// Authenticate with Windows credentials. Only available on Windows
     /// platforms.
     Windows(WindowsAuth),
-    #[cfg(any(windows, doc))]
-    /// Authenticate as the currently logged in user. Only available on Windows
-    /// platforms.
-    WindowsIntegrated,
+    #[cfg(any(windows, all(unix, feature = "integrated-auth-gssapi"), doc))]
+    /// Authenticate as the currently logged in user. On Windows uses SSPI and
+    /// Kerberos on Unix platforms.  On Unix platforms the
+    /// `integrated-auth-gssapi` feature needs to be enabled.
+    Integrated,
     #[doc(hidden)]
     None,
 }

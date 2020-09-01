@@ -132,7 +132,7 @@ impl Config {
     /// |Parameter|Allowed values|Description|
     /// |--------|--------|--------|
     /// |`server`|`<string>`|The name or network address of the instance of SQL Server to which to connect. The port number can be specified after the server name. The correct form of this parameter is either `tcp:host,port` or `tcp:host\\instance`|
-    /// |`IntegratedSecurity`|`true`,`false`,`yes`,`no`|Toggle between Windows authentication and SQL authentication.|
+    /// |`IntegratedSecurity`|`true`,`false`,`yes`,`no`|Toggle between Windows/Kerberos authentication and SQL authentication.|
     /// |`uid`,`username`,`user`,`user id`|`<string>`|The SQL Server login account.|
     /// |`password`,`pwd`|`<string>`|The password for the SQL Server account logging on.|
     /// |`database`|`<string>`|The name of the database.|
@@ -278,9 +278,13 @@ impl AdoNetString {
             #[cfg(windows)]
             Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => match (user, pw)
             {
-                (None, None) => Ok(AuthMethod::WindowsIntegrated),
+                (None, None) => Ok(AuthMethod::Integrated),
                 _ => Ok(AuthMethod::windows(user.unwrap_or(""), pw.unwrap_or(""))),
             },
+            #[cfg(feature = "integrated-auth-gssapi")]
+            Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => {
+                Ok(AuthMethod::Integrated)
+            }
             _ => Ok(AuthMethod::sql_server(user.unwrap_or(""), pw.unwrap_or(""))),
         }
     }
@@ -480,7 +484,18 @@ mod tests {
         let test_str = "IntegratedSecurity=SSPI";
         let ado = AdoNetString::parse(test_str)?;
 
-        assert_eq!(AuthMethod::WindowsIntegrated, ado.authentication()?);
+        assert_eq!(AuthMethod::Integrated, ado.authentication()?);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(all(feature = "integrated-auth-gssapi", unix))]
+    fn parsing_sspi_authentication() -> crate::Result<()> {
+        let test_str = "IntegratedSecurity=true";
+        let ado = AdoNetString::parse(test_str)?;
+
+        assert_eq!(AuthMethod::Integrated, ado.authentication()?);
 
         Ok(())
     }
