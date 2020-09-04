@@ -571,6 +571,87 @@ where
 }
 
 #[test_on_runtimes]
+async fn read_nullable_i16<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!("CREATE TABLE ##{} (a smallint null)", table))
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute(format!("INSERT INTO ##{} (a) values (null)", table), &[])
+        .await?;
+
+    let row = conn
+        .query(format!("SELECT a FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Option::<i16>::None, row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn read_nullable_i32<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!("CREATE TABLE ##{} (a int null)", table))
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute(format!("INSERT INTO ##{} (a) values (null)", table), &[])
+        .await?;
+
+    let row = conn
+        .query(format!("SELECT a FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Option::<i32>::None, row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn read_nullable_i64<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!("CREATE TABLE ##{} (a bigint null)", table))
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute(format!("INSERT INTO ##{} (a) values (null)", table), &[])
+        .await?;
+
+    let row = conn
+        .query(format!("SELECT a FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Option::<i64>::None, row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn short_strings<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
