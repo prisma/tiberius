@@ -2,6 +2,7 @@
 
 MSSQL_SA_PASSWORD="<YourStrong@Passw0rd>"
 
+docker pull prismagraphql/build:test
 docker network create test-net
 
 docker run --name test-mssql --network test-net \
