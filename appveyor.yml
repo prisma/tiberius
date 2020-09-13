@@ -23,3 +23,4 @@ test_script:
   - cargo test --target %TARGET% --all
   - cargo test --target %TARGET% --test named-instance-async --features sql-browser-async-std
   - cargo test --target %TARGET% --test named-instance-tokio --features sql-browser-tokio
+  - cargo test --target %TARGET% --all --features rustls,tds73 --no-default-features
