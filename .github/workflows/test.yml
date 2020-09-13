@@ -17,7 +17,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo- # ${{ hashFiles('**/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
     - name: Check formatting
       run: cargo fmt --all -- --check
   native_tls_tests:
@@ -30,7 +30,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo- # ${{ hashFiles('**/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
     - name: Start server
       run: docker run --rm -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=12345Abcde' --name 'mssqlserver' -d -p 1433:1433 mcr.microsoft.com/mssql/server
     - name: Run tests
@@ -45,7 +45,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo- # ${{ hashFiles('**/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
     - name: Start server
       run: docker run --rm -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=12345Abcde' --name 'mssqlserver' -d -p 1433:1433 mcr.microsoft.com/mssql/server
     - name: Run tests
