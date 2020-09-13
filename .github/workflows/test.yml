@@ -28,5 +28,7 @@ jobs:
       run: docker run --rm -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=12345Abcde' --name 'mssqlserver' -d -p 1433:1433 mcr.microsoft.com/mssql/server
     - name: Build
       run: cargo build --verbose
+    - name: Check formatting
+      run: cargo fmt --all -- --check
     - name: Run tests
       run: cargo test --verbose
