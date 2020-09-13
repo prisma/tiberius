@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 env:
   CARGO_TERM_COLOR: always
-  TIBERIUS_TEST_CONNECTION_STRING: Server=tcp:localhost,1433;User=SA;Password=12345Abcde;Encrypt=true
+  TIBERIUS_TEST_CONNECTION_STRING: Server=tcp:localhost,1433;User=SA;Password=12345Abcde;Encrypt=true;TrustServerCertificate=true
 
 jobs:
   build:
