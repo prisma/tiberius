@@ -366,7 +366,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
             let mut builder = async_native_tls::TlsConnector::new();
 
-
             if trust_cert {
                 event!(
                     Level::WARN,
@@ -422,24 +421,26 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-	    let mut builder = rustls_crate::ClientConfig::new();
+            let mut builder = rustls_crate::ClientConfig::new();
             if trust_cert {
-		struct ExtremelyBadVerifier();
-		impl rustls_crate::ServerCertVerifier for ExtremelyBadVerifier {
-			fn verify_server_cert(
-			    &self,
-			    _: &rustls_crate::RootCertStore,
-			    _: &[rustls_crate::Certificate],
-			    _: webpki::DNSNameRef<'_>,
-			    _: &[u8]
-			) -> Result<rustls_crate::ServerCertVerified, rustls_crate::TLSError> {
-				Ok(rustls_crate::ServerCertVerified::assertion())
-			}
-		}
-		let bad_verifier = ExtremelyBadVerifier();
-		builder.dangerous()
-			.set_certificate_verifier(std::sync::Arc::new(bad_verifier));
-	    };
+                struct ExtremelyBadVerifier();
+                impl rustls_crate::ServerCertVerifier for ExtremelyBadVerifier {
+                    fn verify_server_cert(
+                        &self,
+                        _: &rustls_crate::RootCertStore,
+                        _: &[rustls_crate::Certificate],
+                        _: webpki::DNSNameRef<'_>,
+                        _: &[u8],
+                    ) -> Result<rustls_crate::ServerCertVerified, rustls_crate::TLSError>
+                    {
+                        Ok(rustls_crate::ServerCertVerified::assertion())
+                    }
+                }
+                let bad_verifier = ExtremelyBadVerifier();
+                builder
+                    .dangerous()
+                    .set_certificate_verifier(std::sync::Arc::new(bad_verifier));
+            };
 
             let Self {
                 transport, context, ..

@@ -1,19 +1,19 @@
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 use crate::tds::codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType};
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 use crate::tds::HEADER_BYTES;
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 use bytes::BytesMut;
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 use futures::ready;
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 use std::cmp;
 use std::{
     io,
     pin::Pin,
     task::{self, Poll},
 };
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 use tracing::{event, Level};
 
 #[cfg(all(feature = "tls", feature = "rustls"))]
@@ -35,9 +35,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
     pub fn into_inner(self) -> S {
         match self {
             Self::Raw(s) => s,
-	    #[cfg(feature = "tls")]
+            #[cfg(feature = "tls")]
             Self::NativeTls(mut tls) => tls.get_mut().stream.take().unwrap(),
-	    #[cfg(feature = "rustls")]
+            #[cfg(feature = "rustls")]
             Self::Rustls(mut tls) => tls.get_mut().stream.take().unwrap(),
         }
     }
@@ -101,7 +101,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
 ///
 /// What it does is it interferes on handshake for TDS packet handling,
 /// and when complete, just passes the calls to the underlying connection.
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 pub(crate) struct TlsPreloginWrapper<S> {
     stream: Option<S>,
     pending_handshake: bool,
@@ -114,7 +114,7 @@ pub(crate) struct TlsPreloginWrapper<S> {
     header_written: bool,
 }
 
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 impl<S> TlsPreloginWrapper<S> {
     pub fn new(stream: S) -> Self {
         TlsPreloginWrapper {
@@ -134,7 +134,7 @@ impl<S> TlsPreloginWrapper<S> {
     }
 }
 
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -197,7 +197,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
     }
 }
 
-#[cfg(any(feature = "tls", feature="rustls"))]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,
