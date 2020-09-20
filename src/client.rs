@@ -52,7 +52,76 @@ pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
     connection: Connection<S>,
 }
 
+// Implementation from https://github.com/http-rs/tide/blob/main/src/endpoint.rs
+//#[async_trait::async_trait]
+//pub trait Transaction<
+//    'a,
+//    T: Clone + Send + Sync + 'static,
+//    S: AsyncRead + AsyncWrite + Unpin + Send + 'a,
+//>: Send + Sync + 'static
+//{
+//    async fn call(&'a mut self, client: &'a mut Client<S>) -> crate::Result<T>;
+//}
+//
+//#[async_trait::async_trait]
+//impl<'a, T, F, Fut, S> Transaction<'a, T, S> for F
+//where
+//    T: Clone + Send + Sync + 'static,
+//    F: Send + Sync + 'static + FnMut(&'a mut Client<S>) -> Fut,
+//    Fut: futures::Future<Output = crate::Result<T>> + Send + 'a,
+//    S: AsyncRead + AsyncWrite + Unpin + Send + 'a,
+//{
+//    async fn call(&'a mut self, client: &'a mut Client<S>) -> crate::Result<T> {
+//        let res = self(client).await?;
+//        Ok(res)
+//    }
+//}
+//
+//impl<'a, S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
+//
+//    // TODO: more docs!
+//    /// Run a transaction
+//    pub async fn transaction<T>(&'a mut self, mut task: impl Transaction<'a, T, S>) -> crate::Result<T>
+//    where
+//        T: Clone + Send + Sync + 'static,
+//    {
+//        let _ = self.execute("BEGIN TRANSACTION", &[]).await?;
+//        let task_res = task.call(self).await;
+//        let tr2 = task_res.clone();
+//        drop(task_res);
+//        if tr2.is_ok() {
+//            let _ = self.execute("COMMIT TRANSACTION", &[]).await?;
+//        } else {
+//            let _ = self.execute("ROLLBACK TRANSACTION", &[]).await?;
+//        }
+//        tr2
+//    }
+//}
+//
+
+pub async fn transaction<S, F>(mut client: Client<S>, mut task: F) -> (Client<S>, crate::Result<()>)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+    F: for<'a> FnOnce(&'a mut Client<S>) -> futures::Future<Output=crate::Result<()>>,
+{
+    if let Err(e) = client.execute("BEGIN TRANSACTION", &[]).await {
+        return (client, Err(e));
+    }
+    let task_res = task(&mut client).await;
+    if task_res.is_ok() {
+        if let Err(e) = client.execute("COMMIT TRANSACTION", &[]).await {
+            return (client, Err(e));
+        }
+    } else {
+        if let Err(e) = client.execute("ROLLBACK TRANSACTION", &[]).await {
+            return (client, Err(e));
+        }
+    }
+    (client, Ok(()))
+}
+
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
+
     /// Uses an instance of [`Config`] to specify the connection
     /// options required to connect to the database using an established
     /// tcp connection
@@ -63,6 +132,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             connection: Connection::connect(config, tcp_stream).await?,
         })
     }
+
 
     /// Executes SQL statements in the SQL Server, returning the number rows
     /// affected. Useful for `INSERT`, `UPDATE` and `DELETE` statements. The
