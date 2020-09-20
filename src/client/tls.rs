@@ -192,6 +192,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
         if inner.read_remaining == 0 {
             inner.header_pos = 0;
         }
+        dbg!(&read);
 
         Poll::Ready(Ok(read))
     }
@@ -208,9 +209,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
         // packets in the codec.
         if !self.pending_handshake {
             return Pin::new(&mut self.stream.as_mut().unwrap()).poll_write(cx, buf);
-        }
+        } 
 
-        // Buffering data.
         self.wr_buf.extend_from_slice(buf);
 
         Poll::Ready(Ok(buf.len()))
@@ -219,22 +219,20 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
     fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         let inner = self.get_mut();
 
+        panic!();
         // If on handshake mode, wraps the data to a TDS packet before sending.
         if inner.pending_handshake {
-            if !inner.header_written {
-                let mut header = PacketHeader::new(inner.wr_buf.len(), 0);
+            let mut header = PacketHeader::new(inner.wr_buf.len(), 0);
 
-                header.ty = PacketType::PreLogin;
-                header.status = PacketStatus::EndOfMessage;
+            header.ty = PacketType::PreLogin;
+            header.status = PacketStatus::EndOfMessage;
 
-                header
-                    .encode(&mut &mut inner.wr_buf[0..HEADER_BYTES])
-                    .map_err(|_| {
-                        io::Error::new(io::ErrorKind::InvalidInput, "Could not encode header.")
-                    })?;
+            header
+                .encode(&mut &mut inner.wr_buf[0..HEADER_BYTES])
+                .map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "Could not encode header.")
+                })?;
 
-                inner.header_written = true;
-            }
 
             while !inner.wr_buf.is_empty() {
                 event!(
@@ -251,7 +249,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
             }
 
             inner.wr_buf.resize(HEADER_BYTES, 0);
-            inner.header_written = false;
         }
 
         Pin::new(&mut inner.stream.as_mut().unwrap()).poll_flush(cx)

@@ -105,7 +105,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         TokenStream::new(self).flush_sspi().await
     }
 
-    #[cfg(feature = "tls")]
+    #[cfg(any(feature = "tls", feature = "rustls"))]
     fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
         if let EncryptionLevel::Off = encryption {
             event!(
@@ -121,7 +121,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         self
     }
 
-    #[cfg(not(feature = "tls"))]
+    #[cfg(not(any(feature = "tls", feature = "rustls")))]
     fn post_login_encryption(self, _: EncryptionLevel) -> Self {
         self
     }
@@ -422,6 +422,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             event!(Level::INFO, "Performing a TLS handshake");
 
             let mut builder = rustls_crate::ClientConfig::new();
+            dbg!(&trust_cert);
             if trust_cert {
                 struct ExtremelyBadVerifier();
                 impl rustls_crate::ServerCertVerifier for ExtremelyBadVerifier {

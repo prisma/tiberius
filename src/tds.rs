@@ -14,7 +14,7 @@ pub(crate) use time::*;
 /// The amount of bytes a packet header consists of
 pub(crate) const HEADER_BYTES: usize = 8;
 
-#[cfg(feature = "tls")]
+#[cfg(any(feature = "tls", feature = "rustls"))]
 uint_enum! {
     /// The configured encryption level specifying if encryption is required
     #[repr(u8)]
@@ -31,7 +31,7 @@ uint_enum! {
 
 }
 
-#[cfg(not(feature = "tls"))]
+#[cfg(not(any(feature = "tls", feature = "rustls")))]
 uint_enum! {
     pub enum EncryptionLevel {
         /// Do not encrypt anything
