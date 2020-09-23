@@ -86,7 +86,7 @@ With the `integrated-auth-gssapi` feature enabled, the crate requires the GSSAPI
   * [Arch](https://www.archlinux.org/packages/core/x86_64/krb5/)
   * [Debian](https://tracker.debian.org/pkg/krb5) (you need the -dev packages to build)
   * [Ubuntu](https://packages.ubuntu.com/bionic-updates/libkrb5-dev)
-  * [Mac - Homebrew](https://formulae.brew.sh/formula/krb5)
+  * Mac: as of version `0.4.2` the [libgssapi](https://crates.io/crates/libgssapi) crate used for this feature now uses Apple's [GSS Framework](https://developer.apple.com/documentation/gss?language=objc) which ships with MacOS 10.14+.
 
 Additionally, your runtime system will need to be trusted by and configured for the Active Directory domain your SQL Server is part of. In particular, you'll need to be able to get a valid TGT for your identity, via `kinit` or a keytab. This setup varies by environment and OS, but your friendly network/system administrator should be able to help figure out the specifics.
 
