@@ -44,6 +44,19 @@ pub enum Error {
     /// An error from the GSSAPI library.
     #[error("GSSAPI Error: {}", _0)]
     Gssapi(String),
+    #[error("Server commanded a redirect to an alternate address\n{}:{} => {}:{}", alternate_address, port, old_address, old_port)]
+    /// A server's command to use an alternative address instead of the one requested by the user
+    RouteToAlternateAddress {
+        /// base address, most likely a domain
+        alternate_address: String,
+        /// port
+        port: usize,
+        /// previous address; probably not very useful, but is there in the packet
+        old_address: String,
+        /// previous server port; same as above
+        old_port: usize,
+    }
+
 }
 
 impl From<uuid::Error> for Error {

@@ -131,6 +131,13 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
         ReadU16Le::new(self)
     }
 
+    fn read_u16<'a>(&'a mut self) -> ReadU16<&'a mut Self>
+    where
+        Self: Unpin,
+    {
+        ReadU16::new(self)
+    }
+
     fn read_u32_le<'a>(&'a mut self) -> ReadU32Le<&'a mut Self>
     where
         Self: Unpin,
@@ -185,6 +192,7 @@ bytes_reader!(ReadI8, i8, get_i8);
 bytes_reader!(ReadU8, u8, get_u8);
 bytes_reader!(ReadU32Be, u32, get_u32);
 
+bytes_reader!(ReadU16, u16, get_u16);
 bytes_reader!(ReadU16Le, u16, get_u16_le);
 bytes_reader!(ReadU32Le, u32, get_u32_le);
 bytes_reader!(ReadU64Le, u64, get_u64_le);

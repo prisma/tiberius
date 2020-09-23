@@ -5,7 +5,8 @@ use crate::{
 use encoding::Encoding;
 use fmt::Debug;
 use futures::io::AsyncReadExt;
-use std::{convert::TryFrom, fmt};
+use std::net::ToSocketAddrs;
+use std::{borrow::Cow, convert::TryFrom, fmt};
 
 uint_enum! {
     #[repr(u8)]
@@ -163,6 +164,37 @@ impl TokenEnvChange {
                 src.read_u8().await?;
                 let desc = src.read_u64_le().await?;
                 TokenEnvChange::RollbackTransaction(desc)
+            }
+            EnvChangeTy::Routing => {
+                src.read_u8().await?;
+                src.read_u8().await?;
+                src.read_u8().await?; // a wild guess - it's probably just a padding - ignore it
+                let port = src.read_u16_le().await? as usize;
+                let len = src.read_u8().await? as usize;
+                src.read_u8().await?;
+                let alternate_address = read_varchar(src, len).await?;
+                let alternate_server = format!("{}:{}", alternate_address, port);
+                let _ = alternate_server
+                    .to_socket_addrs()
+                    .map_err(|e| {
+                        Error::Protocol(Cow::from(format!("Parsing failed with error: {}", e)))
+                    })?
+                    .next()
+                    .ok_or(Error::Protocol(Cow::from(format!(
+                        "Unable to extract alternate_server"
+                    ))))?; // sanity check
+                let old_address_len = src.read_u8().await? as usize;
+                dbg!(old_address_len);
+                let old_port = src.read_u16_le().await? as usize;
+                dbg!(old_port);
+                let old_address = read_varchar(src, old_address_len as usize).await?;
+                dbg!(old_address.clone());
+                return Err(Error::RouteToAlternateAddress {
+                    alternate_address,
+                    port,
+                    old_address,
+                    old_port,
+                });
             }
             ty => panic!("skipping env change type {:?}", ty),
         };
