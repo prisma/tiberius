@@ -3,7 +3,7 @@
 [![docs.rs](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)
 [![Build status](https://badge.buildkite.com/172053d935f64a275beca911ab20bad34e7597775ce024469d.svg)](https://buildkite.com/prisma/tiberius)
 [![Build status](https://ci.appveyor.com/api/projects/status/vr39e8qd42n3yf0i/branch/master?svg=true)](https://ci.appveyor.com/project/pimeys/tiberius/branch/master)
-[![Chat](https://img.shields.io/discord/664092374359605268)](https://discord.gg/8sF4ej)
+[![Chat](https://img.shields.io/discord/664092374359605268)](https://discord.gg/xX4xp9x)
 
 A native Microsoft SQL Server (TDS) client for Rust.
 
