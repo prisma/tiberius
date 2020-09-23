@@ -62,8 +62,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Debug for Connection<S> {
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
-    pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>>
-where {
+    pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>> {
         let context = {
             let mut context = Context::new();
             context.set_spn(config.get_host(), config.get_port());

@@ -199,7 +199,7 @@ impl AdoNetString {
                     .next()
                     .ok_or_else(|| {
                         crate::Error::Conversion(
-                            "Missing a valid key in connection string parameters.".into(),
+                            "Missing a valid value in connection string parameters.".into(),
                         )
                     })?
                     .trim()

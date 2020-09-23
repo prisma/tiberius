@@ -34,6 +34,32 @@ uint_enum! {
     }
 }
 
+impl fmt::Display for EnvChangeTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EnvChangeTy::Database => write!(f, "Database"),
+            EnvChangeTy::Language => write!(f, "Language"),
+            EnvChangeTy::CharacterSet => write!(f, "CharacterSet"),
+            EnvChangeTy::PacketSize => write!(f, "PacketSize"),
+            EnvChangeTy::UnicodeDataSortingLID => write!(f, "UnicodeDataSortingLID"),
+            EnvChangeTy::UnicodeDataSortingCFL => write!(f, "UnicodeDataSortingCFL"),
+            EnvChangeTy::SqlCollation => write!(f, "SqlCollation"),
+            EnvChangeTy::BeginTransaction => write!(f, "BeginTransaction"),
+            EnvChangeTy::CommitTransaction => write!(f, "CommitTransaction"),
+            EnvChangeTy::RollbackTransaction => write!(f, "RollbackTransaction"),
+            EnvChangeTy::EnlistDTCTransaction => write!(f, "EnlistDTCTransaction"),
+            EnvChangeTy::DefectTransaction => write!(f, "DefectTransaction"),
+            EnvChangeTy::RTLS => write!(f, "RTLS"),
+            EnvChangeTy::PromoteTransaction => write!(f, "PromoteTransaction"),
+            EnvChangeTy::TransactionManagerAddress => write!(f, "TransactionManagerAddress"),
+            EnvChangeTy::TransactionEnded => write!(f, "TransactionEnded"),
+            EnvChangeTy::ResetConnection => write!(f, "ResetConnection"),
+            EnvChangeTy::UserName => write!(f, "UserName"),
+            EnvChangeTy::Routing => write!(f, "Routing"),
+        }
+    }
+}
+
 pub struct CollationInfo {
     lcid_encoding: Option<&'static (dyn Encoding + Send + Sync)>,
     sortid_encoding: Option<&'static (dyn Encoding + Send + Sync)>,
@@ -84,6 +110,13 @@ pub enum TokenEnvChange {
     BeginTransaction(u64),
     CommitTransaction(u64),
     RollbackTransaction(u64),
+    DefectTransaction(u64),
+    Routing {
+        host: String,
+        port: u16,
+    },
+    ChangeMirror(String),
+    Ignored(EnvChangeTy),
 }
 
 impl fmt::Display for TokenEnvChange {
@@ -101,6 +134,14 @@ impl fmt::Display for TokenEnvChange {
             Self::BeginTransaction(_) => write!(f, "Begin transaction"),
             Self::CommitTransaction(_) => write!(f, "Commit transaction"),
             Self::RollbackTransaction(_) => write!(f, "Rollback transaction"),
+            Self::DefectTransaction(_) => write!(f, "Defect transaction"),
+            Self::Routing { host, port } => write!(
+                f,
+                "Server requested routing to a new address: {}:{}",
+                host, port
+            ),
+            Self::ChangeMirror(ref mirror) => write!(f, "Fallback mirror server: `{}`", mirror),
+            Self::Ignored(ty) => write!(f, "Ignored env change: `{}`", ty),
         }
     }
 }
@@ -149,7 +190,7 @@ impl TokenEnvChange {
                     old: CollationInfo::new(old_value.as_slice()),
                 }
             }
-            EnvChangeTy::BeginTransaction => {
+            EnvChangeTy::BeginTransaction | EnvChangeTy::EnlistDTCTransaction => {
                 src.read_u8().await?;
                 let desc = src.read_u64_le().await?;
                 TokenEnvChange::BeginTransaction(desc)
@@ -164,7 +205,32 @@ impl TokenEnvChange {
                 let desc = src.read_u64_le().await?;
                 TokenEnvChange::RollbackTransaction(desc)
             }
-            ty => panic!("skipping env change type {:?}", ty),
+            EnvChangeTy::DefectTransaction => {
+                src.read_u8().await?;
+                let desc = src.read_u64_le().await?;
+                TokenEnvChange::DefectTransaction(desc)
+            }
+            EnvChangeTy::Routing => {
+                src.read_u16_le().await?; // routing data value length
+                src.read_u8().await?; // routing protocol, always 0 (tcp)
+
+                let port = src.read_u16_le().await?;
+
+                let len = src.read_u16_le().await?; // hostname string length
+                let host = read_varchar(src, len).await?;
+
+                // ??? but needed...
+                src.read_u16_le().await?;
+
+                TokenEnvChange::Routing { host, port }
+            }
+            EnvChangeTy::RTLS => {
+                let len = src.read_u8().await?;
+                let mirror_name = read_varchar(src, len).await?;
+
+                TokenEnvChange::ChangeMirror(mirror_name)
+            }
+            ty => TokenEnvChange::Ignored(ty),
         };
 
         Ok(token)
