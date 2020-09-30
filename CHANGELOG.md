@@ -1,5 +1,12 @@
 # Changes
 
+## Version 0.4.10
+
+- Handling nullable int values, fix for #78 (#80)
+- Reflect tweaks to upstream libgssapi crate (#81)
+- Skip default features in libgssapi (for macOS support)
+- Handle env change Routing request (#87)
+
 ## Version 0.4.9
 
 - BREAKING: `AuthMethod::WindowsIntegrated` renamed to `AuthMethod::Integrated`.
