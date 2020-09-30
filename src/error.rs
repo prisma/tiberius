@@ -44,6 +44,18 @@ pub enum Error {
     /// An error from the GSSAPI library.
     #[error("GSSAPI Error: {}", _0)]
     Gssapi(String),
+    #[error(
+        "Server requested a connection to an alternative address: `{}:{}`",
+        host,
+        port
+    )]
+    /// Server requested a connection to an alternative address.
+    Routing {
+        /// The requested hostname
+        host: String,
+        /// The requested port.
+        port: u16,
+    },
 }
 
 impl From<uuid::Error> for Error {
