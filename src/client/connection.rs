@@ -380,6 +380,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             let Self {
                 transport, context, ..
             } = self;
+
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
                     builder
@@ -422,8 +423,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             event!(Level::INFO, "Performing a TLS handshake");
 
             let mut builder = rustls_crate::ClientConfig::new();
+
             if trust_cert {
+                builder.enable_sni = false;
+
                 struct ExtremelyBadVerifier();
+
                 impl rustls_crate::ServerCertVerifier for ExtremelyBadVerifier {
                     fn verify_server_cert(
                         &self,
@@ -454,7 +459,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                         Ok(rustls_crate::HandshakeSignatureValid::assertion())
                     }
                 }
+
                 let bad_verifier = ExtremelyBadVerifier();
+
                 builder
                     .dangerous()
                     .set_certificate_verifier(std::sync::Arc::new(bad_verifier));
@@ -466,6 +473,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             let Self {
                 transport, context, ..
             } = self;
+
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
                     async_tls::TlsConnector::from(builder)

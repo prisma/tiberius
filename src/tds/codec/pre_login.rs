@@ -34,7 +34,7 @@ impl PreloginMessage {
     }
 
     pub fn negotiated_encryption(&self, expected: EncryptionLevel) -> EncryptionLevel {
-        match (expected, self.encryption) {
+        match dbg!((expected, self.encryption)) {
             (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
                 EncryptionLevel::NotSupported
             }

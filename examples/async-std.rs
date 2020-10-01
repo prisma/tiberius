@@ -5,14 +5,14 @@ use tiberius::{Client, Config};
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
-        "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
+        "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true;encrypt=true".to_owned()
     })
 });
 
 #[cfg(not(all(windows, feature = "sql-browser-async-std")))]
 #[async_std::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Config::from_ado_string(&CONN_STR)?;
+    let config = Config::from_ado_string(&*CONN_STR)?;
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;

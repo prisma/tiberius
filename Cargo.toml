@@ -90,7 +90,6 @@ version = "0.3"
 [dependencies.async-tls]
 optional = true
 path = "async-tls"
-#version = "0.9"
 default-features = false
 features = ["client"]
 

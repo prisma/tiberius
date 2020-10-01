@@ -141,6 +141,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
         cx: &mut task::Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
+        dbg!("READ");
         // Normal operation does not need any extra treatment, we handle packets
         // in the codec.
         if !self.pending_handshake {
@@ -153,8 +154,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
         // connection handling.
         if !inner.header_buf[inner.header_pos..].is_empty() {
             while !inner.header_buf[inner.header_pos..].is_empty() {
-                let read = ready!(Pin::new(&mut inner.stream.as_mut().unwrap())
-                    .poll_read(cx, &mut inner.header_buf[inner.header_pos..]))?;
+                let poll = Pin::new(&mut inner.stream.as_mut().unwrap())
+                    .poll_read(cx, &mut inner.header_buf[inner.header_pos..]);
+
+                let read = match poll {
+                    Poll::Ready(Ok(r)) => r,
+                    Poll::Ready(Err(e)) => return Poll::Ready(dbg!(Err(e))),
+                    Poll::Pending => {
+                        return dbg!(Poll::Pending);
+                    }
+                };
 
                 if read == 0 {
                     return Poll::Ready(Ok(0));
@@ -205,6 +214,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
         cx: &mut task::Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
+        dbg!("WRITE");
         // Normal operation does not need any extra treatment, we handle
         // packets in the codec.
         if !self.pending_handshake {
@@ -218,6 +228,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
+        dbg!("FLUSH");
         let inner = self.get_mut();
 
         // If on handshake mode, wraps the data to a TDS packet before sending.
