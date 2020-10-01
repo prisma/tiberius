@@ -307,12 +307,11 @@ impl AdoNetString {
     pub fn encrypt(&self) -> crate::Result<EncryptionLevel> {
         self.dict
             .get("encrypt")
-            .map(|val| {
-                if Self::parse_bool(val)? {
-                    Ok(EncryptionLevel::Required)
-                } else {
-                    Ok(EncryptionLevel::Off)
-                }
+            .map(|val| match Self::parse_bool(val) {
+                Ok(true) => Ok(EncryptionLevel::Required),
+                Ok(false) => Ok(EncryptionLevel::Off),
+                Err(_) if val == "DANGER_PLAINTEXT" => Ok(EncryptionLevel::NotSupported),
+                Err(e) => Err(e)?,
             })
             .unwrap_or(Ok(EncryptionLevel::Off))
     }
