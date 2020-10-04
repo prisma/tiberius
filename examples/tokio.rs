@@ -13,6 +13,7 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
 #[cfg(not(all(windows, feature = "sql-browser-tokio")))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let config = Config::from_ado_string(&CONN_STR)?;
 
     let tcp = TcpStream::connect(config.get_addr()).await?;

@@ -211,6 +211,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
             return Pin::new(&mut self.stream.as_mut().unwrap()).poll_write(cx, buf);
         } 
 
+
         self.wr_buf.extend_from_slice(buf);
 
         Poll::Ready(Ok(buf.len()))
@@ -219,7 +220,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
     fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         let inner = self.get_mut();
 
-        panic!();
         // If on handshake mode, wraps the data to a TDS packet before sending.
         if inner.pending_handshake {
             let mut header = PacketHeader::new(inner.wr_buf.len(), 0);

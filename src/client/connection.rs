@@ -422,7 +422,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             event!(Level::INFO, "Performing a TLS handshake");
 
             let mut builder = rustls_crate::ClientConfig::new();
-            dbg!(&trust_cert);
             if trust_cert {
                 struct ExtremelyBadVerifier();
                 impl rustls_crate::ServerCertVerifier for ExtremelyBadVerifier {
@@ -436,12 +435,33 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                     {
                         Ok(rustls_crate::ServerCertVerified::assertion())
                     }
+
+                    fn verify_tls12_signature(
+                        &self,
+                        _: &[u8],
+                        _: &rustls_crate::Certificate,
+                        _: &rustls_crate::internal::msgs::handshake::DigitallySignedStruct
+                    ) -> Result<rustls_crate::HandshakeSignatureValid, rustls_crate::TLSError> {
+                        Ok(rustls_crate::HandshakeSignatureValid::assertion())
+                    }
+
+                    fn verify_tls13_signature(
+                        &self,
+                        _: &[u8],
+                        _: &rustls_crate::Certificate,
+                        _: &rustls_crate::internal::msgs::handshake::DigitallySignedStruct
+                    ) -> Result<rustls_crate::HandshakeSignatureValid, rustls_crate::TLSError> {
+                        Ok(rustls_crate::HandshakeSignatureValid::assertion())
+                    }
                 }
                 let bad_verifier = ExtremelyBadVerifier();
                 builder
                     .dangerous()
                     .set_certificate_verifier(std::sync::Arc::new(bad_verifier));
             };
+
+            // temporary
+            builder.root_store = crate::client::azure_root_certs::certs();
 
             let Self {
                 transport, context, ..

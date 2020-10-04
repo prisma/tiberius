@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod connection;
 mod tls;
+mod azure_root_certs;
 
 pub use auth::*;
 pub use config::*;
