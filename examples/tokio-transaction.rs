@@ -17,22 +17,73 @@ async fn main() -> anyhow::Result<()> {
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
 
-    let client = Client::connect(config, tcp.compat_write()).await?;
+    let mut client = Client::connect(config, tcp.compat_write()).await?;
 
-    let (mut client, tran_res) = tiberius::transaction(client, |conn| async move { 
-         let _ = conn.execute(
-            "INSERT INTO #Test (id) VALUES (@P1), (@P2), (@P3)",
+    let _ = client
+        .simple_query("create table ##Test ( id int )")
+        .await?;
+
+    client
+        .transaction()
+        .await?
+        .exec(
+            "INSERT INTO ##Test (id) VALUES (@P1), (@P2), (@P3)",
             &[&1i32, &2i32, &3i32],
         )
+        .await
+        .finalize()
         .await?;
-        Ok(())
-    }).await;
 
-    let stream = client.query("SELECT * from #Test", &[]).await?;
-    let row = stream.into_row().await?.unwrap();
+    let mut t1 = client.transaction().await?;
+    for _ in (1..).take(3) {
+        t1.loop_exec(
+            "INSERT INTO ##Test (id) VALUES (@P1), (@P2), (@P3)",
+            &[&1i32, &2i32, &3i32],
+        )
+        .await;
+    }
+    t1.finalize().await?;
 
-    println!("{:?}", row);
-    assert_eq!(Some(1), row.get(0));
+    let failed = client
+        .transaction()
+        .await?
+        .exec("select 1 / 0", &[])
+        .await
+        .exec("INSERT INTO ##Test (id) VALUES (@P1)", &[&99i32])
+        .await
+        .finalize()
+        .await;
+
+    assert!(failed.is_err());
+
+    client
+        .transaction()
+        .await?
+        .query::<i32>(
+            "INSERT INTO ##Test (id) OUTPUT inserted.id VALUES (@P1)",
+            &[&55i32],
+        )
+        .await
+        .exec("INSERT INTO ##Test (id) VALUES (@P1)", |out| {
+            vec![Box::new(out)]
+        })
+        .await
+        .finalize()
+        .await?;
+
+    let stream = client.query("SELECT * from ##Test", &[]).await?;
+    let rows = stream.into_first_result().await?;
+
+    println!("{:?}", rows);
+
+    let data = rows.into_iter().try_fold(Vec::new(), |mut acc, x| {
+        acc.push(x.try_get(0)?.unwrap());
+        Ok::<Vec<i32>, tiberius::error::Error>(acc)
+    })?;
+
+    println!("{:?}", data);
+
+    assert_eq!(vec![1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 55, 55], data);
 
     Ok(())
 }

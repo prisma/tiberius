@@ -52,75 +52,108 @@ pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
     connection: Connection<S>,
 }
 
-// Implementation from https://github.com/http-rs/tide/blob/main/src/endpoint.rs
-//#[async_trait::async_trait]
-//pub trait Transaction<
-//    'a,
-//    T: Clone + Send + Sync + 'static,
-//    S: AsyncRead + AsyncWrite + Unpin + Send + 'a,
-//>: Send + Sync + 'static
-//{
-//    async fn call(&'a mut self, client: &'a mut Client<S>) -> crate::Result<T>;
-//}
-//
-//#[async_trait::async_trait]
-//impl<'a, T, F, Fut, S> Transaction<'a, T, S> for F
-//where
-//    T: Clone + Send + Sync + 'static,
-//    F: Send + Sync + 'static + FnMut(&'a mut Client<S>) -> Fut,
-//    Fut: futures::Future<Output = crate::Result<T>> + Send + 'a,
-//    S: AsyncRead + AsyncWrite + Unpin + Send + 'a,
-//{
-//    async fn call(&'a mut self, client: &'a mut Client<S>) -> crate::Result<T> {
-//        let res = self(client).await?;
-//        Ok(res)
-//    }
-//}
-//
-//impl<'a, S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
-//
-//    // TODO: more docs!
-//    /// Run a transaction
-//    pub async fn transaction<T>(&'a mut self, mut task: impl Transaction<'a, T, S>) -> crate::Result<T>
-//    where
-//        T: Clone + Send + Sync + 'static,
-//    {
-//        let _ = self.execute("BEGIN TRANSACTION", &[]).await?;
-//        let task_res = task.call(self).await;
-//        let tr2 = task_res.clone();
-//        drop(task_res);
-//        if tr2.is_ok() {
-//            let _ = self.execute("COMMIT TRANSACTION", &[]).await?;
-//        } else {
-//            let _ = self.execute("ROLLBACK TRANSACTION", &[]).await?;
-//        }
-//        tr2
-//    }
-//}
-//
+pub trait HasData {}
 
-pub async fn transaction<S, F>(mut client: Client<S>, mut task: F) -> (Client<S>, crate::Result<()>)
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send,
-    F: for<'a> FnOnce(&'a mut Client<S>) -> futures::Future<Output=crate::Result<()>>,
-{
-    if let Err(e) = client.execute("BEGIN TRANSACTION", &[]).await {
-        return (client, Err(e));
-    }
-    let task_res = task(&mut client).await;
-    if task_res.is_ok() {
-        if let Err(e) = client.execute("COMMIT TRANSACTION", &[]).await {
-            return (client, Err(e));
-        }
-    } else {
-        if let Err(e) = client.execute("ROLLBACK TRANSACTION", &[]).await {
-            return (client, Err(e));
-        }
-    }
-    (client, Ok(()))
+#[derive(Debug)]
+pub struct Yes<T: crate::FromSqlOwned + Debug> {
+    data: T,
 }
 
+impl<T: crate::FromSqlOwned + Debug> HasData for Yes<T> {}
+
+#[derive(Debug)]
+pub struct No;
+impl HasData for No {}
+
+#[must_use]
+#[derive(Debug)]
+pub struct Transaction<'client, S, D> 
+    where 
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+        D: HasData,
+{
+    client: &'client mut Client<S>,
+    previous_result: crate::Result<D>,
+}
+
+impl<'client, S: AsyncRead + AsyncWrite + Unpin + Send, T: crate::FromSqlOwned + Debug> Transaction<'client, S, Yes<T>> {
+    pub async fn exec<'a>(self, query: impl Into<Cow<'a, str>>, params: impl FnOnce(T) -> Vec<Box<dyn ToSql>>) -> Transaction<'client, S, No> {
+        let previous_result = if let Ok(Yes { data }) = self.previous_result {
+            self.client.execute(query, params(data).iter().map(AsRef::as_ref).collect::<Vec<_>>().as_slice()).await.map(|_| No)
+        } else {
+            self.previous_result.map(|_| No)
+        };
+        Transaction {
+            client: self.client,
+            previous_result,
+        }
+    }
+}
+
+impl<'client, S: AsyncRead + AsyncWrite + Unpin + Send> Transaction<'client, S, No> {
+    pub async fn finalize(self) -> crate::Result<()> {
+        let _ = match &self.previous_result {
+            Ok(_) => self.client.simple_query("COMMIT TRANSACTION").await?,
+            Err(_) => self.client.simple_query("ROLLBACK TRANSACTION").await?,
+        };
+        self.previous_result.map(|_| ())
+    }
+    pub async fn exec<'a>(mut self, query: impl Into<Cow<'a, str>>, params: &[&dyn ToSql]) -> Transaction<'client, S, No> {
+        if let Ok(No) = self.previous_result {
+            self.previous_result = self.client.execute(query, params).await.map(|_| No)
+        };
+        self
+    }
+    pub async fn loop_exec<'a>(&mut self, query: impl Into<Cow<'a, str>>, params: &[&dyn ToSql]) {
+        if let Ok(No) = self.previous_result {
+            self.previous_result = self.client.execute(query, params).await.map(|_| No)
+        } 
+    }
+    pub async fn query<T: crate::FromSqlOwned + Debug>(self, query: &str, params: &[&dyn ToSql]) -> Transaction<'client, S, Yes<T>> {
+        let previous_result = match self.previous_result {
+            Ok(No) =>  match self.client.query(query, params).await {
+                Ok(query_result) => {
+                    match query_result.into_row().await {
+                        Ok(Some(row)) => {
+                            if let Some(col_data) = row.into_iter().next() {
+                                if let Ok(Some(data)) = crate::FromSqlOwned::from_sql_owned(col_data) {
+                                    Ok(Yes { data })
+                                } else {
+                                   todo!()
+                                }
+                            } else {
+                                todo!()
+                            }
+                        }
+                        Ok(None) => todo!(),
+                        Err(e) => Err(e),
+                    }
+                }
+                Err(e) => Err(e),
+            }
+            Err(e) => Err(e),
+        };
+
+        Transaction {
+            client: self.client,
+            previous_result,
+        }
+    }
+}
+
+
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
+
+    /// Gives a handle on a open transaction in which queries can be run.
+    /// Once the desired queries have been run, the transaction must be [`finalize`]d
+    /// [`finalize`]: struct.Transaction.html#method.finalize
+    pub async fn transaction<'client>(&'client mut self) -> crate::Result<Transaction<'client, S, No>> {
+        self.simple_query("BEGIN TRANSACTION").await?;
+        Ok(Transaction {
+            client: self,
+            previous_result: Ok(No),
+        })
+    }
 
     /// Uses an instance of [`Config`] to specify the connection
     /// options required to connect to the database using an established

@@ -186,9 +186,6 @@ mod tds;
 
 mod sql_browser;
 
-// TEMP
-pub use client::transaction;
-
 pub use client::{AuthMethod, Client, Config};
 pub(crate) use error::Error;
 pub use from_sql::{FromSql, FromSqlOwned};
