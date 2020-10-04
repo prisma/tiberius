@@ -467,8 +467,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                     .set_certificate_verifier(std::sync::Arc::new(bad_verifier));
             };
 
-            // temporary
-            builder.root_store = crate::client::azure_root_certs::certs();
+            builder.root_store.add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
 
             let Self {
                 transport, context, ..

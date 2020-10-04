@@ -111,7 +111,6 @@ pub(crate) struct TlsPreloginWrapper<S> {
     read_remaining: usize,
 
     wr_buf: Vec<u8>,
-    header_written: bool,
 }
 
 #[cfg(any(feature = "tls", feature = "rustls"))]
@@ -125,7 +124,6 @@ impl<S> TlsPreloginWrapper<S> {
             header_pos: 0,
             read_remaining: 0,
             wr_buf: vec![0u8; HEADER_BYTES],
-            header_written: false,
         }
     }
 
