@@ -1,6 +1,5 @@
 use super::AuthMethod;
 use crate::EncryptionLevel;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 /// The `Config` struct contains all configuration information
@@ -174,42 +173,13 @@ impl Config {
 }
 
 pub(crate) struct AdoNetString {
-    dict: HashMap<String, String>,
+    dict: connection_string::AdoNetString,
 }
 
 impl AdoNetString {
     pub fn parse(s: &str) -> crate::Result<Self> {
-        let dict: crate::Result<HashMap<String, String>> = s
-            .split(";")
-            .filter(|kv| kv != &"")
-            .map(|kv| {
-                let mut splitted = kv.split("=");
-
-                let key = splitted
-                    .next()
-                    .ok_or_else(|| {
-                        crate::Error::Conversion(
-                            "Missing a valid key in connection string parameters.".into(),
-                        )
-                    })?
-                    .trim()
-                    .to_lowercase();
-
-                let value = splitted
-                    .next()
-                    .ok_or_else(|| {
-                        crate::Error::Conversion(
-                            "Missing a valid value in connection string parameters.".into(),
-                        )
-                    })?
-                    .trim()
-                    .to_string();
-
-                Ok((key, value))
-            })
-            .collect();
-
-        Ok(Self { dict: dict? })
+        let dict = s.parse()?;
+        Ok(Self { dict })
     }
 
     pub fn server(&self) -> crate::Result<ServerDefinition> {
