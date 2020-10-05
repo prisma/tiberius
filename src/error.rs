@@ -110,6 +110,13 @@ impl From<std::string::FromUtf16Error> for Error {
     }
 }
 
+impl From<connection_string::Error> for Error {
+    fn from(err: connection_string::Error) -> Error {
+        let err = Cow::Owned(format!("{}", err));
+        Error::Conversion(err)
+    }
+}
+
 #[cfg(feature = "integrated-auth-gssapi")]
 impl From<libgssapi::error::Error> for Error {
     fn from(err: libgssapi::error::Error) -> Error {
