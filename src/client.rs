@@ -1,10 +1,10 @@
 mod auth;
-mod builder;
+mod config;
 mod connection;
 mod tls;
 
 pub use auth::*;
-pub use builder::*;
+pub use config::*;
 pub(crate) use connection::*;
 
 use crate::{
