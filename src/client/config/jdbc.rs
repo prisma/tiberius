@@ -281,9 +281,9 @@ mod tests {
     #[cfg(not(feature = "tls"))]
     fn encryption_parsing_on() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;encrypt=true;";
-        let ado: AdoNetConfig = test_str.parse()?;
+        let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(EncryptionLevel::NotSupported, ado.encrypt()?);
+        assert_eq!(EncryptionLevel::NotSupported, jdbc.encrypt()?);
 
         Ok(())
     }
@@ -292,9 +292,9 @@ mod tests {
     #[cfg(not(feature = "tls"))]
     fn encryption_parsing_off() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;encrypt=false;";
-        let ado: AdoNetConfig = test_str.parse()?;
+        let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(EncryptionLevel::NotSupported, ado.encrypt()?);
+        assert_eq!(EncryptionLevel::NotSupported, jdbc.encrypt()?);
 
         Ok(())
     }
@@ -303,9 +303,9 @@ mod tests {
     #[cfg(not(feature = "tls"))]
     fn encryption_parsing_missing() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;";
-        let ado: AdoNetConfig = test_str.parse()?;
+        let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(EncryptionLevel::NotSupported, ado.encrypt()?);
+        assert_eq!(EncryptionLevel::NotSupported, jdbc.encrypt()?);
 
         Ok(())
     }
