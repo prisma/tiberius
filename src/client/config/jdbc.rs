@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn server_parsing_no_jdbc_no_browser() -> crate::Result<()> {
-        let test_str = "sqlserver://my-server.com:4200";
+        let test_str = "jdbc:sqlserver://my-server.com:4200";
         let jdbc: JdbcConfig = test_str.parse()?;
         let server = jdbc.server()?;
 
@@ -71,7 +71,7 @@ mod tests {
         let server = jdbc.server()?;
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
-        assert_eq!(Some(1434), server.port);
+        assert_eq!(None, server.port);
         assert_eq!(Some("TIBERIUS".to_string()), server.instance);
 
         Ok(())
@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn database_parsing() -> crate::Result<()> {
-        let test_str = "sqlserver://myserver.com:4200;database=Foo";
+        let test_str = "jdbc:sqlserver://myserver.com:4200;database=Foo";
         let jdbc: JdbcConfig = test_str.parse()?;
 
         assert_eq!(Some("Foo".to_string()), jdbc.database());
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn parsing_sql_server_authentication() -> crate::Result<()> {
-        let test_str = "jdbc:sqlserver://my-server.com:4200;User ID=musti;pwd=Naukio;";
+        let test_str = "jdbc:sqlserver://my-server.com:4200;User ID=Musti;pwd=Naukio;";
         let jdbc: JdbcConfig = test_str.parse()?;
 
         assert_eq!(
@@ -226,7 +226,7 @@ mod tests {
         let jdbc: JdbcConfig = test_str.parse()?;
 
         assert_eq!(
-            AuthMethod::sql_server("musti", "abc;}45"),
+            AuthMethod::sql_server("musti", "abc;}45}"),
             jdbc.authentication()?
         );
 
