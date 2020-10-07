@@ -3,6 +3,7 @@ authors = [
     "Steffen Butzer <steffen.butzer@outlook.com>",
     "Julius de Bruijn <bruijn@prisma.io>",
     "Eric Sheppard <eric@eigenmo.de>",
+    "Yoshua Wuyts <yoshuawuyts@gmail.com>",
 ]
 description = "A TDS (MSSQL) driver"
 documentation = "https://docs.rs/tiberius/"
@@ -12,7 +13,7 @@ license = "MIT/Apache-2.0"
 name = "tiberius"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
-version = "0.4.10"
+version = "0.4.11"
 
 [workspace]
 members = ["runtimes-macro"]
