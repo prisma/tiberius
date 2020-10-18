@@ -79,7 +79,7 @@ tiberius = { version = "0.X", default-features=false, features=["chrono"] }
 
 #### MacOS Catalina and TLS
 
-Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. For now, to get Tiberius working on macOS Catalina, it is necessary to upgrade your server's certificate into [one supported by Apple](https://support.apple.com/en-ca/HT210176). Additionally using the `NotSupported` variant, or providing `encoding=DANGER_PLAINTEXT` in the connection string disables TLS completely, and allows development on macOS against a local SQL Server instance.
+Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. For now, to get Tiberius working on macOS Catalina, it is necessary to upgrade your server's certificate into [one supported by Apple](https://support.apple.com/en-ca/HT210176). Additionally using the `NotSupported` variant, or providing `encrypt=DANGER_PLAINTEXT` in the connection string disables TLS completely, and allows development on macOS against a local SQL Server instance.
 
 **This will disable encryption for your ENTIRE crate**  
 
