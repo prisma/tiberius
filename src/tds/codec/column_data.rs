@@ -14,6 +14,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
 use futures::io::AsyncReadExt;
+use std::borrow::BorrowMut;
 use std::{borrow::Cow, sync::Arc};
 use uuid::Uuid;
 
@@ -723,10 +724,22 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u16_le(8000);
                 dst.extend_from_slice(&[0u8; 5][..]);
 
-                dst.put_u16_le(2 * s.encode_utf16().count() as u16);
+                let mut length = 0u16;
+                let len_pos = dst.len();
 
-                for chr in s.encode_utf16() {
+                dst.put_u16_le(length);
+
+                ucs2::encode_with(s, |chr| {
+                    length += 1;
                     dst.put_u16_le(chr);
+                    Ok(())
+                })?;
+
+                let dst: &mut [u8] = dst.borrow_mut();
+                let bytes = (length * 2).to_le_bytes(); // u16, two bytes
+
+                for (i, byte) in bytes.iter().enumerate() {
+                    dst[len_pos + i] = *byte;
                 }
             }
             ColumnData::String(Some(ref s)) => {
@@ -740,15 +753,26 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u64_le(0xfffffffffffffffe as u64);
 
                 // Write the varchar length
-                dst.put_u32_le(2 * s.encode_utf16().count() as u32);
+                let mut length = 0u32;
+                let len_pos = dst.len();
 
-                // And the PLP data
-                for chr in s.encode_utf16() {
+                dst.put_u32_le(length);
+
+                ucs2::encode_with(s, |chr| {
+                    length += 1;
                     dst.put_u16_le(chr);
-                }
+                    Ok(())
+                })?;
 
                 // PLP_TERMINATOR
                 dst.put_u32_le(0);
+
+                let dst: &mut [u8] = dst.borrow_mut();
+                let bytes = (length * 2).to_le_bytes(); // u32, four bytes
+
+                for (i, byte) in bytes.iter().enumerate() {
+                    dst[len_pos + i] = *byte;
+                }
             }
             ColumnData::Binary(Some(bytes)) if bytes.len() <= 8000 => {
                 dst.put_u8(VarLenType::BigVarBin as u8);

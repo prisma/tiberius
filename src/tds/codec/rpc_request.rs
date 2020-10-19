@@ -2,6 +2,7 @@ use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
 use crate::{tds::codec::ColumnData, Result};
 use bitflags::bitflags;
 use bytes::{BufMut, BytesMut};
+use std::borrow::BorrowMut;
 use std::borrow::Cow;
 
 #[derive(Debug)]
@@ -121,15 +122,22 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
 
 impl<'a> Encode<BytesMut> for RpcParam<'a> {
     fn encode(self, dst: &mut BytesMut) -> Result<()> {
-        let len = self.name.chars().fold(0, |acc, c| acc + c.len_utf8());
-        dst.put_u8(len as u8);
+        let len_pos = dst.len();
+        let mut length = 0u8;
 
-        for codepoint in self.name.encode_utf16() {
+        dst.put_u8(length);
+
+        ucs2::encode_with(&self.name, |codepoint| {
+            length += 1;
             dst.put_u16_le(codepoint);
-        }
+            Ok(())
+        })?;
 
         dst.put_u8(self.flags.bits());
         self.value.encode(dst)?;
+
+        let dst: &mut [u8] = dst.borrow_mut();
+        dst[len_pos] = length;
 
         Ok(())
     }
