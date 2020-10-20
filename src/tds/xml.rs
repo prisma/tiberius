@@ -1,6 +1,7 @@
 //! The XML containers
 use super::codec::Encode;
 use bytes::{BufMut, BytesMut};
+use std::borrow::BorrowMut;
 use std::sync::Arc;
 
 /// Provides information of the location for the schema.
@@ -89,16 +90,28 @@ impl AsRef<str> for XmlData {
 impl Encode<BytesMut> for XmlData {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         dst.put_u8(0);
-
         dst.put_u64_le(0xfffffffffffffffe as u64);
-        dst.put_u32_le(2 * self.data.encode_utf16().count() as u32);
 
-        for chr in self.data.encode_utf16() {
+        let mut length = 0u32;
+        let len_pos = dst.len();
+
+        dst.put_u32_le(length);
+
+        ucs2::encode_with(&self.data, |chr| {
+            length += 1;
             dst.put_u16_le(chr);
-        }
+            Ok(())
+        })?;
 
         // PLP_TERMINATOR
         dst.put_u32_le(0);
+
+        let dst: &mut [u8] = dst.borrow_mut();
+        let bytes = (length * 2).to_le_bytes(); // u32, four bytes
+
+        for (i, byte) in bytes.iter().enumerate() {
+            dst[len_pos + i] = *byte;
+        }
 
         Ok(())
     }

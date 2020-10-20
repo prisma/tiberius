@@ -24,9 +24,10 @@ impl<'a> Encode<BytesMut> for BatchRequest<'a> {
         dst.put_u64_le(self.transaction_id);
         dst.put_u32_le(1);
 
-        for c in self.queries.encode_utf16() {
+        ucs2::encode_with(&self.queries, |c| {
             dst.put_u16_le(c);
-        }
+            Ok(())
+        })?;
 
         Ok(())
     }
