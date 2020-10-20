@@ -2,6 +2,11 @@
 
 ## Version 0.4.11
 
+- A typo fix in README (#94)
+- Faster string writes with better length handling. UCS2 for writes (#95).
+
+## Version 0.4.11
+
 - Allow disabling TLS in connection string (#89)
 - Use connection-string for ado.net parsing (#91)
 - Handle JDBC connection strings (#92)
