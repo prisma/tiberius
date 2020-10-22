@@ -58,12 +58,6 @@ pub enum Error {
     },
 }
 
-impl From<ucs2::Error> for Error {
-    fn from(_: ucs2::Error) -> Self {
-        Self::Utf16
-    }
-}
-
 impl From<uuid::Error> for Error {
     fn from(e: uuid::Error) -> Self {
         Self::Conversion(format!("Error convertiong a Guid value {}", e).into())

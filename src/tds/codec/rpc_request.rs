@@ -127,11 +127,10 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
 
         dst.put_u8(length);
 
-        ucs2::encode_with(&self.name, |codepoint| {
+        for codepoint in self.name.encode_utf16() {
             length += 1;
             dst.put_u16_le(codepoint);
-            Ok(())
-        })?;
+        }
 
         dst.put_u8(self.flags.bits());
         self.value.encode(dst)?;

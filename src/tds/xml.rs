@@ -95,13 +95,13 @@ impl Encode<BytesMut> for XmlData {
         let mut length = 0u32;
         let len_pos = dst.len();
 
+        // writing the length later
         dst.put_u32_le(length);
 
-        ucs2::encode_with(&self.data, |chr| {
+        for chr in self.data.encode_utf16() {
             length += 1;
             dst.put_u16_le(chr);
-            Ok(())
-        })?;
+        }
 
         // PLP_TERMINATOR
         dst.put_u32_le(0);
@@ -109,6 +109,7 @@ impl Encode<BytesMut> for XmlData {
         let dst: &mut [u8] = dst.borrow_mut();
         let bytes = (length * 2).to_le_bytes(); // u32, four bytes
 
+        // writing the length
         for (i, byte) in bytes.iter().enumerate() {
             dst[len_pos + i] = *byte;
         }
