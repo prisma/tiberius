@@ -215,6 +215,41 @@ where
 }
 
 #[test_on_runtimes]
+async fn read_and_write_weird_garbage<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(
+        format!("CREATE TABLE ##{} (content NVARCHAR(1000))", table),
+        &[],
+    )
+    .await?;
+
+    let s = "¥฿😀😁😂😃😄😅😆😇😈😉😊😋😌😍😎😏😐😑😒😓😔😕😖😗😘😙😚😛😜😝😞😟😠😡😢😣😤😥😦😧😨😩😪😫😬😭😮😯😰😱😲😳😴😵😶😷😸😹😺😻😼😽😾😿🙀🙁🙂🙃🙄🙅🙆🙇🙈🙉🙊🙋🙌🙍🙎🙏ऀँंःऄअआइईउऊऋऌऍऎएऐऑऒओऔकखगघङचछजझञटठडढणतथदधनऩपफबभमयर€₭₮₯₰₱₲₳₴₵₶₷₸₹₺₻₼₽₾₿⃀".to_string();
+
+    let res = conn
+        .execute(
+            format!("INSERT INTO ##{} (content) VALUES (@P1)", table),
+            &[&s],
+        )
+        .await?;
+
+    assert_eq!(1, res.total());
+
+    let rows = conn
+        .query(format!("SELECT content FROM ##{}", table), &[])
+        .await?
+        .into_first_result()
+        .await?;
+
+    assert_eq!(Some(s.as_str()), rows[0].get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn read_and_write_finnish_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,

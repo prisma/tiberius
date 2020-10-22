@@ -729,11 +729,10 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
 
                 dst.put_u16_le(length);
 
-                ucs2::encode_with(s, |chr| {
+                for chr in s.encode_utf16() {
                     length += 1;
                     dst.put_u16_le(chr);
-                    Ok(())
-                })?;
+                }
 
                 let dst: &mut [u8] = dst.borrow_mut();
                 let bytes = (length * 2).to_le_bytes(); // u16, two bytes
@@ -758,11 +757,10 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
 
                 dst.put_u32_le(length);
 
-                ucs2::encode_with(s, |chr| {
+                for chr in s.encode_utf16() {
                     length += 1;
                     dst.put_u16_le(chr);
-                    Ok(())
-                })?;
+                }
 
                 // PLP_TERMINATOR
                 dst.put_u32_le(0);

@@ -233,13 +233,9 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
             let bak = cursor.position();
             cursor.set_position(data_offset as u64);
 
-            ucs2::encode_with(&value, |codepoint| {
-                cursor
-                    .write_u16::<LittleEndian>(codepoint)
-                    .map_err(|_| ucs2::Error::BufferOverflow)?;
-
-                Ok(())
-            })?;
+            for codepoint in value.encode_utf16() {
+                cursor.write_u16::<LittleEndian>(codepoint)?;
+            }
 
             let new_position = cursor.position() as usize;
 
