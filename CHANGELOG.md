@@ -1,6 +1,13 @@
 # Changes
 
-## Version 0.4.11
+## Version 0.4.13
+
+- Realizing UTF-16 works just fine with SQL Server. Reverting the UCS2, but
+  still keeping the faster writes.
+
+## Version 0.4.12
+
+*SKIP this, go directly to 0.4.13*
 
 - A typo fix in README (#94)
 - Faster string writes with better length handling. UCS2 for writes (#95).
