@@ -1298,14 +1298,16 @@ where
 }
 
 #[cfg(feature = "rust_decimal")]
-#[cfg(tests)]
+#[cfg(test)]
 mod rust_decimal {
+    use super::*;
+
     #[test_on_runtimes]
     async fn decimal_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(2, 1);
         let row = conn
@@ -1325,7 +1327,7 @@ mod rust_decimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(i32::MAX as i128 + 10, 1);
         let row = conn
@@ -1345,7 +1347,7 @@ mod rust_decimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(i64::MAX as i128, 19);
         let row = conn
@@ -1365,9 +1367,105 @@ mod rust_decimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(i64::MAX as i128, 28);
+        let row = conn
+            .query("SELECT @P1", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "bigdecimal")]
+#[cfg(test)]
+mod bigdecimal {
+    use super::*;
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use std::str::FromStr;
+        use tiberius::numeric::BigDecimal;
+
+        let num = BigDecimal::from_str("2").unwrap();
+        let row = conn
+            .query("SELECT @P1", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+
+        Ok(())
+    }
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u64_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use num_bigint::BigInt;
+        use tiberius::numeric::{BigDecimal, FromPrimitive};
+
+        let int = BigInt::from_i128(i32::MAX as i128 + 10).unwrap();
+        let num = BigDecimal::new(int, 1);
+
+        let row = conn
+            .query("SELECT @P1 AS foo", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get("foo"));
+
+        Ok(())
+    }
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u96_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use num_bigint::BigInt;
+        use tiberius::numeric::{BigDecimal, FromPrimitive};
+
+        let int = BigInt::from_i128(i64::MAX as i128 + 10).unwrap();
+        let num = BigDecimal::new(int, 19);
+
+        let row = conn
+            .query("SELECT @P1", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+
+        Ok(())
+    }
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u128_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use num_bigint::BigInt;
+        use tiberius::numeric::{BigDecimal, FromPrimitive};
+
+        let int = BigInt::from_i128(i64::MAX as i128).unwrap();
+        let num = BigDecimal::new(int, 28);
+
         let row = conn
             .query("SELECT @P1", &[&num])
             .await?

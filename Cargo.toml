@@ -94,6 +94,17 @@ version = "0.1"
 version = "1.6"
 optional = true
 
+[dependencies.bigdecimal_]
+version = "0.1.0"
+optional = true
+package = "bigdecimal"
+
+[dependencies.num-bigint]
+version = "0.2.0"
+default-features = false
+optional = true
+features = ["std"]
+
 [dev-dependencies.tokio-util]
 version = "0.3"
 features = ["compat"]
@@ -124,3 +135,4 @@ tds73 = []
 sql-browser-async-std = ["async-std"]
 sql-browser-tokio = ["tokio", "tokio-util"]
 integrated-auth-gssapi = ["libgssapi"]
+bigdecimal = [ "bigdecimal_", "num-bigint" ]
