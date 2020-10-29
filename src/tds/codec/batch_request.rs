@@ -26,7 +26,7 @@ impl<'a> Encode<BytesMut> for BatchRequest<'a> {
 
         for c in self.queries.encode_utf16() {
             dst.put_u16_le(c);
-        };
+        }
 
         Ok(())
     }
