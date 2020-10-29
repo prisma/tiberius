@@ -28,6 +28,7 @@ use uuid::Uuid;
 /// |[`Uuid`]|`uniqueidentifier`|
 /// |[`Numeric`]|`numeric`/`decimal`|
 /// |[`Decimal`] (with feature flag `rust_decimal`)|`numeric`/`decimal`|
+/// |[`BigDecimal`] (with feature flag `bigdecimal`)|`numeric`/`decimal`|
 /// |[`XmlData`]|`xml`|
 /// |[`NaiveDate`] (with `chrono` feature, TDS 7.3 >)|`date`|
 /// |[`NaiveTime`] (with `chrono` feature, TDS 7.3 >)|`time`|
@@ -51,6 +52,7 @@ use uuid::Uuid;
 /// [`Uuid`]: struct.Uuid.html
 /// [`Numeric`]: numeric/struct.Numeric.html
 /// [`Decimal`]: numeric/struct.Decimal.html
+/// [`BigDecimal`]: numeric/struct.BigDecimal.html
 /// [`XmlData`]: xml/struct.XmlData.html
 /// [`NaiveDateTime`]: time/chrono/struct.NaiveDateTime.html
 /// [`NaiveDate`]: time/chrono/struct.NaiveDate.html
