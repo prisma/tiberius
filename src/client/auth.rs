@@ -27,6 +27,7 @@ impl Debug for SqlServerAuth {
 
 #[derive(Clone, PartialEq)]
 #[cfg(any(windows, doc))]
+#[cfg_attr(feature = "docs", doc(windows))]
 pub struct WindowsAuth {
     pub(crate) user: String,
     pub(crate) password: String,
@@ -34,6 +35,7 @@ pub struct WindowsAuth {
 }
 
 #[cfg(any(windows, doc))]
+#[cfg_attr(feature = "docs", doc(windows))]
 impl Debug for WindowsAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WindowsAuth")
@@ -47,17 +49,19 @@ impl Debug for WindowsAuth {
 /// Defines the method of authentication to the server.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuthMethod {
-    /// Authenticate directly with SQL Server. The only authentication method
-    /// that works on all platforms.
+    /// Authenticate directly with SQL Server.
     SqlServer(SqlServerAuth),
+    /// Authenticate with Windows credentials.
     #[cfg(any(windows, doc))]
-    /// Authenticate with Windows credentials. Only available on Windows
-    /// platforms.
+    #[cfg_attr(feature = "docs", doc(cfg(windows)))]
     Windows(WindowsAuth),
-    #[cfg(any(windows, all(unix, feature = "integrated-auth-gssapi"), doc))]
     /// Authenticate as the currently logged in user. On Windows uses SSPI and
-    /// Kerberos on Unix platforms.  On Unix platforms the
-    /// `integrated-auth-gssapi` feature needs to be enabled.
+    /// Kerberos on Unix platforms.
+    #[cfg(any(windows, all(unix, feature = "integrated-auth-gssapi"), doc))]
+    #[cfg_attr(
+        feature = "docs",
+        doc(cfg(any(windows, all(unix, feature = "integrated-auth-gssapi"))))
+    )]
     Integrated,
     #[doc(hidden)]
     None,
@@ -72,9 +76,9 @@ impl AuthMethod {
         })
     }
 
-    /// Construct a new Windows authentication configuration. Only available on
-    /// Windows platforms.
+    /// Construct a new Windows authentication configuration.
     #[cfg(any(windows, doc))]
+    #[cfg_attr(feature = "docs", doc(cfg(windows)))]
     pub fn windows(user: impl AsRef<str>, password: impl ToString) -> Self {
         let (domain, user) = match user.as_ref().find("\\") {
             Some(idx) => (Some(&user.as_ref()[..idx]), &user.as_ref()[idx + 1..]),

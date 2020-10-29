@@ -5,7 +5,7 @@ set -e
 pipeline=$(printf "
 steps:
     - label: \":rust: Cargo test all features\"
-      command: ./.buildkite/docker.sh --all-features
+      command: ./.buildkite/docker.sh --features=all
 
     - label: \":rust: Cargo test no default features\"
       command: ./.buildkite/docker.sh --no-default-features

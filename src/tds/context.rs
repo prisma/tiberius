@@ -62,7 +62,7 @@ impl Context {
         self.spn = Some(format!("MSSQLSvc/{}:{}", host.as_ref(), port));
     }
 
-    #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
+    #[cfg(any(windows, all(unix, feature = "integrated-auth-gssapi")))]
     pub fn spn(&self) -> &str {
         self.spn.as_ref().map(|s| s.as_str()).unwrap_or("")
     }

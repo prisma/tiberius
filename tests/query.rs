@@ -1415,7 +1415,8 @@ mod bigdecimal {
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
         use num_bigint::BigInt;
-        use tiberius::numeric::{BigDecimal, FromPrimitive};
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
 
         let int = BigInt::from_i128(i32::MAX as i128 + 10).unwrap();
         let num = BigDecimal::new(int, 1);
@@ -1438,7 +1439,8 @@ mod bigdecimal {
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
         use num_bigint::BigInt;
-        use tiberius::numeric::{BigDecimal, FromPrimitive};
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
 
         let int = BigInt::from_i128(i64::MAX as i128 + 10).unwrap();
         let num = BigDecimal::new(int, 19);
@@ -1461,7 +1463,8 @@ mod bigdecimal {
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
         use num_bigint::BigInt;
-        use tiberius::numeric::{BigDecimal, FromPrimitive};
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
 
         let int = BigInt::from_i128(i64::MAX as i128).unwrap();
         let num = BigDecimal::new(int, 28);
