@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.4.14
+
+- Support alternatively `BigNumber` when dealing with numeric values.
+- Document feature flags
+
 ## Version 0.4.13
 
 - Realizing UTF-16 works just fine with SQL Server. Reverting the UCS2, but
