@@ -1720,3 +1720,46 @@ where
 
     Ok(())
 }
+
+#[test_on_runtimes]
+async fn money_smallmoney<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(
+        format!(
+            "CREATE TABLE ##{} (m1 Money NOT NULL, m2 SmallMoney NOT NULL, m3 Money, m4 SmallMoney)",
+            table
+        ),
+        &[],
+    )
+    .await?;
+
+    let res = conn
+        .execute(
+            format!(
+                "INSERT INTO ##{} (m1, m2, m3, m4) VALUES (@P1, @P2, @P3, @P4)",
+                table
+            ),
+            &[&1.23, &2.33, &4.56, &5.67],
+        )
+        .await?;
+
+    assert_eq!(1, res.total());
+
+    let row = conn
+        .query(format!("SELECT m1, m2, m3, m4 FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(1.23), row.get(0));
+    assert_eq!(Some(2.33), row.get(1));
+    assert_eq!(Some(4.56), row.get(2));
+    assert_eq!(Some(5.67), row.get(3));
+
+    Ok(())
+}
