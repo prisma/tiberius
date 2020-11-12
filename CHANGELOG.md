@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.4.15
+
+- Fixing panicky money types, when size is fixed (#100)
+
 ## Version 0.4.14
 
 - Support alternatively `BigNumber` when dealing with numeric values.
