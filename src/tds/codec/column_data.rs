@@ -202,11 +202,8 @@ impl<'a> ColumnData<'a> {
             FixedLenType::Float8 => ColumnData::F64(Some(src.read_f64_le().await?)),
             FixedLenType::Datetime => Self::decode_datetimen(src, 8).await?,
             FixedLenType::Datetime4 => Self::decode_datetimen(src, 4).await?,
-            _ => {
-                return Err(Error::Protocol(
-                    format!("unsupported fixed type decoding: {:?}", ty).into(),
-                ))
-            }
+            FixedLenType::Money4 => Self::decode_money(src, 4).await?,
+            FixedLenType::Money => Self::decode_money(src, 8).await?,
         };
 
         Ok(ret)
@@ -237,7 +234,11 @@ impl<'a> ColumnData<'a> {
                 ColumnData::String(decoded)
             }
             VarLenType::BigVarChar => Self::decode_big_varchar(src, len, collation).await?,
-            VarLenType::Money => Self::decode_money(src).await?,
+
+            VarLenType::Money => {
+                let len = src.read_u8().await?;
+                Self::decode_money(src, len).await?
+            }
 
             VarLenType::Datetimen => {
                 let len = src.read_u8().await?;
@@ -572,12 +573,10 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    async fn decode_money<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    async fn decode_money<R>(src: &mut R, len: u8) -> crate::Result<ColumnData<'static>>
     where
         R: SqlReadBytes + Unpin,
     {
-        let len = src.read_u8().await?;
-
         let res = match len {
             0 => ColumnData::F64(None),
             4 => ColumnData::F64(Some(src.read_i32_le().await? as f64 / 1e4)),
