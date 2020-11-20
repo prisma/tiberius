@@ -45,6 +45,10 @@ impl TokenDone {
             done_rows,
         })
     }
+
+    pub(crate) fn has_more(&self) -> bool {
+        self.status.contains(DoneStatus::MORE)
+    }
 }
 
 impl fmt::Display for TokenDone {

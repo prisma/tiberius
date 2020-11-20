@@ -1763,3 +1763,30 @@ where
 
     Ok(())
 }
+
+#[test_on_runtimes]
+async fn mars_sp_routines_must_fetch_all_results<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let q = r#"
+        DECLARE @SQL NVARCHAR(MAX) = N''
+        SELECT @SQL += N'ALTER TABLE '
+            + QUOTENAME(OBJECT_SCHEMA_NAME(PARENT_OBJECT_ID))
+            + '.'
+            + QUOTENAME(OBJECT_NAME(PARENT_OBJECT_ID))
+            + ' DROP CONSTRAINT '
+            + OBJECT_NAME(OBJECT_ID) + ';'
+        FROM SYS.OBJECTS
+        WHERE TYPE_DESC LIKE '%CONSTRAINT'
+            AND TYPE_DESC <> 'FOREIGN_KEY_CONSTRAINT'
+            AND OBJECT_NAME(PARENT_OBJECT_ID) = 'Post'
+            AND SCHEMA_NAME(SCHEMA_ID) = 'making_an_existing_id_field_autoincrement_works_with_foreign_keys'
+        EXECUTE @SQL
+    "#;
+
+    let res = conn.simple_query(q).await?.into_results().await;
+    assert!(res.is_err());
+
+    Ok(())
+}
