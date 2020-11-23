@@ -1782,7 +1782,7 @@ where
             AND TYPE_DESC <> 'FOREIGN_KEY_CONSTRAINT'
             AND OBJECT_NAME(PARENT_OBJECT_ID) = 'Post'
             AND SCHEMA_NAME(SCHEMA_ID) = 'making_an_existing_id_field_autoincrement_works_with_foreign_keys'
-        EXECUTE @SQL
+        EXEC sp_execute @SQL
     "#;
 
     let res = conn.simple_query(q).await?.into_results().await;
