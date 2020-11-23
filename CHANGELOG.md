@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.4.16
+
+- Handle all MARS results properly (#102)
+
 ## Version 0.4.14
 
 - Support alternatively `BigNumber` when dealing with numeric values.
