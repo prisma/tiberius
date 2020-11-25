@@ -55,12 +55,12 @@ winauth = "0.0.4"
 libgssapi = { version = "0.4", optional = true, default-features = false }
 
 [dependencies.tokio]
-version = "0.2"
+version = "1.0"
 optional = true
-features = ["udp", "dns"]
+features = ["net"]
 
 [dependencies.tokio-util]
-version = "0.3"
+version = "0.6"
 features = ["compat"]
 optional = true
 
@@ -107,12 +107,12 @@ optional = true
 features = ["std"]
 
 [dev-dependencies.tokio-util]
-version = "0.3"
+version = "0.6"
 features = ["compat"]
 
 [dev-dependencies.tokio]
-features = ["macros", "sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
-version = "0.2"
+features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]
+version = "1.0"
 
 [dev-dependencies.async-std]
 features = ["attributes"]

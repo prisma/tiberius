@@ -188,7 +188,7 @@ impl From<&TypeInfo> for ColumnType {
 ///
 /// ```
 /// # use tiberius::{Config, FromSqlOwned};
-/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+/// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # use std::env;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -263,7 +263,7 @@ impl Row {
     ///
     /// ```
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -296,7 +296,7 @@ impl Row {
     ///
     /// ```
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -329,7 +329,7 @@ impl Row {
     ///
     /// ```
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {

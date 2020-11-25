@@ -24,7 +24,7 @@ use task::Poll;
 ///
 /// ```
 /// # use tiberius::Config;
-/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+/// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # use std::env;
 /// # use futures::{StreamExt, TryStreamExt};
 /// # #[tokio::main]
@@ -98,7 +98,7 @@ impl<'a> QueryResult<'a> {
     ///
     /// ```no_run
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -196,7 +196,7 @@ impl<'a> Stream for QueryResult<'a> {
 ///
 /// ```no_run
 /// # use tiberius::Config;
-/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+/// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # use std::env;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -260,7 +260,7 @@ impl<'a> ExecuteResult {
     ///
     /// ```no_run
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {

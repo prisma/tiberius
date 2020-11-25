@@ -56,8 +56,10 @@ pub fn test_on_runtimes(
             LOGGER_SETUP.call_once(|| {
                 env_logger::init();
             });
-            use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+            use tokio_util::compat::TokioAsyncWriteCompatExt;
+
             let mut rt = tokio::runtime::Runtime::new()?;
+
             rt.block_on(async {
                 let config = tiberius::Config::from_ado_string(&#conn_str_ident)?;
                 let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
