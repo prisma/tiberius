@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures::TryFutureExt;
 use net::{TcpStream, UdpSocket};
 use std::{io, net::SocketAddr};
-use time::{Duration, Elapsed};
+use time::Duration;
 use tokio::{net, time};
 
 #[async_trait]
@@ -34,13 +34,13 @@ impl SqlBrowser for TcpStream {
             let msg = [&[4u8], instance_name.as_bytes()].concat();
             let mut buf = vec![0u8; 4096];
 
-            let mut socket = UdpSocket::bind(&local_bind).await?;
+            let socket = UdpSocket::bind(&local_bind).await?;
             socket.send_to(&msg, &addr).await?;
 
             let timeout = Duration::from_millis(1000);
 
             let len = time::timeout(timeout, socket.recv(&mut buf))
-                .map_err(|_: Elapsed| {
+                .map_err(|_| {
                     crate::error::Error::Conversion(
                         format!(
                             "SQL browser timeout during resolving instance {}",

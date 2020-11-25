@@ -64,7 +64,7 @@
 //! ```no_run
 //! use tiberius::{Client, Config, AuthMethod};
 //! use tokio::net::TcpStream;
-//! use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+//! use tokio_util::compat::TokioAsyncWriteCompatExt;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
@@ -78,7 +78,7 @@
 //!     tcp.set_nodelay(true)?;
 //!
 //!     // To be able to use Tokio's tcp, we're using the `compat_write` from
-//!     // the `Tokio02AsyncWriteCompatExt` to get a stream compatible with the
+//!     // the `TokioAsyncWriteCompatExt` to get a stream compatible with the
 //!     // traits from the `futures` crate.
 //!     let mut client = Client::connect(config, tcp.compat_write()).await?;
 //!     # client.query("SELECT @P1", &[&-4i32]).await?;

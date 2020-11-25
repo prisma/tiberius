@@ -29,7 +29,7 @@ use std::{borrow::Cow, fmt::Debug};
 ///
 /// ```no_run
 /// # use tiberius::{Config, AuthMethod};
-/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+/// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut config = Config::new();
@@ -79,7 +79,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     ///
     /// ```no_run
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -132,7 +132,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     ///
     /// ```
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -185,7 +185,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     ///
     /// ```
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {

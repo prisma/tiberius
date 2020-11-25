@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use std::env;
 use tiberius::{Client, Config};
 use tokio::net::TcpStream;
-use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
