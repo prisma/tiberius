@@ -21,13 +21,17 @@ compile_error!("`tls` and `rustls` are mutually exclusive");
 
 use futures::{AsyncRead, AsyncWrite};
 
+#[cfg(feature = "rustls")]
+use tokio_util::compat;
+
+
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
     Raw(S),
     #[cfg(feature = "tls")]
     NativeTls(async_native_tls::TlsStream<TlsPreloginWrapper<S>>),
     #[cfg(feature = "rustls")]
-    Rustls(async_tls::client::TlsStream<TlsPreloginWrapper<S>>),
+    Rustls(compat::Compat<tokio_rustls::client::TlsStream<compat::Compat<TlsPreloginWrapper<S>>>>),
 }
 
 #[allow(dead_code)]
@@ -38,7 +42,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
             #[cfg(feature = "tls")]
             Self::NativeTls(mut tls) => tls.get_mut().stream.take().unwrap(),
             #[cfg(feature = "rustls")]
-            Self::Rustls(mut tls) => tls.get_mut().stream.take().unwrap(),
+            Self::Rustls(mut tls) => tls.get_mut().get_mut().0.get_mut().stream.take().unwrap(),
         }
     }
 }

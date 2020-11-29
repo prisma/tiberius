@@ -78,8 +78,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             buf: BytesMut::new(),
         };
 
-        let prelogin = connection.prelogin(config.encryption).await?;
-        let encryption = prelogin.negotiated_encryption(config.encryption);
+        // let prelogin = connection.prelogin(config.encryption).await?;
+        let prelogin = connection.prelogin(crate::tds::EncryptionLevel::On).await?;
+
+        dbg!(&prelogin);
+        // let encryption = prelogin.negotiated_encryption(config.encryption);
+        let encryption = prelogin.negotiated_encryption(crate::tds::EncryptionLevel::On);
 
         let connection = connection
             .tls_handshake(&config, encryption, config.trust_cert)
@@ -473,19 +477,24 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 transport, context, ..
             } = self;
 
+            use tokio_util::compat;
+
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
-                    async_tls::TlsConnector::from(builder)
-                        .connect(config.get_host(), TlsPreloginWrapper::new(tcp))
+                    // let tcp = compat::Tokio02AsyncWriteCompatExt::compat_write(tcp);
+                    tokio_rustls::TlsConnector::from(std::sync::Arc::new(builder))
+                        .connect(
+                            webpki::DNSNameRef::try_from_ascii_str(config.get_host()).unwrap(), 
+                            compat::FuturesAsyncWriteCompatExt::compat_write(TlsPreloginWrapper::new(tcp)))
                         .await?
                 }
                 _ => unreachable!(),
             };
 
-            stream.get_mut().handshake_complete();
+            stream.get_mut().0.get_mut().handshake_complete();
             event!(Level::INFO, "TLS handshake successful");
 
-            let transport = Framed::new(MaybeTlsStream::Rustls(stream), PacketCodec);
+            let transport = Framed::new(MaybeTlsStream::Rustls(compat::Tokio02AsyncWriteCompatExt::compat_write(stream)), PacketCodec);
 
             Ok(Self {
                 transport,

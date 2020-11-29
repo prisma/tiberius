@@ -87,11 +87,9 @@ version = "0.3"
 optional = true
 version = "0.3"
 
-[dependencies.async-tls]
+[dependencies.tokio-rustls]
 optional = true
-path = "async-tls"
-default-features = false
-features = ["client"]
+version = "0.15"
 
 [dependencies.webpki-roots]
 optional = true
@@ -99,7 +97,7 @@ version = "0.20"
 
 [dependencies.rustls-crate]
 optional = true
-version = "0.18"
+version = "0.19"
 package = "rustls"
 features = ["dangerous_configuration"]
 
@@ -162,7 +160,7 @@ all = [
 ]
 default = ["tls", "tds73"]
 tls = ["async-native-tls"]
-rustls = ["async-tls", "rustls-crate", "webpki", "webpki-roots"]
+rustls = ["tokio-rustls", "rustls-crate", "webpki", "webpki-roots", "tds73", "tokio", "tokio-util"]
 tds73 = []
 docs = []
 sql-browser-async-std = ["async-std"]
