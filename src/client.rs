@@ -17,7 +17,7 @@ use crate::{
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use futures::{AsyncRead, AsyncWrite};
-use std::{borrow::Cow, fmt::Debug};
+use std::{marker, borrow::Cow, fmt::Debug};
 
 /// `Client` is the main entry point to the SQL Server, providing query
 /// execution capabilities.
@@ -52,106 +52,94 @@ pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
     connection: Connection<S>,
 }
 
-pub trait HasData {}
-
-#[derive(Debug)]
-pub struct Yes<T: crate::FromSqlOwned + Debug> {
-    data: T,
-}
-
-impl<T: crate::FromSqlOwned + Debug> HasData for Yes<T> {}
-
-#[derive(Debug)]
-pub struct No;
-impl HasData for No {}
-
 #[must_use]
 #[derive(Debug)]
-pub struct Transaction<'client, S, D> 
+pub struct Transaction<S, F> 
+    where 
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        F: FnOnce(futures::future::BoxFuture<'static, ()>),
+{
+    client: Option<Client<S>>,
+    previous_result: crate::Result<()>,
+    tran_open: bool,
+    spawn_rollback: Option<F>,
+}
+
+impl<'a, S, F> Drop for Transaction<S, F> 
     where 
         S: AsyncRead + AsyncWrite + Unpin + Send,
-        D: HasData,
+        F: FnOnce(futures::future::BoxFuture<'static, ()>),
 {
-    client: &'client mut Client<S>,
-    previous_result: crate::Result<D>,
+    fn drop(&mut self) {
+        use futures::FutureExt;
+        println!("tran drop ");
+        if self.tran_open {
+            println!("rolling back failed transaction");
+            let mut client = self.client.take().unwrap();
+            (self.spawn_rollback.take().unwrap())(
+                Box::pin(async move {
+                    client.simple_query("ROLLBACK TRANSACTION").map(|_| ()).await
+                })
+            )
+        } 
+    }
 }
 
-impl<'client, S: AsyncRead + AsyncWrite + Unpin + Send, T: crate::FromSqlOwned + Debug> Transaction<'client, S, Yes<T>> {
-    pub async fn exec<'a>(self, query: impl Into<Cow<'a, str>>, params: impl FnOnce(T) -> Vec<Box<dyn ToSql>>) -> Transaction<'client, S, No> {
-        let previous_result = if let Ok(Yes { data }) = self.previous_result {
-            self.client.execute(query, params(data).iter().map(AsRef::as_ref).collect::<Vec<_>>().as_slice()).await.map(|_| No)
-        } else {
-            self.previous_result.map(|_| No)
+impl<S, F> Transaction<S, F> 
+    where 
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+        F: FnOnce(futures::future::BoxFuture<'static, ()>),
+{
+    pub async fn finalize(mut self) -> crate::Result<Client<S>> {
+        let mut client = self.client.take().unwrap();
+        let _ = match &self.previous_result {
+            Ok(_) => client.simple_query("COMMIT TRANSACTION").await?,
+            Err(_) => client.simple_query("ROLLBACK TRANSACTION").await?,
         };
-        Transaction {
-            client: self.client,
-            previous_result,
+        self.tran_open = false;
+        let mut dummy_res = Ok(());
+        let prev_res = std::mem::swap(&mut self.previous_result, &mut dummy_res);
+        match dummy_res {
+            Ok(()) => Ok(client),
+            Err(e) => {
+                self.client = Some(client);
+                Err(e)
+            }
         }
     }
-}
-
-impl<'client, S: AsyncRead + AsyncWrite + Unpin + Send> Transaction<'client, S, No> {
-    pub async fn finalize(self) -> crate::Result<()> {
-        let _ = match &self.previous_result {
-            Ok(_) => self.client.simple_query("COMMIT TRANSACTION").await?,
-            Err(_) => self.client.simple_query("ROLLBACK TRANSACTION").await?,
-        };
-        self.previous_result.map(|_| ())
-    }
-    pub async fn exec<'a>(mut self, query: impl Into<Cow<'a, str>>, params: &[&dyn ToSql]) -> Transaction<'client, S, No> {
+    pub async fn exec<'a>(mut self, query: impl Into<Cow<'a, str>>, params: &[&dyn ToSql]) -> Transaction<S, F> {
+        let mut client = self.client.take().unwrap();
         if let Ok(No) = self.previous_result {
-            self.previous_result = self.client.execute(query, params).await.map(|_| No)
+            self.previous_result = client.execute(query, params).await.map(|_| No)
         };
+        self.client = Some(client);
         self
     }
     pub async fn loop_exec<'a>(&mut self, query: impl Into<Cow<'a, str>>, params: &[&dyn ToSql]) {
+        let mut client = self.client.take().unwrap();
         if let Ok(No) = self.previous_result {
-            self.previous_result = self.client.execute(query, params).await.map(|_| No)
+            self.previous_result = client.execute(query, params).await.map(|_| No)
         } 
-    }
-    pub async fn query<T: crate::FromSqlOwned + Debug>(self, query: &str, params: &[&dyn ToSql]) -> Transaction<'client, S, Yes<T>> {
-        let previous_result = match self.previous_result {
-            Ok(No) =>  match self.client.query(query, params).await {
-                Ok(query_result) => {
-                    match query_result.into_row().await {
-                        Ok(Some(row)) => {
-                            if let Some(col_data) = row.into_iter().next() {
-                                if let Ok(Some(data)) = crate::FromSqlOwned::from_sql_owned(col_data) {
-                                    Ok(Yes { data })
-                                } else {
-                                   todo!()
-                                }
-                            } else {
-                                todo!()
-                            }
-                        }
-                        Ok(None) => todo!(),
-                        Err(e) => Err(e),
-                    }
-                }
-                Err(e) => Err(e),
-            }
-            Err(e) => Err(e),
-        };
-
-        Transaction {
-            client: self.client,
-            previous_result,
-        }
+        self.client = Some(client);
     }
 }
 
 
-impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<S> {
 
     /// Gives a handle on a open transaction in which queries can be run.
     /// Once the desired queries have been run, the transaction must be [`finalize`]d
     /// [`finalize`]: struct.Transaction.html#method.finalize
-    pub async fn transaction<'client>(&'client mut self) -> crate::Result<Transaction<'client, S, No>> {
+    pub async fn transaction<F>(mut self, spawn_rollback: F) -> crate::Result<Transaction<S, F>> 
+        where 
+        F: FnOnce(futures::future::BoxFuture<'static, ()>),
+    {
         self.simple_query("BEGIN TRANSACTION").await?;
         Ok(Transaction {
-            client: self,
-            previous_result: Ok(No),
+            client: Some(self),
+            previous_result: Ok(()),
+            tran_open: true,
+            spawn_rollback: Some(spawn_rollback), 
         })
     }
 

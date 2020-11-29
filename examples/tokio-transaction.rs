@@ -23,8 +23,8 @@ async fn main() -> anyhow::Result<()> {
         .simple_query("create table ##Test ( id int )")
         .await?;
 
-    client
-        .transaction()
+    let client = client
+        .transaction(|f| { tokio::spawn(f); })
         .await?
         .exec(
             "INSERT INTO ##Test (id) VALUES (@P1), (@P2), (@P3)",
@@ -34,7 +34,9 @@ async fn main() -> anyhow::Result<()> {
         .finalize()
         .await?;
 
-    let mut t1 = client.transaction().await?;
+    let mut t1 = client
+        .transaction(|f| { tokio::spawn(f); })
+            .await?;
     for _ in (1..).take(3) {
         t1.loop_exec(
             "INSERT INTO ##Test (id) VALUES (@P1), (@P2), (@P3)",
@@ -42,34 +44,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .await;
     }
-    t1.finalize().await?;
+    let mut client = t1.finalize().await?;
 
-    let failed = client
-        .transaction()
-        .await?
-        .exec("select 1 / 0", &[])
-        .await
-        .exec("INSERT INTO ##Test (id) VALUES (@P1)", &[&99i32])
-        .await
-        .finalize()
-        .await;
-
-    assert!(failed.is_err());
-
-    client
-        .transaction()
-        .await?
-        .query::<i32>(
-            "INSERT INTO ##Test (id) OUTPUT inserted.id VALUES (@P1)",
-            &[&55i32],
-        )
-        .await
-        .exec("INSERT INTO ##Test (id) VALUES (@P1)", |out| {
-            vec![Box::new(out)]
-        })
-        .await
-        .finalize()
-        .await?;
 
     let stream = client.query("SELECT * from ##Test", &[]).await?;
     let rows = stream.into_first_result().await?;
@@ -83,7 +59,18 @@ async fn main() -> anyhow::Result<()> {
 
     println!("{:?}", data);
 
-    assert_eq!(vec![1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 55, 55], data);
+    assert_eq!(vec![1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3], data);
+
+
+    let timed = tokio::time::timeout(
+        std::time::Duration::from_millis(1),
+        client
+        .transaction(|f| { tokio::spawn(f); })
+        .await?
+        .exec("select * from sys.all_objects a cross join sys.all_objects b cross join sys.all_objects c cross join sys.all_objects d", &[])
+    ).await;
+
+
 
     Ok(())
 }
