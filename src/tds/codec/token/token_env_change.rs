@@ -1,10 +1,13 @@
 use crate::{
-    tds::{codec::read_varchar, lcid_to_encoding, sortid_to_encoding},
+    tds::{lcid_to_encoding, sortid_to_encoding},
     Error, SqlReadBytes,
 };
+use byteorder::{LittleEndian, ReadBytesExt};
 use encoding::Encoding;
 use fmt::Debug;
 use futures::io::AsyncReadExt;
+use std::io::Cursor;
+use std::io::Read;
 use std::{convert::TryFrom, fmt};
 
 uint_enum! {
@@ -151,39 +154,71 @@ impl TokenEnvChange {
     where
         R: SqlReadBytes + Unpin,
     {
-        let _len = src.read_u16_le().await?;
-        let ty_byte = src.read_u8().await?;
+        let len = src.read_u16_le().await? as usize;
+
+        // We read all the bytes now, due to whatever environment change tokens
+        // we read, they might contain padding zeroes in the end we must
+        // discard.
+        let mut bytes = vec![0; len];
+        src.read_exact(&mut bytes[0..len]).await?;
+
+        let mut buf = Cursor::new(bytes);
+        let ty_byte = buf.read_u8()?;
 
         let ty = EnvChangeTy::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid envchange type {:x}", ty_byte).into()))?;
 
         let token = match ty {
             EnvChangeTy::Database => {
-                let len = src.read_u8().await?;
-                let new_value = read_varchar(src, len).await?;
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
 
-                let len = src.read_u8().await?;
-                let old_value = read_varchar(src, len).await?;
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let new_value = String::from_utf16(&bytes[..])?;
+
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
+
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let old_value = String::from_utf16(&bytes[..])?;
 
                 TokenEnvChange::Database(new_value, old_value)
             }
             EnvChangeTy::PacketSize => {
-                let len = src.read_u8().await?;
-                let new_value = read_varchar(src, len).await?;
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
 
-                let len = src.read_u8().await?;
-                let old_value = read_varchar(src, len).await?;
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let new_value = String::from_utf16(&bytes[..])?;
+
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
+
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let old_value = String::from_utf16(&bytes[..])?;
 
                 TokenEnvChange::PacketSize(new_value.parse()?, old_value.parse()?)
             }
             EnvChangeTy::SqlCollation => {
-                let len = src.read_u8().await? as usize;
+                let len = buf.read_u8()? as usize;
                 let mut new_value = vec![0; len];
-                src.read_exact(&mut new_value[0..len]).await?;
+                buf.read_exact(&mut new_value[0..len])?;
 
-                let len = src.read_u8().await? as usize;
+                let len = buf.read_u8()? as usize;
                 let mut old_value = vec![0; len];
-                src.read_exact(&mut old_value[0..len]).await?;
+                buf.read_exact(&mut old_value[0..len])?;
 
                 TokenEnvChange::SqlCollation {
                     new: CollationInfo::new(new_value.as_slice()),
@@ -191,34 +226,45 @@ impl TokenEnvChange {
                 }
             }
             EnvChangeTy::BeginTransaction | EnvChangeTy::EnlistDTCTransaction => {
-                let len = src.read_u8().await?;
+                let len = buf.read_u8()?;
                 assert!(len == 8);
 
                 let mut desc = [0; 8];
-                src.read_exact(&mut desc).await?;
+                buf.read_exact(&mut desc)?;
 
                 TokenEnvChange::BeginTransaction(desc)
             }
+
             EnvChangeTy::CommitTransaction => TokenEnvChange::CommitTransaction,
             EnvChangeTy::RollbackTransaction => TokenEnvChange::RollbackTransaction,
             EnvChangeTy::DefectTransaction => TokenEnvChange::DefectTransaction,
+
             EnvChangeTy::Routing => {
-                src.read_u16_le().await?; // routing data value length
-                src.read_u8().await?; // routing protocol, always 0 (tcp)
+                buf.read_u16::<LittleEndian>()?; // routing data value length
+                buf.read_u8()?; // routing protocol, always 0 (tcp)
 
-                let port = src.read_u16_le().await?;
+                let port = buf.read_u16::<LittleEndian>()?;
 
-                let len = src.read_u16_le().await?; // hostname string length
-                let host = read_varchar(src, len).await?;
+                let len = buf.read_u16::<LittleEndian>()? as usize; // hostname string length
+                let mut bytes = vec![0; len];
 
-                // ??? but needed...
-                src.read_u16_le().await?;
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let host = String::from_utf16(&bytes[..])?;
 
                 TokenEnvChange::Routing { host, port }
             }
             EnvChangeTy::RTLS => {
-                let len = src.read_u8().await?;
-                let mirror_name = read_varchar(src, len).await?;
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
+
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let mirror_name = String::from_utf16(&bytes[..])?;
 
                 TokenEnvChange::ChangeMirror(mirror_name)
             }
