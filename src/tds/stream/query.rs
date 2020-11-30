@@ -70,13 +70,14 @@ impl<'a> QueryStream<'a> {
                     return Ok(());
                 }
                 Some(ReceivedToken::Done(done)) if done.has_more() => return Ok(()),
-                _ => {
+                Some(ReceivedToken::Done(_)) => {
                     if self.columns().is_none() {
                         self.state = QueryStreamState::Done;
                     }
 
                     return Ok(());
                 }
+                _ => return Ok(()),
             }
         }
     }
