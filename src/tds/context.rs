@@ -7,7 +7,7 @@ pub(crate) struct Context {
     version: FeatureLevel,
     packet_size: u32,
     packet_id: u8,
-    transaction_id: u64,
+    transaction_desc: [u8; 8],
     last_meta: Option<Arc<TokenColMetaData>>,
     spn: Option<String>,
 }
@@ -18,7 +18,7 @@ impl Context {
             version: FeatureLevel::SqlServerN,
             packet_size: 4096,
             packet_id: 0,
-            transaction_id: 0,
+            transaction_desc: [0; 8],
             last_meta: None,
             spn: None,
         }
@@ -46,12 +46,12 @@ impl Context {
         self.packet_size = new_size;
     }
 
-    pub fn transaction_id(&self) -> u64 {
-        self.transaction_id
+    pub fn transaction_descriptor(&self) -> [u8; 8] {
+        self.transaction_desc
     }
 
-    pub fn set_transaction_id(&mut self, id: u64) {
-        self.transaction_id = id;
+    pub fn set_transaction_descriptor(&mut self, desc: [u8; 8]) {
+        self.transaction_desc = desc;
     }
 
     pub fn version(&self) -> FeatureLevel {

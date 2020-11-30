@@ -107,10 +107,10 @@ pub enum TokenEnvChange {
         old: CollationInfo,
         new: CollationInfo,
     },
-    BeginTransaction(u64),
-    CommitTransaction(u64),
-    RollbackTransaction(u64),
-    DefectTransaction(u64),
+    BeginTransaction([u8; 8]),
+    CommitTransaction,
+    RollbackTransaction,
+    DefectTransaction,
     Routing {
         host: String,
         port: u16,
@@ -132,9 +132,9 @@ impl fmt::Display for TokenEnvChange {
                 write!(f, "SQL collation change from {} to {}", old, new)
             }
             Self::BeginTransaction(_) => write!(f, "Begin transaction"),
-            Self::CommitTransaction(_) => write!(f, "Commit transaction"),
-            Self::RollbackTransaction(_) => write!(f, "Rollback transaction"),
-            Self::DefectTransaction(_) => write!(f, "Defect transaction"),
+            Self::CommitTransaction => write!(f, "Commit transaction"),
+            Self::RollbackTransaction => write!(f, "Rollback transaction"),
+            Self::DefectTransaction => write!(f, "Defect transaction"),
             Self::Routing { host, port } => write!(
                 f,
                 "Server requested routing to a new address: {}:{}",
@@ -191,25 +191,17 @@ impl TokenEnvChange {
                 }
             }
             EnvChangeTy::BeginTransaction | EnvChangeTy::EnlistDTCTransaction => {
-                src.read_u8().await?;
-                let desc = src.read_u64_le().await?;
+                let len = src.read_u8().await?;
+                assert!(len == 8);
+
+                let mut desc = [0; 8];
+                src.read_exact(&mut desc).await?;
+
                 TokenEnvChange::BeginTransaction(desc)
             }
-            EnvChangeTy::CommitTransaction => {
-                src.read_u8().await?;
-                let desc = src.read_u64_le().await?;
-                TokenEnvChange::CommitTransaction(desc)
-            }
-            EnvChangeTy::RollbackTransaction => {
-                src.read_u8().await?;
-                let desc = src.read_u64_le().await?;
-                TokenEnvChange::RollbackTransaction(desc)
-            }
-            EnvChangeTy::DefectTransaction => {
-                src.read_u8().await?;
-                let desc = src.read_u64_le().await?;
-                TokenEnvChange::DefectTransaction(desc)
-            }
+            EnvChangeTy::CommitTransaction => TokenEnvChange::CommitTransaction,
+            EnvChangeTy::RollbackTransaction => TokenEnvChange::RollbackTransaction,
+            EnvChangeTy::DefectTransaction => TokenEnvChange::DefectTransaction,
             EnvChangeTy::Routing => {
                 src.read_u16_le().await?; // routing data value length
                 src.read_u8().await?; // routing protocol, always 0 (tcp)
