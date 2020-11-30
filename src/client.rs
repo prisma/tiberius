@@ -217,7 +217,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     {
         self.connection.flush_stream().await?;
 
-        let req = BatchRequest::new(query, self.connection.context().transaction_id());
+        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
 
         let id = self.connection.context_mut().next_packet_id();
         self.connection.send(PacketHeader::batch(id), req).await?;
@@ -278,7 +278,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         let req = TokenRpcRequest::new(
             proc_id,
             rpc_params,
-            self.connection.context().transaction_id(),
+            self.connection.context().transaction_descriptor(),
         );
 
         let id = self.connection.context_mut().next_packet_id();

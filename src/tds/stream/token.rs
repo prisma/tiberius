@@ -144,12 +144,12 @@ where
                 self.conn.context_mut().set_packet_size(new_size);
             }
             TokenEnvChange::BeginTransaction(desc) => {
-                self.conn.context_mut().set_transaction_id(desc);
+                self.conn.context_mut().set_transaction_descriptor(desc);
             }
-            TokenEnvChange::CommitTransaction(_)
-            | TokenEnvChange::RollbackTransaction(_)
-            | TokenEnvChange::DefectTransaction(_) => {
-                self.conn.context_mut().set_transaction_id(0);
+            TokenEnvChange::CommitTransaction
+            | TokenEnvChange::RollbackTransaction
+            | TokenEnvChange::DefectTransaction => {
+                self.conn.context_mut().set_transaction_descriptor([0; 8]);
             }
             _ => (),
         }
