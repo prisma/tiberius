@@ -1,5 +1,11 @@
 # Changes
 
+## Version 0.4.17
+
+- Fixing error swallowing with `simple_query` and MARS (#105)
+- Fixing transaction descriptor reading (#105)
+- Fixing envchange token reads (#105)
+
 ## Version 0.4.16
 
 - Handle all MARS results properly (#102)
