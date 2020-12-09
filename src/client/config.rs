@@ -240,6 +240,7 @@ pub(crate) trait ConfigString {
         self.dict()
             .get("database")
             .or_else(|| self.dict().get("initial catalog"))
+            .or_else(|| self.dict().get("databasename"))
             .map(|db| db.to_string())
     }
 

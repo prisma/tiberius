@@ -97,6 +97,16 @@ mod tests {
 
         assert_eq!(Some("Foo".to_string()), jdbc.database());
 
+        let test_str = "jdbc:sqlserver://myserver.com:4200;databaseName=Foo";
+        let jdbc: JdbcConfig = test_str.parse()?;
+
+        assert_eq!(Some("Foo".to_string()), jdbc.database());
+
+        let test_str = "jdbc:sqlserver://myserver.com:4200;Initial Catalog=Foo";
+        let jdbc: JdbcConfig = test_str.parse()?;
+
+        assert_eq!(Some("Foo".to_string()), jdbc.database());
+
         Ok(())
     }
 
