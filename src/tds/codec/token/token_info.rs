@@ -1,4 +1,4 @@
-use crate::{tds::codec::read_varchar, SqlReadBytes};
+use crate::SqlReadBytes;
 
 #[derive(Debug)]
 pub struct TokenInfo {
@@ -25,18 +25,9 @@ impl TokenInfo {
             number: src.read_u32_le().await?,
             state: src.read_u8().await?,
             class: src.read_u8().await?,
-            message: {
-                let len = src.read_u16_le().await?;
-                read_varchar(src, len).await?
-            },
-            server: {
-                let len = src.read_u8().await?;
-                read_varchar(src, len).await?
-            },
-            procedure: {
-                let len = src.read_u8().await?;
-                read_varchar(src, len).await?
-            },
+            message: src.read_us_varchar().await?,
+            server: src.read_b_varchar().await?,
+            procedure: src.read_b_varchar().await?,
             line: src.read_u32_le().await?,
         };
 

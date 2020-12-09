@@ -1,4 +1,4 @@
-use super::{read_varchar, Encode, FixedLenType, TypeInfo, VarLenType};
+use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::tds::{Collation, DateTime, SmallDateTime};
 #[cfg(feature = "tds73")]
 use crate::tds::{Date, DateTime2, DateTimeOffset, Time};
@@ -480,8 +480,14 @@ impl<'a> ColumnData<'a> {
             src.read_i32_le().await?; // days
             src.read_u32_le().await?; // second fractions
 
-            let text_len = src.read_u32_le().await? as usize / 2;
-            let text = read_varchar(src, text_len).await?;
+            let len = src.read_u32_le().await? as usize / 2;
+            let mut buf = vec![0u16; len];
+
+            for i in 0..len {
+                buf[i] = src.read_u16_le().await?;
+            }
+
+            let text = String::from_utf16(&buf[..])?;
 
             Ok(ColumnData::String(Some(text.into())))
         }

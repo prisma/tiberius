@@ -132,14 +132,9 @@ impl TypeInfo {
                 let has_schema = src.read_u8().await?;
 
                 let schema = if has_schema == 1 {
-                    let len = src.read_u8().await?;
-                    let db_name = super::read_varchar(src, len).await?;
-
-                    let len = src.read_u8().await?;
-                    let owner = super::read_varchar(src, len).await?;
-
-                    let len = src.read_u16_le().await?;
-                    let collection = super::read_varchar(src, len).await?;
+                    let db_name = src.read_b_varchar().await?;
+                    let owner = src.read_b_varchar().await?;
+                    let collection = src.read_us_varchar().await?;
 
                     Some(Arc::new(XmlSchema::new(db_name, owner, collection)))
                 } else {
