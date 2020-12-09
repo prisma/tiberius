@@ -1,7 +1,4 @@
-use crate::{
-    tds::codec::{read_varchar, FeatureLevel},
-    SqlReadBytes,
-};
+use crate::{tds::codec::FeatureLevel, SqlReadBytes};
 use std::fmt;
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -26,18 +23,14 @@ impl TokenError {
         R: SqlReadBytes + Unpin,
     {
         let _length = src.read_u16_le().await? as usize;
+
         let code = src.read_u32_le().await?;
         let state = src.read_u8().await?;
         let class = src.read_u8().await?;
 
-        let message_len = src.read_u16_le().await?;
-        let message = read_varchar(src, message_len).await?;
-
-        let server_len = src.read_u8().await?;
-        let server = read_varchar(src, server_len).await?;
-
-        let procedure_len = src.read_u8().await?;
-        let procedure = read_varchar(src, procedure_len).await?;
+        let message = src.read_us_varchar().await?;
+        let server = src.read_b_varchar().await?;
+        let procedure = src.read_b_varchar().await?;
 
         let line = if src.context().version() > FeatureLevel::SqlServer2005 {
             src.read_u32_le().await?

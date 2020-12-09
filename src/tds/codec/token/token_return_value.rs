@@ -1,8 +1,5 @@
 use super::BaseMetaDataColumn;
-use crate::{
-    tds::codec::{read_varchar, ColumnData},
-    Error, SqlReadBytes,
-};
+use crate::{tds::codec::ColumnData, Error, SqlReadBytes};
 
 #[derive(Debug)]
 pub struct TokenReturnValue {
@@ -20,9 +17,7 @@ impl TokenReturnValue {
         R: SqlReadBytes + Unpin,
     {
         let param_ordinal = src.read_u16_le().await?;
-        let param_name_len = src.read_u8().await? as usize;
-
-        let param_name = read_varchar(src, param_name_len).await?;
+        let param_name = src.read_b_varchar().await?;
 
         let udf = match src.read_u8().await? {
             0x01 => false,

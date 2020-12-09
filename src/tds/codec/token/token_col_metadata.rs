@@ -1,5 +1,5 @@
 use crate::{
-    tds::codec::{read_varchar, FixedLenType, TypeInfo, VarLenType},
+    tds::codec::{FixedLenType, TypeInfo, VarLenType},
     ColumnData, SqlReadBytes,
 };
 use bitflags::bitflags;
@@ -133,14 +133,9 @@ impl TokenColMetaData {
         if column_count > 0 && column_count < 0xffff {
             for _ in 0..column_count {
                 let base = BaseMetaDataColumn::decode(src).await?;
-                let col_name_len = src.read_u8().await?;
+                let col_name = src.read_b_varchar().await?;
 
-                let meta = MetaDataColumn {
-                    base,
-                    col_name: read_varchar(src, col_name_len).await?,
-                };
-
-                columns.push(meta);
+                columns.push(MetaDataColumn { base, col_name });
             }
         }
 
@@ -168,8 +163,7 @@ impl BaseMetaDataColumn {
 
                 // table name
                 for _ in 0..num_of_parts {
-                    let len = src.read_u16_le().await?;
-                    read_varchar(src, len as usize).await?;
+                    src.read_us_varchar().await?;
                 }
             }
             TypeInfo::VarLenSized(VarLenType::NText, _, _) => {
@@ -177,8 +171,7 @@ impl BaseMetaDataColumn {
 
                 // table name
                 for _ in 0..num_of_parts {
-                    let len = src.read_u16_le().await?;
-                    read_varchar(src, len as usize).await?;
+                    src.read_us_varchar().await?;
                 }
             }
             TypeInfo::VarLenSized(VarLenType::Image, _, _) => {
@@ -186,8 +179,7 @@ impl BaseMetaDataColumn {
 
                 // table name
                 for _ in 0..num_of_parts {
-                    let len = src.read_u16_le().await?;
-                    read_varchar(src, len as usize).await?;
+                    src.read_us_varchar().await?;
                 }
             }
             _ => (),
