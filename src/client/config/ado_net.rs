@@ -132,6 +132,16 @@ mod tests {
 
         assert_eq!(Some("Foo".to_string()), ado.database());
 
+        let test_str = "databaseName=Foo";
+        let jdbc: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(Some("Foo".to_string()), jdbc.database());
+
+        let test_str = "Initial Catalog=Foo";
+        let jdbc: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(Some("Foo".to_string()), jdbc.database());
+
         Ok(())
     }
 
