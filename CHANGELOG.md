@@ -1,5 +1,11 @@
 # Changes
 
+## Version 0.4.18
+
+- Allow `databaseName` in connection string to define the database (#108)
+- Implement reader functions for standard string data (#107)
+- Fix a time conversion error (#106)
+
 ## Version 0.4.17
 
 - Fixing error swallowing with `simple_query` and MARS (#105)
