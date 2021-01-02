@@ -13,7 +13,7 @@ license = "MIT/Apache-2.0"
 name = "tiberius"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
-version = "0.4.18"
+version = "0.4.19"
 
 [workspace]
 members = ["runtimes-macro"]
@@ -47,6 +47,7 @@ futures-sink = "0.3"
 async-trait = "0.1"
 connection-string = "0.1.4"
 num-traits = "0.2"
+serde_json = "1.0.61"
 
 [target.'cfg(windows)'.dependencies]
 winauth = "0.0.4"
