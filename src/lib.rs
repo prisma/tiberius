@@ -180,6 +180,7 @@ mod macros;
 
 mod client;
 mod from_sql;
+mod from_sql_json;
 mod sql_read_bytes;
 mod to_sql;
 
