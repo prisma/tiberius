@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.1
+
+Internally upgrade bytes to 1.0. Should have no visible change to the apis.
+
 ## Version 0.5.0
 
 If using Tiberius with Tokio and SQL Browser, this PR will upgrade Tokio to 1.0.
