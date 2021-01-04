@@ -1,5 +1,12 @@
 # Changes
 
+## Version 0.5.0
+
+If using Tiberius with Tokio and SQL Browser, this PR will upgrade Tokio to 1.0.
+
+0.4 branch will be updated for a short while if needed and until the ecosystem
+has completely settled on Tokio 1.0.
+
 ## Version 0.4.18
 
 - Allow `databaseName` in connection string to define the database (#108)
