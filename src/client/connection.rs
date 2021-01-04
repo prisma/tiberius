@@ -16,7 +16,7 @@ use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
 use codec::TokenSSPI;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
-use futures_codec::Framed;
+use futures_codec2::Framed;
 #[cfg(feature = "integrated-auth-gssapi")]
 use libgssapi::{
     context::{ClientCtx, CtxFlags},
@@ -114,7 +114,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             );
 
             let Self { transport, .. } = self;
-            let tcp = transport.release().0.into_inner();
+            let tcp = transport.into_parts().io.into_inner();
             self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
         }
 
@@ -380,7 +380,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             let Self {
                 transport, context, ..
             } = self;
-            let mut stream = match transport.release().0 {
+            let mut stream = match transport.into_parts().io {
                 MaybeTlsStream::Raw(tcp) => {
                     builder
                         .connect(config.get_host(), TlsPreloginWrapper::new(tcp))
