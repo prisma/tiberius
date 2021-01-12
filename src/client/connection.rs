@@ -29,9 +29,9 @@ use pretty_hex::*;
 use std::ops::Deref;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
-#[cfg(all(feature = "tls", any(target = "macos", target = "ios")))]
+#[cfg(all(feature = "tls", any(target_os = "macos", target_os = "ios")))]
 use tls_impl::async_io::TlsConnector;
-#[cfg(all(feature = "tls", all(not(target = "macos"), not(target = "ios"))))]
+#[cfg(all(feature = "tls", all(not(target_os = "macos"), not(target_os = "ios"))))]
 use tls_impl::TlsConnector;
 use tracing::{event, Level};
 #[cfg(windows)]
