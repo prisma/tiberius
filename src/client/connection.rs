@@ -364,7 +364,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            let mut builder = async_native_tls::TlsConnector::new();
+            let mut builder = tls_impl::TlsConnector::new();
 
             if trust_cert {
                 event!(

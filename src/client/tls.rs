@@ -3,8 +3,6 @@ use crate::tds::codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType};
 #[cfg(feature = "tls")]
 use crate::tds::HEADER_BYTES;
 #[cfg(feature = "tls")]
-use async_native_tls::TlsStream;
-#[cfg(feature = "tls")]
 use bytes::BytesMut;
 #[cfg(feature = "tls")]
 use futures::ready;
@@ -15,6 +13,8 @@ use std::{
     pin::Pin,
     task::{self, Poll},
 };
+#[cfg(feature = "tls")]
+use tls_impl::TlsStream;
 #[cfg(feature = "tls")]
 use tracing::{event, Level};
 

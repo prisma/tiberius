@@ -70,8 +70,8 @@ impl From<uuid::Error> for Error {
 
 #[cfg(feature = "tls")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "tls")))]
-impl From<async_native_tls::Error> for Error {
-    fn from(v: async_native_tls::Error) -> Self {
+impl From<tls_impl::Error> for Error {
+    fn from(v: tls_impl::Error) -> Self {
         Error::Tls(format!("{}", v))
     }
 }
