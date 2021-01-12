@@ -85,8 +85,6 @@ Some SQL Server databases, such as the public Docker image use a TLS certificate
 
 Please be aware of the security implications if deciding to use vendoring.
 
-**This will disable encryption for your ENTIRE crate**  
-
 ### Integrated Authentication (TrustedConnection) on \*nix
 
 With the `integrated-auth-gssapi` feature enabled, the crate requires the GSSAPI/Kerberos libraries/headers installed:
