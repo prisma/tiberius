@@ -13,7 +13,9 @@ use std::{
     pin::Pin,
     task::{self, Poll},
 };
-#[cfg(feature = "tls")]
+#[cfg(all(feature = "tls", any(target = "macos", target = "ios")))]
+use tls_impl::async_io::TlsStream;
+#[cfg(all(feature = "tls", all(not(target = "macos"), not(target = "ios"))))]
 use tls_impl::TlsStream;
 #[cfg(feature = "tls")]
 use tracing::{event, Level};
