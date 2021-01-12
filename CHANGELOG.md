@@ -1,5 +1,13 @@
 # Changes
 
+## Versions 0.5.2 and 0.4.19
+
+Introducing working TLS support on macOS platforms.
+
+Please read the issue:
+
+https://github.com/prisma/tiberius/issues/65
+
 ## Version 0.5.1
 
 Internally upgrade bytes to 1.0. Should have no visible change to the apis.
