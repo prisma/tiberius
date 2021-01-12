@@ -40,6 +40,7 @@ things:
 | `sql-browser-async-std` | SQL Browser implementation for the `TcpStream` of async-std.                 | `disabled` |
 | `sql-browser-tokio`     | SQL Browser implementation for the `TcpStream` of Tokio.                     | `disabled` |
 | `integrated-auth-gssapi`     | Support for using Integrated Auth via GSSAPI                            | `disabled` |
+| `vendored-openssl` | On Linux and macOS platforms links statically against a vendored version of OpenSSL | `disabled` |
 
 ### Supported protocols
 
@@ -80,7 +81,9 @@ tiberius = { version = "0.X", default-features=false, features=["chrono"] }
 
 #### MacOS Catalina and TLS
 
-Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. For now, to get Tiberius working on macOS Catalina, it is necessary to upgrade your server's certificate into [one supported by Apple](https://support.apple.com/en-ca/HT210176). Additionally using the `NotSupported` variant, or providing `encrypt=DANGER_PLAINTEXT` in the connection string disables TLS completely, and allows development on macOS against a local SQL Server instance.
+Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. Therefore on macOS systems we use OpenSSL instead of Secure Transport, meaning by default Tiberius requires a working OpenSSL installation. By using a feature flag `vendored-openssl` the compilation links statically to a vendored version of OpenSSL, allowing compilation on systems with no OpenSSL installed.
+
+Please be aware of the security implications if deciding to use vendoring.
 
 **This will disable encryption for your ENTIRE crate**  
 

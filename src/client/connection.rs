@@ -29,6 +29,10 @@ use pretty_hex::*;
 use std::ops::Deref;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
+#[cfg(all(feature = "tls", any(target_os = "macos", target_os = "ios")))]
+use tls_impl::async_io::TlsConnector;
+#[cfg(all(feature = "tls", all(not(target_os = "macos"), not(target_os = "ios"))))]
+use tls_impl::TlsConnector;
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
@@ -364,7 +368,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            let mut builder = async_native_tls::TlsConnector::new();
+            let mut builder = TlsConnector::new();
 
             if trust_cert {
                 event!(
