@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.3
+
+Changed futures-codec2 to asynchronous-codec, due to former was yanked.
+
 ## Versions 0.5.2 and 0.4.19
 
 Introducing working TLS support on macOS platforms.
