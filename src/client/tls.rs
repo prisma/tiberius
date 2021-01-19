@@ -1,36 +1,28 @@
-#[cfg(feature = "tls")]
-use crate::tds::codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType};
-#[cfg(feature = "tls")]
-use crate::tds::HEADER_BYTES;
-#[cfg(feature = "tls")]
+use crate::tds::{
+    codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType},
+    HEADER_BYTES,
+};
+#[cfg(all(not(target_os = "macos"), not(target_os = "ios")))]
+use async_native_tls::TlsStream;
 use bytes::BytesMut;
-#[cfg(feature = "tls")]
 use futures::ready;
-#[cfg(feature = "tls")]
-use std::cmp;
+use futures::{AsyncRead, AsyncWrite};
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+use opentls::async_io::TlsStream;
 use std::{
-    io,
+    cmp, io,
     pin::Pin,
     task::{self, Poll},
 };
-#[cfg(all(feature = "tls", any(target_os = "macos", target_os = "ios")))]
-use tls_impl::async_io::TlsStream;
-#[cfg(all(feature = "tls", all(not(target_os = "macos"), not(target_os = "ios"))))]
-use tls_impl::TlsStream;
-#[cfg(feature = "tls")]
 use tracing::{event, Level};
-
-use futures::{AsyncRead, AsyncWrite};
 
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
     Raw(S),
-    #[cfg(feature = "tls")]
     Tls(TlsStream<TlsPreloginWrapper<S>>),
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
-    #[cfg(feature = "tls")]
     pub fn into_inner(self) -> S {
         match self {
             Self::Raw(s) => s,
@@ -47,7 +39,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for MaybeTlsStream<S> {
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_read(cx, buf),
-            #[cfg(feature = "tls")]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_read(cx, buf),
         }
     }
@@ -61,7 +52,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_write(cx, buf),
-            #[cfg(feature = "tls")]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_write(cx, buf),
         }
     }
@@ -69,7 +59,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_flush(cx),
-            #[cfg(feature = "tls")]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_flush(cx),
         }
     }
@@ -77,7 +66,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
     fn poll_close(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_close(cx),
-            #[cfg(feature = "tls")]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_close(cx),
         }
     }
@@ -89,7 +77,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
 ///
 /// What it does is it interferes on handshake for TDS packet handling,
 /// and when complete, just passes the calls to the underlying connection.
-#[cfg(feature = "tls")]
 pub(crate) struct TlsPreloginWrapper<S> {
     stream: Option<S>,
     pending_handshake: bool,
@@ -102,7 +89,6 @@ pub(crate) struct TlsPreloginWrapper<S> {
     header_written: bool,
 }
 
-#[cfg(feature = "tls")]
 impl<S> TlsPreloginWrapper<S> {
     pub fn new(stream: S) -> Self {
         TlsPreloginWrapper {
@@ -122,7 +108,6 @@ impl<S> TlsPreloginWrapper<S> {
     }
 }
 
-#[cfg(feature = "tls")]
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<S> {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -185,7 +170,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
     }
 }
 
-#[cfg(feature = "tls")]
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper<S> {
     fn poll_write(
         mut self: Pin<&mut Self>,

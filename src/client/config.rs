@@ -38,10 +38,7 @@ impl Default for Config {
             port: None,
             database: None,
             instance_name: None,
-            #[cfg(feature = "tls")]
             encryption: EncryptionLevel::Required,
-            #[cfg(not(feature = "tls"))]
-            encryption: EncryptionLevel::NotSupported,
             trust_cert: false,
             auth: AuthMethod::None,
         }
@@ -251,7 +248,6 @@ pub(crate) trait ConfigString {
             .unwrap_or(Ok(false))
     }
 
-    #[cfg(feature = "tls")]
     fn encrypt(&self) -> crate::Result<EncryptionLevel> {
         self.dict()
             .get("encrypt")
@@ -262,11 +258,6 @@ pub(crate) trait ConfigString {
                 Err(e) => Err(e)?,
             })
             .unwrap_or(Ok(EncryptionLevel::Off))
-    }
-
-    #[cfg(not(feature = "tls"))]
-    fn encrypt(&self) -> crate::Result<EncryptionLevel> {
-        Ok(EncryptionLevel::NotSupported)
     }
 
     fn parse_bool<T: AsRef<str>>(v: T) -> crate::Result<bool> {
