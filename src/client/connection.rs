@@ -1,7 +1,8 @@
-#[cfg(feature = "tls")]
-use crate::client::tls::TlsPreloginWrapper;
 use crate::{
-    client::{tls::MaybeTlsStream, AuthMethod, Config},
+    client::{
+        tls::{MaybeTlsStream, TlsPreloginWrapper},
+        AuthMethod, Config,
+    },
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -12,6 +13,8 @@ use crate::{
     },
     EncryptionLevel, SqlReadBytes,
 };
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+use async_native_tls::TlsConnector;
 use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
 use codec::TokenSSPI;
@@ -24,15 +27,13 @@ use libgssapi::{
     name::Name,
     oid::{OidSet, GSS_MECH_KRB5, GSS_NT_KRB5_PRINCIPAL},
 };
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+use opentls::async_io::TlsConnector;
 use pretty_hex::*;
 #[cfg(feature = "integrated-auth-gssapi")]
 use std::ops::Deref;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
-#[cfg(all(feature = "tls", any(target_os = "macos", target_os = "ios")))]
-use tls_impl::async_io::TlsConnector;
-#[cfg(all(feature = "tls", all(not(target_os = "macos"), not(target_os = "ios"))))]
-use tls_impl::TlsConnector;
 use tracing::{event, Level};
 #[cfg(windows)]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
@@ -109,7 +110,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         TokenStream::new(self).flush_sspi().await
     }
 
-    #[cfg(feature = "tls")]
     fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
         if let EncryptionLevel::Off = encryption {
             event!(
@@ -122,11 +122,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
         }
 
-        self
-    }
-
-    #[cfg(not(feature = "tls"))]
-    fn post_login_encryption(self, _: EncryptionLevel) -> Self {
         self
     }
 
@@ -358,7 +353,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     /// Implements the TLS handshake with the SQL Server.
-    #[cfg(feature = "tls")]
     async fn tls_handshake(
         self,
         config: &Config,
@@ -412,12 +406,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
             Ok(self)
         }
-    }
-
-    /// Implements the TLS handshake with the SQL Server.
-    #[cfg(not(feature = "tls"))]
-    async fn tls_handshake(self, _: &Config, _: EncryptionLevel, _: bool) -> crate::Result<Self> {
-        Ok(self)
     }
 }
 
