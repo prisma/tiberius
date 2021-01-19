@@ -26,14 +26,11 @@ async fn random_table() -> String {
     NAMES.lock().await.next().unwrap().replace('-', "")
 }
 
-#[cfg(feature = "tls")]
 static ENCRYPTED_CONN_STR: Lazy<String> = Lazy::new(|| format!("{};encrypt=true", *CONN_STR));
 
-#[cfg(feature = "tls")]
 static PLAIN_TEXT_CONN_STR: Lazy<String> =
     Lazy::new(|| format!("{};encrypt=DANGER_PLAINTEXT", *CONN_STR));
 
-#[cfg(feature = "tls")]
 #[test_on_runtimes(connection_string = "ENCRYPTED_CONN_STR")]
 async fn connect_with_full_encryption<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
@@ -51,7 +48,6 @@ where
     Ok(())
 }
 
-#[cfg(feature = "tls")]
 #[test_on_runtimes(connection_string = "PLAIN_TEXT_CONN_STR")]
 async fn connect_as_plain_text<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
