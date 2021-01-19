@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.5 and 0.4.21
+
+Catastropichal build failures with feature flags fixed.
+
 ## Version 0.5.4 and 0.4.20
 
 Removed the tls feature flag to simplify dependencies. This means you will
