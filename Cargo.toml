@@ -55,10 +55,10 @@ winauth = "0.0.4"
 libgssapi = { version = "0.4", optional = true, default-features = false }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-opentls = { version = "0.1.3", features = [] }
+opentls = { version = "0.1.3", features = ["io-async-std"] }
 
 [target.'cfg(not(any(target_os = "macos", target_os = "ios")))'.dependencies]
-async-native-tls = { version = "0.3", features = [] }
+async-native-tls = { version = "0.3", features = ["runtime-async-std"] }
 
 [dependencies.tokio]
 version = "0.2"
@@ -144,7 +144,7 @@ default = ["tds73", "sql-browser-async-std"]
 vendored-openssl = ["opentls/vendored", "async-native-tls/vendored"]
 tds73 = []
 docs = []
-sql-browser-async-std = ["async-std", "opentls/io-async-std", "async-native-tls/runtime-async-std"]
-sql-browser-tokio = ["tokio", "tokio-util", "opentls/io-tokio", "async-native-tls/runtime-tokio"]
+sql-browser-async-std = ["async-std"]
+sql-browser-tokio = ["tokio", "tokio-util"]
 integrated-auth-gssapi = ["libgssapi"]
 bigdecimal = [ "bigdecimal_", "num-bigint" ]
