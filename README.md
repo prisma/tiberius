@@ -32,7 +32,6 @@ things:
 
 | Flag           | Description                                                                           | Default    |
 |----------------|---------------------------------------------------------------------------------------|------------|
-| `tls`          | Enables TLS support.                                                                  | `enabled`  |
 | `tds73`        | Support for new date and time types in TDS version 7.3. Disable if using version 7.2. | `enabled`  |
 | `chrono`       | Read and write date and time values using `chrono`'s types.                           | `disabled` |
 | `rust_decimal` | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
@@ -73,7 +72,7 @@ CA.
 #### b) Disable certificate validation by using `TrustServerCertificate=true` in your connection string (requires 0.2.2)
 
 #### c) Alternatively: Disable Encryption for LOCALHOST
-For a connection to localhost, which will never leave your machine, it's safe to disable encryption. Currently this is only possible by doing someting like the following in your `cargo.toml`:
+For a connection to localhost, which will never leave your machine, it's safe to disable encryption. Add `encrypt=DANGER_PLAINTEXT` to your connection string or set use the `EncryptionLevel::NotSupported` variant.
 
 ```toml
 tiberius = { version = "0.X", default-features=false, features=["chrono"] }

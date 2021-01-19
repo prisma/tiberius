@@ -1,5 +1,13 @@
 # Changes
 
+## Version 0.5.4 and 0.4.20
+
+Removed the tls feature flag to simplify dependencies. This means you will
+always get a TLS-enabled build, and can disable it on runtime. This also means
+we don't always compile async-std if wanting to use tokio, and so forth.
+
+Fixes certain issues with vendored OpenSSL on macOS platforms too.
+
 ## Version 0.5.3
 
 Changed futures-codec2 to asynchronous-codec, due to former was yanked.
