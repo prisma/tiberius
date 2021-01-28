@@ -1,10 +1,13 @@
 use crate::{
-    tds::{codec::read_varchar, lcid_to_encoding, sortid_to_encoding},
+    tds::{lcid_to_encoding, sortid_to_encoding},
     Error, SqlReadBytes,
 };
+use byteorder::{LittleEndian, ReadBytesExt};
 use encoding::Encoding;
 use fmt::Debug;
 use futures::io::AsyncReadExt;
+use std::io::Cursor;
+use std::io::Read;
 use std::{convert::TryFrom, fmt};
 
 uint_enum! {
@@ -31,6 +34,32 @@ uint_enum! {
         UserName = 19,
         /// below here: TDS v7.4
         Routing = 20,
+    }
+}
+
+impl fmt::Display for EnvChangeTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EnvChangeTy::Database => write!(f, "Database"),
+            EnvChangeTy::Language => write!(f, "Language"),
+            EnvChangeTy::CharacterSet => write!(f, "CharacterSet"),
+            EnvChangeTy::PacketSize => write!(f, "PacketSize"),
+            EnvChangeTy::UnicodeDataSortingLID => write!(f, "UnicodeDataSortingLID"),
+            EnvChangeTy::UnicodeDataSortingCFL => write!(f, "UnicodeDataSortingCFL"),
+            EnvChangeTy::SqlCollation => write!(f, "SqlCollation"),
+            EnvChangeTy::BeginTransaction => write!(f, "BeginTransaction"),
+            EnvChangeTy::CommitTransaction => write!(f, "CommitTransaction"),
+            EnvChangeTy::RollbackTransaction => write!(f, "RollbackTransaction"),
+            EnvChangeTy::EnlistDTCTransaction => write!(f, "EnlistDTCTransaction"),
+            EnvChangeTy::DefectTransaction => write!(f, "DefectTransaction"),
+            EnvChangeTy::RTLS => write!(f, "RTLS"),
+            EnvChangeTy::PromoteTransaction => write!(f, "PromoteTransaction"),
+            EnvChangeTy::TransactionManagerAddress => write!(f, "TransactionManagerAddress"),
+            EnvChangeTy::TransactionEnded => write!(f, "TransactionEnded"),
+            EnvChangeTy::ResetConnection => write!(f, "ResetConnection"),
+            EnvChangeTy::UserName => write!(f, "UserName"),
+            EnvChangeTy::Routing => write!(f, "Routing"),
+        }
     }
 }
 
@@ -81,9 +110,16 @@ pub enum TokenEnvChange {
         old: CollationInfo,
         new: CollationInfo,
     },
-    BeginTransaction(u64),
-    CommitTransaction(u64),
-    RollbackTransaction(u64),
+    BeginTransaction([u8; 8]),
+    CommitTransaction,
+    RollbackTransaction,
+    DefectTransaction,
+    Routing {
+        host: String,
+        port: u16,
+    },
+    ChangeMirror(String),
+    Ignored(EnvChangeTy),
 }
 
 impl fmt::Display for TokenEnvChange {
@@ -99,8 +135,16 @@ impl fmt::Display for TokenEnvChange {
                 write!(f, "SQL collation change from {} to {}", old, new)
             }
             Self::BeginTransaction(_) => write!(f, "Begin transaction"),
-            Self::CommitTransaction(_) => write!(f, "Commit transaction"),
-            Self::RollbackTransaction(_) => write!(f, "Rollback transaction"),
+            Self::CommitTransaction => write!(f, "Commit transaction"),
+            Self::RollbackTransaction => write!(f, "Rollback transaction"),
+            Self::DefectTransaction => write!(f, "Defect transaction"),
+            Self::Routing { host, port } => write!(
+                f,
+                "Server requested routing to a new address: {}:{}",
+                host, port
+            ),
+            Self::ChangeMirror(ref mirror) => write!(f, "Fallback mirror server: `{}`", mirror),
+            Self::Ignored(ty) => write!(f, "Ignored env change: `{}`", ty),
         }
     }
 }
@@ -110,61 +154,121 @@ impl TokenEnvChange {
     where
         R: SqlReadBytes + Unpin,
     {
-        let _len = src.read_u16_le().await?;
-        let ty_byte = src.read_u8().await?;
+        let len = src.read_u16_le().await? as usize;
+
+        // We read all the bytes now, due to whatever environment change tokens
+        // we read, they might contain padding zeroes in the end we must
+        // discard.
+        let mut bytes = vec![0; len];
+        src.read_exact(&mut bytes[0..len]).await?;
+
+        let mut buf = Cursor::new(bytes);
+        let ty_byte = buf.read_u8()?;
 
         let ty = EnvChangeTy::try_from(ty_byte)
             .map_err(|_| Error::Protocol(format!("invalid envchange type {:x}", ty_byte).into()))?;
 
         let token = match ty {
             EnvChangeTy::Database => {
-                let len = src.read_u8().await?;
-                let new_value = read_varchar(src, len).await?;
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
 
-                let len = src.read_u8().await?;
-                let old_value = read_varchar(src, len).await?;
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let new_value = String::from_utf16(&bytes[..])?;
+
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
+
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let old_value = String::from_utf16(&bytes[..])?;
 
                 TokenEnvChange::Database(new_value, old_value)
             }
             EnvChangeTy::PacketSize => {
-                let len = src.read_u8().await?;
-                let new_value = read_varchar(src, len).await?;
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
 
-                let len = src.read_u8().await?;
-                let old_value = read_varchar(src, len).await?;
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let new_value = String::from_utf16(&bytes[..])?;
+
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
+
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let old_value = String::from_utf16(&bytes[..])?;
 
                 TokenEnvChange::PacketSize(new_value.parse()?, old_value.parse()?)
             }
             EnvChangeTy::SqlCollation => {
-                let len = src.read_u8().await? as usize;
+                let len = buf.read_u8()? as usize;
                 let mut new_value = vec![0; len];
-                src.read_exact(&mut new_value[0..len]).await?;
+                buf.read_exact(&mut new_value[0..len])?;
 
-                let len = src.read_u8().await? as usize;
+                let len = buf.read_u8()? as usize;
                 let mut old_value = vec![0; len];
-                src.read_exact(&mut old_value[0..len]).await?;
+                buf.read_exact(&mut old_value[0..len])?;
 
                 TokenEnvChange::SqlCollation {
                     new: CollationInfo::new(new_value.as_slice()),
                     old: CollationInfo::new(old_value.as_slice()),
                 }
             }
-            EnvChangeTy::BeginTransaction => {
-                src.read_u8().await?;
-                let desc = src.read_u64_le().await?;
+            EnvChangeTy::BeginTransaction | EnvChangeTy::EnlistDTCTransaction => {
+                let len = buf.read_u8()?;
+                assert!(len == 8);
+
+                let mut desc = [0; 8];
+                buf.read_exact(&mut desc)?;
+
                 TokenEnvChange::BeginTransaction(desc)
             }
-            EnvChangeTy::CommitTransaction => {
-                src.read_u8().await?;
-                let desc = src.read_u64_le().await?;
-                TokenEnvChange::CommitTransaction(desc)
+
+            EnvChangeTy::CommitTransaction => TokenEnvChange::CommitTransaction,
+            EnvChangeTy::RollbackTransaction => TokenEnvChange::RollbackTransaction,
+            EnvChangeTy::DefectTransaction => TokenEnvChange::DefectTransaction,
+
+            EnvChangeTy::Routing => {
+                buf.read_u16::<LittleEndian>()?; // routing data value length
+                buf.read_u8()?; // routing protocol, always 0 (tcp)
+
+                let port = buf.read_u16::<LittleEndian>()?;
+
+                let len = buf.read_u16::<LittleEndian>()? as usize; // hostname string length
+                let mut bytes = vec![0; len];
+
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let host = String::from_utf16(&bytes[..])?;
+
+                TokenEnvChange::Routing { host, port }
             }
-            EnvChangeTy::RollbackTransaction => {
-                src.read_u8().await?;
-                let desc = src.read_u64_le().await?;
-                TokenEnvChange::RollbackTransaction(desc)
+            EnvChangeTy::RTLS => {
+                let len = buf.read_u8()? as usize;
+                let mut bytes = vec![0; len];
+
+                for i in 0..len {
+                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                }
+
+                let mirror_name = String::from_utf16(&bytes[..])?;
+
+                TokenEnvChange::ChangeMirror(mirror_name)
             }
-            ty => panic!("skipping env change type {:?}", ty),
+            ty => TokenEnvChange::Ignored(ty),
         };
 
         Ok(token)

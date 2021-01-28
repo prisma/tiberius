@@ -1,4 +1,4 @@
-use crate::{tds::codec::read_varchar, Error, FeatureLevel, SqlReadBytes};
+use crate::{Error, FeatureLevel, SqlReadBytes};
 use std::convert::TryFrom;
 
 #[derive(Debug)]
@@ -26,11 +26,7 @@ impl TokenLoginAck {
         let tds_version = FeatureLevel::try_from(src.read_u32().await?)
             .map_err(|_| Error::Protocol("Login ACK: Invalid TDS version".into()))?;
 
-        let prog_name = {
-            let len = src.read_u8().await?;
-            read_varchar(src, len).await?
-        };
-
+        let prog_name = src.read_b_varchar().await?;
         let version = src.read_u32_le().await?;
 
         Ok(TokenLoginAck {

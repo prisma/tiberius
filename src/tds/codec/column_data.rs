@@ -1,4 +1,4 @@
-use super::{read_varchar, Encode, FixedLenType, TypeInfo, VarLenType};
+use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::tds::{Collation, DateTime, SmallDateTime};
 #[cfg(feature = "tds73")]
 use crate::tds::{Date, DateTime2, DateTimeOffset, Time};
@@ -14,6 +14,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 use encoding::DecoderTrap;
 use futures::io::AsyncReadExt;
+use std::borrow::BorrowMut;
 use std::{borrow::Cow, sync::Arc};
 use uuid::Uuid;
 
@@ -51,15 +52,19 @@ pub enum ColumnData<'a> {
     /// A small DateTime value.
     SmallDateTime(Option<SmallDateTime>),
     #[cfg(feature = "tds73")]
+    #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
     /// Time value.
     Time(Option<Time>),
     #[cfg(feature = "tds73")]
+    #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
     /// Date value.
     Date(Option<Date>),
     #[cfg(feature = "tds73")]
+    #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
     /// DateTime2 value.
     DateTime2(Option<DateTime2>),
     #[cfg(feature = "tds73")]
+    #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
     /// DateTime2 value with an offset.
     DateTimeOffset(Option<DateTimeOffset>),
 }
@@ -197,11 +202,8 @@ impl<'a> ColumnData<'a> {
             FixedLenType::Float8 => ColumnData::F64(Some(src.read_f64_le().await?)),
             FixedLenType::Datetime => Self::decode_datetimen(src, 8).await?,
             FixedLenType::Datetime4 => Self::decode_datetimen(src, 4).await?,
-            _ => {
-                return Err(Error::Protocol(
-                    format!("unsupported fixed type decoding: {:?}", ty).into(),
-                ))
-            }
+            FixedLenType::Money4 => Self::decode_money(src, 4).await?,
+            FixedLenType::Money => Self::decode_money(src, 8).await?,
         };
 
         Ok(ret)
@@ -232,7 +234,11 @@ impl<'a> ColumnData<'a> {
                 ColumnData::String(decoded)
             }
             VarLenType::BigVarChar => Self::decode_big_varchar(src, len, collation).await?,
-            VarLenType::Money => Self::decode_money(src).await?,
+
+            VarLenType::Money => {
+                let len = src.read_u8().await?;
+                Self::decode_money(src, len).await?
+            }
 
             VarLenType::Datetimen => {
                 let len = src.read_u8().await?;
@@ -474,8 +480,14 @@ impl<'a> ColumnData<'a> {
             src.read_i32_le().await?; // days
             src.read_u32_le().await?; // second fractions
 
-            let text_len = src.read_u32_le().await? as usize / 2;
-            let text = read_varchar(src, text_len).await?;
+            let len = src.read_u32_le().await? as usize / 2;
+            let mut buf = vec![0u16; len];
+
+            for i in 0..len {
+                buf[i] = src.read_u16_le().await?;
+            }
+
+            let text = String::from_utf16(&buf[..])?;
 
             Ok(ColumnData::String(Some(text.into())))
         }
@@ -567,12 +579,10 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    async fn decode_money<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    async fn decode_money<R>(src: &mut R, len: u8) -> crate::Result<ColumnData<'static>>
     where
         R: SqlReadBytes + Unpin,
     {
-        let len = src.read_u8().await?;
-
         let res = match len {
             0 => ColumnData::F64(None),
             4 => ColumnData::F64(Some(src.read_i32_le().await? as f64 / 1e4)),
@@ -723,10 +733,21 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u16_le(8000);
                 dst.extend_from_slice(&[0u8; 5][..]);
 
-                dst.put_u16_le(2 * s.encode_utf16().count() as u16);
+                let mut length = 0u16;
+                let len_pos = dst.len();
+
+                dst.put_u16_le(length);
 
                 for chr in s.encode_utf16() {
+                    length += 1;
                     dst.put_u16_le(chr);
+                }
+
+                let dst: &mut [u8] = dst.borrow_mut();
+                let bytes = (length * 2).to_le_bytes(); // u16, two bytes
+
+                for (i, byte) in bytes.iter().enumerate() {
+                    dst[len_pos + i] = *byte;
                 }
             }
             ColumnData::String(Some(ref s)) => {
@@ -740,15 +761,25 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u64_le(0xfffffffffffffffe as u64);
 
                 // Write the varchar length
-                dst.put_u32_le(2 * s.encode_utf16().count() as u32);
+                let mut length = 0u32;
+                let len_pos = dst.len();
 
-                // And the PLP data
+                dst.put_u32_le(length);
+
                 for chr in s.encode_utf16() {
+                    length += 1;
                     dst.put_u16_le(chr);
                 }
 
                 // PLP_TERMINATOR
                 dst.put_u32_le(0);
+
+                let dst: &mut [u8] = dst.borrow_mut();
+                let bytes = (length * 2).to_le_bytes(); // u32, four bytes
+
+                for (i, byte) in bytes.iter().enumerate() {
+                    dst[len_pos + i] = *byte;
+                }
             }
             ColumnData::Binary(Some(bytes)) if bytes.len() <= 8000 => {
                 dst.put_u8(VarLenType::BigVarBin as u8);

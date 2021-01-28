@@ -1,5 +1,86 @@
 # Changes
 
+## Version 0.5.5 and 0.4.21
+
+Catastropichal build failures with feature flags fixed.
+
+## Version 0.5.4 and 0.4.20
+
+Removed the tls feature flag to simplify dependencies. This means you will
+always get a TLS-enabled build, and can disable it on runtime. This also means
+we don't always compile async-std if wanting to use tokio, and so forth.
+
+Fixes certain issues with vendored OpenSSL on macOS platforms too.
+
+## Version 0.5.3
+
+Changed futures-codec2 to asynchronous-codec, due to former was yanked.
+
+## Versions 0.5.2 and 0.4.19
+
+Introducing working TLS support on macOS platforms.
+
+Please read the issue:
+
+https://github.com/prisma/tiberius/issues/65
+
+## Version 0.5.1
+
+Internally upgrade bytes to 1.0. Should have no visible change to the apis.
+
+## Version 0.5.0
+
+If using Tiberius with Tokio and SQL Browser, this PR will upgrade Tokio to 1.0.
+
+0.4 branch will be updated for a short while if needed and until the ecosystem
+has completely settled on Tokio 1.0.
+
+## Version 0.4.18
+
+- Allow `databaseName` in connection string to define the database (#108)
+- Implement reader functions for standard string data (#107)
+- Fix a time conversion error (#106)
+
+## Version 0.4.17
+
+- Fixing error swallowing with `simple_query` and MARS (#105)
+- Fixing transaction descriptor reading (#105)
+- Fixing envchange token reads (#105)
+
+## Version 0.4.16
+
+- Handle all MARS results properly (#102)
+
+## Version 0.4.14
+
+- Support alternatively `BigNumber` when dealing with numeric values.
+- Document feature flags
+
+## Version 0.4.13
+
+- Realizing UTF-16 works just fine with SQL Server. Reverting the UCS2, but
+  still keeping the faster writes.
+
+## Version 0.4.12
+
+*SKIP this, go directly to 0.4.13*
+
+- A typo fix in README (#94)
+- Faster string writes with better length handling. UCS2 for writes (#95).
+
+## Version 0.4.11
+
+- Allow disabling TLS in connection string (#89)
+- Use connection-string for ado.net parsing (#91)
+- Handle JDBC connection strings (#92)
+
+## Version 0.4.10
+
+- Handling nullable int values, fix for #78 (#80)
+- Reflect tweaks to upstream libgssapi crate (#81)
+- Skip default features in libgssapi (for macOS support)
+- Handle env change Routing request (#87)
+
 ## Version 0.4.9
 
 - BREAKING: `AuthMethod::WindowsIntegrated` renamed to `AuthMethod::Integrated`.

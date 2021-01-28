@@ -2,9 +2,16 @@
 
 use super::codec::Encode;
 use crate::{sql_read_bytes::SqlReadBytes, Error};
+#[cfg(feature = "bigdecimal")]
+#[cfg_attr(feature = "docs", doc(cfg(feature = "bigdecimal")))]
+pub use bigdecimal::BigDecimal;
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
+#[cfg(feature = "bigdecimal")]
+#[cfg_attr(feature = "docs", doc(cfg(feature = "bigdecimal")))]
+pub use num_bigint::{BigInt, Sign};
 #[cfg(feature = "rust_decimal")]
+#[cfg_attr(feature = "docs", doc(cfg(feature = "rust_decimal")))]
 pub use rust_decimal::Decimal;
 use std::cmp::PartialEq;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -241,7 +248,8 @@ mod decimal {
         )})
     );
 
-    to_sql!(self_ ,
+    #[cfg(feature = "tds73")]
+    to_sql!(self_,
             Decimal: (ColumnData::Numeric, {
                 let unpacked = self_.unpack();
 
@@ -253,9 +261,33 @@ mod decimal {
                     value = -value;
                 }
 
-                let numeric = Numeric::new_with_scale(value, self_.scale() as u8);
+                Numeric::new_with_scale(value, self_.scale() as u8)
+            });
+    );
+}
 
-                numeric
+#[cfg(feature = "bigdecimal")]
+mod bigdecimal_ {
+    use super::{BigDecimal, BigInt, Numeric};
+    use crate::ColumnData;
+    use num_traits::ToPrimitive;
+    use std::convert::TryFrom;
+
+    #[cfg(feature = "tds73")]
+    from_sql!(BigDecimal: ColumnData::Numeric(ref num) => num.map(|num| {
+        let int = BigInt::from(num.value());
+
+        BigDecimal::new(int, num.scale() as i64)
+    }));
+
+    #[cfg(feature = "tds73")]
+    to_sql!(self_,
+            BigDecimal: (ColumnData::Numeric, {
+                let (int, exp) = self_.as_bigint_and_exponent();
+                let value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
+                let scale = u8::try_from(exp).expect("Given exponent overflowing the maximum accepted scale (255).");
+
+                Numeric::new_with_scale(value, scale)
             });
     );
 }

@@ -10,8 +10,10 @@ use super::DateTime as DateTime1;
 use super::{Date, DateTime2, DateTimeOffset, Time};
 use crate::tds::codec::ColumnData;
 #[cfg(feature = "tds73")]
+#[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
 pub use chrono::offset::{FixedOffset, Utc};
 pub use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use std::ops::Sub;
 
 #[inline]
 fn from_days(days: i64, start_year: i32) -> NaiveDate {
@@ -71,19 +73,20 @@ from_sql!(
         ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
             let date = from_days(dto.datetime2.date.days() as i64, 1);
             let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
+            let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns);
 
-            let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns) - chrono::Duration::minutes(dto.offset as i64);
-            let naive = NaiveDateTime::new(date, time);
+            let offset = chrono::Duration::minutes(dto.offset as i64);
+            let naive = NaiveDateTime::new(date, time).sub(offset);
 
             chrono::DateTime::from_utc(naive, Utc)
         });
     chrono::DateTime<FixedOffset>: ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
         let date = from_days(dto.datetime2.date.days() as i64, 1);
         let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
-        let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns) - chrono::Duration::minutes(dto.offset as i64);
+        let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns);
 
         let offset = FixedOffset::east((dto.offset as i32) * 60);
-        let naive = NaiveDateTime::new(date, time);
+        let naive = NaiveDateTime::new(date, time).sub(offset);
 
         chrono::DateTime::from_utc(naive, offset)
     })

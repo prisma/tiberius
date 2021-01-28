@@ -1,7 +1,7 @@
 use super::{Packet, PacketCodec, PacketHeader, HEADER_BYTES};
 use crate::Error;
 use bytes::{Buf, BytesMut};
-use futures_codec::Decoder;
+use asynchronous_codec::Decoder;
 use tracing::{event, Level};
 
 pub trait Decode<B: Buf> {

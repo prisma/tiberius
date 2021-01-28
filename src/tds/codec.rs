@@ -11,7 +11,6 @@ mod rpc_request;
 mod token;
 mod type_info;
 
-use crate::SqlReadBytes;
 pub use batch_request::*;
 use bytes::BytesMut;
 pub use column_data::*;
@@ -58,18 +57,4 @@ where
     }
 
     Ok(T::decode(&mut buf)?)
-}
-
-pub(crate) async fn read_varchar<R>(src: &mut R, len: impl Into<usize>) -> crate::Result<String>
-where
-    R: SqlReadBytes + Unpin,
-{
-    let len = len.into();
-    let mut buf = vec![0u16; len];
-
-    for i in 0..len {
-        buf[i] = src.read_u16_le().await?;
-    }
-
-    Ok(String::from_utf16(&buf[..])?)
 }

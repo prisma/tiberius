@@ -40,10 +40,26 @@ pub enum Error {
     #[error("Error forming TLS connection: {}", _0)]
     /// An error in the TLS handshake.
     Tls(String),
-    #[cfg(any(feature = "integrated-auth-gssapi", doc))]
+    #[cfg(any(all(unix, feature = "integrated-auth-gssapi"), doc))]
+    #[cfg_attr(
+        feature = "docs",
+        doc(cfg(all(unix, feature = "integrated-auth-gssapi")))
+    )]
     /// An error from the GSSAPI library.
     #[error("GSSAPI Error: {}", _0)]
     Gssapi(String),
+    #[error(
+        "Server requested a connection to an alternative address: `{}:{}`",
+        host,
+        port
+    )]
+    /// Server requested a connection to an alternative address.
+    Routing {
+        /// The requested hostname
+        host: String,
+        /// The requested port.
+        port: u16,
+    },
 }
 
 impl From<uuid::Error> for Error {
@@ -52,7 +68,22 @@ impl From<uuid::Error> for Error {
     }
 }
 
-#[cfg(feature = "tls")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg_attr(
+    feature = "docs",
+    doc(cfg(any(target_os = "macos", target_os = "ios")))
+)]
+impl From<opentls::Error> for Error {
+    fn from(v: opentls::Error) -> Self {
+        Error::Tls(format!("{}", v))
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg_attr(
+    feature = "docs",
+    doc(cfg(not(any(target_os = "macos", target_os = "ios"))))
+)]
 impl From<async_native_tls::Error> for Error {
     fn from(v: async_native_tls::Error) -> Self {
         Error::Tls(format!("{}", v))
@@ -98,7 +129,18 @@ impl From<std::string::FromUtf16Error> for Error {
     }
 }
 
-#[cfg(feature = "integrated-auth-gssapi")]
+impl From<connection_string::Error> for Error {
+    fn from(err: connection_string::Error) -> Error {
+        let err = Cow::Owned(format!("{}", err));
+        Error::Conversion(err)
+    }
+}
+
+#[cfg(all(unix, feature = "integrated-auth-gssapi"))]
+#[cfg_attr(
+    feature = "docs",
+    doc(cfg(all(unix, feature = "integrated-auth-gssapi")))
+)]
 impl From<libgssapi::error::Error> for Error {
     fn from(err: libgssapi::error::Error) -> Error {
         Error::Gssapi(format!("{}", err))

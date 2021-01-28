@@ -1,7 +1,8 @@
-#[cfg(feature = "tls")]
-use crate::client::tls::TlsPreloginWrapper;
 use crate::{
-    client::{tls::MaybeTlsStream, AuthMethod, Config},
+    client::{
+        tls::{MaybeTlsStream, TlsPreloginWrapper},
+        AuthMethod, Config,
+    },
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -12,11 +13,13 @@ use crate::{
     },
     EncryptionLevel, SqlReadBytes,
 };
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+use async_native_tls::TlsConnector;
 use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
 use codec::TokenSSPI;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
-use futures_codec::Framed;
+use asynchronous_codec::Framed;
 #[cfg(feature = "integrated-auth-gssapi")]
 use libgssapi::{
     context::{ClientCtx, CtxFlags},
@@ -24,6 +27,8 @@ use libgssapi::{
     name::Name,
     oid::{OidSet, GSS_MECH_KRB5, GSS_NT_KRB5_PRINCIPAL},
 };
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+use opentls::async_io::TlsConnector;
 use pretty_hex::*;
 #[cfg(feature = "integrated-auth-gssapi")]
 use std::ops::Deref;
@@ -62,8 +67,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Debug for Connection<S> {
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
-    pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>>
-where {
+    pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>> {
         let context = {
             let mut context = Context::new();
             context.set_spn(config.get_host(), config.get_port());
@@ -106,7 +110,6 @@ where {
         TokenStream::new(self).flush_sspi().await
     }
 
-    #[cfg(feature = "tls")]
     fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
         if let EncryptionLevel::Off = encryption {
             event!(
@@ -119,11 +122,6 @@ where {
             self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
         }
 
-        self
-    }
-
-    #[cfg(not(feature = "tls"))]
-    fn post_login_encryption(self, _: EncryptionLevel) -> Self {
         self
     }
 
@@ -355,7 +353,6 @@ where {
     }
 
     /// Implements the TLS handshake with the SQL Server.
-    #[cfg(feature = "tls")]
     async fn tls_handshake(
         self,
         config: &Config,
@@ -365,7 +362,7 @@ where {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            let mut builder = async_native_tls::TlsConnector::new();
+            let mut builder = TlsConnector::new();
 
             if trust_cert {
                 event!(
@@ -409,12 +406,6 @@ where {
 
             Ok(self)
         }
-    }
-
-    /// Implements the TLS handshake with the SQL Server.
-    #[cfg(not(feature = "tls"))]
-    async fn tls_handshake(self, _: &Config, _: EncryptionLevel, _: bool) -> crate::Result<Self> {
-        Ok(self)
     }
 }
 

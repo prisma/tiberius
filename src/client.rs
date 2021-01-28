@@ -1,10 +1,10 @@
 mod auth;
-mod builder;
+mod config;
 mod connection;
 mod tls;
 
 pub use auth::*;
-pub use builder::*;
+pub use config::*;
 pub(crate) use connection::*;
 
 use crate::{
@@ -29,7 +29,7 @@ use std::{borrow::Cow, fmt::Debug};
 ///
 /// ```no_run
 /// # use tiberius::{Config, AuthMethod};
-/// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+/// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut config = Config::new();
@@ -79,7 +79,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     ///
     /// ```no_run
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -132,7 +132,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     ///
     /// ```
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -185,7 +185,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     ///
     /// ```
     /// # use tiberius::Config;
-    /// # use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -217,7 +217,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     {
         self.connection.flush_stream().await?;
 
-        let req = BatchRequest::new(query, self.connection.context().transaction_id());
+        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
 
         let id = self.connection.context_mut().next_packet_id();
         self.connection.send(PacketHeader::batch(id), req).await?;
@@ -278,7 +278,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         let req = TokenRpcRequest::new(
             proc_id,
             rpc_params,
-            self.connection.context().transaction_id(),
+            self.connection.context().transaction_descriptor(),
         );
 
         let id = self.connection.context_mut().next_packet_id();

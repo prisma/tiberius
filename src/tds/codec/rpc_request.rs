@@ -2,6 +2,7 @@ use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
 use crate::{tds::codec::ColumnData, Result};
 use bitflags::bitflags;
 use bytes::{BufMut, BytesMut};
+use std::borrow::BorrowMut;
 use std::borrow::Cow;
 
 #[derive(Debug)]
@@ -9,11 +10,11 @@ pub struct TokenRpcRequest<'a> {
     proc_id: RpcProcIdValue<'a>,
     flags: RpcOptionFlags,
     params: Vec<RpcParam<'a>>,
-    transaction_id: u64,
+    transaction_desc: [u8; 8],
 }
 
 impl<'a> TokenRpcRequest<'a> {
-    pub fn new<I>(proc_id: I, params: Vec<RpcParam<'a>>, transaction_id: u64) -> Self
+    pub fn new<I>(proc_id: I, params: Vec<RpcParam<'a>>, transaction_desc: [u8; 8]) -> Self
     where
         I: Into<RpcProcIdValue<'a>>,
     {
@@ -21,7 +22,7 @@ impl<'a> TokenRpcRequest<'a> {
             proc_id: proc_id.into(),
             flags: RpcOptionFlags::empty(),
             params,
-            transaction_id,
+            transaction_desc,
         }
     }
 }
@@ -94,7 +95,7 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
         dst.put_u32_le(ALL_HEADERS_LEN_TX as u32);
         dst.put_u32_le(ALL_HEADERS_LEN_TX as u32 - 4);
         dst.put_u16_le(AllHeaderTy::TransactionDescriptor as u16);
-        dst.put_u64_le(self.transaction_id);
+        dst.put_slice(&self.transaction_desc);
         dst.put_u32_le(1);
 
         match self.proc_id {
@@ -121,15 +122,21 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
 
 impl<'a> Encode<BytesMut> for RpcParam<'a> {
     fn encode(self, dst: &mut BytesMut) -> Result<()> {
-        let len = self.name.chars().fold(0, |acc, c| acc + c.len_utf8());
-        dst.put_u8(len as u8);
+        let len_pos = dst.len();
+        let mut length = 0u8;
+
+        dst.put_u8(length);
 
         for codepoint in self.name.encode_utf16() {
+            length += 1;
             dst.put_u16_le(codepoint);
         }
 
         dst.put_u8(self.flags.bits());
         self.value.encode(dst)?;
+
+        let dst: &mut [u8] = dst.borrow_mut();
+        dst[len_pos] = length;
 
         Ok(())
     }

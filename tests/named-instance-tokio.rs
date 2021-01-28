@@ -5,7 +5,7 @@ use std::env;
 use std::sync::Once;
 use tiberius::{Client, Config, Result, SqlBrowser};
 use tokio::{net::TcpStream, runtime::Runtime};
-use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 // This is used in the testing macro :)
 #[allow(dead_code)]

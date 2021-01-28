@@ -64,7 +64,7 @@
 //! ```no_run
 //! use tiberius::{Client, Config, AuthMethod};
 //! use tokio::net::TcpStream;
-//! use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+//! use tokio_util::compat::TokioAsyncWriteCompatExt;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
@@ -78,7 +78,7 @@
 //!     tcp.set_nodelay(true)?;
 //!
 //!     // To be able to use Tokio's tcp, we're using the `compat_write` from
-//!     // the `Tokio02AsyncWriteCompatExt` to get a stream compatible with the
+//!     // the `TokioAsyncWriteCompatExt` to get a stream compatible with the
 //!     // traits from the `futures` crate.
 //!     let mut client = Client::connect(config, tcp.compat_write()).await?;
 //!     # client.query("SELECT @P1", &[&-4i32]).await?;
@@ -165,11 +165,15 @@
 //! [`time`]: time/index.html
 //! [ways of authentication]: enum.AuthMethod.html
 //! [ADO.NET connection string]: https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings
+#![cfg_attr(feature = "docs", feature(doc_cfg))]
 #![recursion_limit = "512"]
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations, rust_2018_idioms)]
 #![doc(test(attr(deny(rust_2018_idioms, warnings))))]
 #![doc(test(attr(allow(unused_extern_crates, unused_variables))))]
+
+#[cfg(feature = "bigdecimal")]
+pub(crate) extern crate bigdecimal_ as bigdecimal;
 
 #[macro_use]
 mod macros;

@@ -26,12 +26,30 @@ async fn random_table() -> String {
     NAMES.lock().await.next().unwrap().replace('-', "")
 }
 
-#[cfg(feature = "tls")]
 static ENCRYPTED_CONN_STR: Lazy<String> = Lazy::new(|| format!("{};encrypt=true", *CONN_STR));
 
-#[cfg(feature = "tls")]
+static PLAIN_TEXT_CONN_STR: Lazy<String> =
+    Lazy::new(|| format!("{};encrypt=DANGER_PLAINTEXT", *CONN_STR));
+
 #[test_on_runtimes(connection_string = "ENCRYPTED_CONN_STR")]
 async fn connect_with_full_encryption<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let row = conn
+        .query("SELECT @P1", &[&-4i32])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(-4i32), row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes(connection_string = "PLAIN_TEXT_CONN_STR")]
+async fn connect_as_plain_text<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
@@ -74,7 +92,6 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     for _ in 1..300 {
-
         conn.simple_query("BEGIN TRAN").await?;
 
         let row = conn
@@ -189,6 +206,41 @@ where
 
     assert_eq!(Some(kanji.as_str()), rows[0].get(0));
     assert_eq!(Some(long_kanji.as_str()), rows[1].get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn read_and_write_weird_garbage<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(
+        format!("CREATE TABLE ##{} (content NVARCHAR(1000))", table),
+        &[],
+    )
+    .await?;
+
+    let s = "¥฿😀😁😂😃😄😅😆😇😈😉😊😋😌😍😎😏😐😑😒😓😔😕😖😗😘😙😚😛😜😝😞😟😠😡😢😣😤😥😦😧😨😩😪😫😬😭😮😯😰😱😲😳😴😵😶😷😸😹😺😻😼😽😾😿🙀🙁🙂🙃🙄🙅🙆🙇🙈🙉🙊🙋🙌🙍🙎🙏ऀँंःऄअआइईउऊऋऌऍऎएऐऑऒओऔकखगघङचछजझञटठडढणतथदधनऩपफबभमयर€₭₮₯₰₱₲₳₴₵₶₷₸₹₺₻₼₽₾₿⃀".to_string();
+
+    let res = conn
+        .execute(
+            format!("INSERT INTO ##{} (content) VALUES (@P1)", table),
+            &[&s],
+        )
+        .await?;
+
+    assert_eq!(1, res.total());
+
+    let rows = conn
+        .query(format!("SELECT content FROM ##{}", table), &[])
+        .await?
+        .into_first_result()
+        .await?;
+
+    assert_eq!(Some(s.as_str()), rows[0].get(0));
 
     Ok(())
 }
@@ -1242,14 +1294,16 @@ where
 }
 
 #[cfg(feature = "rust_decimal")]
-#[cfg(tests)]
+#[cfg(test)]
 mod rust_decimal {
+    use super::*;
+
     #[test_on_runtimes]
     async fn decimal_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(2, 1);
         let row = conn
@@ -1269,7 +1323,7 @@ mod rust_decimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(i32::MAX as i128 + 10, 1);
         let row = conn
@@ -1289,7 +1343,7 @@ mod rust_decimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(i64::MAX as i128, 19);
         let row = conn
@@ -1309,9 +1363,108 @@ mod rust_decimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use rust_decimal::Decimal;
+        use tiberius::numeric::Decimal;
 
         let num = Decimal::from_i128_with_scale(i64::MAX as i128, 28);
+        let row = conn
+            .query("SELECT @P1", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "bigdecimal")]
+#[cfg(test)]
+mod bigdecimal {
+    use super::*;
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u32_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use std::str::FromStr;
+        use tiberius::numeric::BigDecimal;
+
+        let num = BigDecimal::from_str("2").unwrap();
+        let row = conn
+            .query("SELECT @P1", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+
+        Ok(())
+    }
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u64_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use num_bigint::BigInt;
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
+
+        let int = BigInt::from_i128(i32::MAX as i128 + 10).unwrap();
+        let num = BigDecimal::new(int, 1);
+
+        let row = conn
+            .query("SELECT @P1 AS foo", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get("foo"));
+
+        Ok(())
+    }
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u96_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use num_bigint::BigInt;
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
+
+        let int = BigInt::from_i128(i64::MAX as i128 + 10).unwrap();
+        let num = BigDecimal::new(int, 19);
+
+        let row = conn
+            .query("SELECT @P1", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+
+        Ok(())
+    }
+
+    #[test_on_runtimes]
+    async fn bigdecimal_type_u128_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use num_bigint::BigInt;
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
+
+        let int = BigInt::from_i128(i64::MAX as i128).unwrap();
+        let num = BigDecimal::new(int, 28);
+
         let row = conn
             .query("SELECT @P1", &[&num])
             .await?
@@ -1560,6 +1713,76 @@ where
         .unwrap();
 
     assert_eq!(None, row.get::<&XmlData, _>(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn money_smallmoney<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(
+        format!(
+            "CREATE TABLE ##{} (m1 Money NOT NULL, m2 SmallMoney NOT NULL, m3 Money, m4 SmallMoney)",
+            table
+        ),
+        &[],
+    )
+    .await?;
+
+    let res = conn
+        .execute(
+            format!(
+                "INSERT INTO ##{} (m1, m2, m3, m4) VALUES (@P1, @P2, @P3, @P4)",
+                table
+            ),
+            &[&1.23, &2.33, &4.56, &5.67],
+        )
+        .await?;
+
+    assert_eq!(1, res.total());
+
+    let row = conn
+        .query(format!("SELECT m1, m2, m3, m4 FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(1.23), row.get(0));
+    assert_eq!(Some(2.33), row.get(1));
+    assert_eq!(Some(4.56), row.get(2));
+    assert_eq!(Some(5.67), row.get(3));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn mars_sp_routines_must_fetch_all_results<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let q = r#"
+        DECLARE @SQL NVARCHAR(MAX) = N''
+        SELECT @SQL += N'ALTER TABLE '
+            + QUOTENAME(OBJECT_SCHEMA_NAME(PARENT_OBJECT_ID))
+            + '.'
+            + QUOTENAME(OBJECT_NAME(PARENT_OBJECT_ID))
+            + ' DROP CONSTRAINT '
+            + OBJECT_NAME(OBJECT_ID) + ';'
+        FROM SYS.OBJECTS
+        WHERE TYPE_DESC LIKE '%CONSTRAINT'
+            AND TYPE_DESC <> 'FOREIGN_KEY_CONSTRAINT'
+            AND OBJECT_NAME(PARENT_OBJECT_ID) = 'Post'
+            AND SCHEMA_NAME(SCHEMA_ID) = 'making_an_existing_id_field_autoincrement_works_with_foreign_keys'
+        EXEC sp_execute @SQL
+    "#;
+
+    let res = conn.simple_query(q).await?.into_results().await;
+    assert!(res.is_err());
 
     Ok(())
 }

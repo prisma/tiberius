@@ -66,16 +66,16 @@ impl<'a> QueryStream<'a> {
 
                     return Ok(());
                 }
-                Some(ReceivedToken::DoneInProc(_)) | Some(ReceivedToken::DoneProc(_)) => {
-                    return Ok(());
-                }
-                _ => {
-                    if self.columns().is_none() {
+                Some(ReceivedToken::DoneInProc(done))
+                | Some(ReceivedToken::DoneProc(done))
+                | Some(ReceivedToken::Done(done)) => {
+                    if !done.has_more() {
                         self.state = QueryStreamState::Done;
                     }
 
                     return Ok(());
                 }
+                _ => return Ok(()),
             }
         }
     }

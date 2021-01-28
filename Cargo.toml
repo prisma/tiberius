@@ -3,6 +3,7 @@ authors = [
     "Steffen Butzer <steffen.butzer@outlook.com>",
     "Julius de Bruijn <bruijn@prisma.io>",
     "Eric Sheppard <eric@eigenmo.de>",
+    "Yoshua Wuyts <yoshuawuyts@gmail.com>",
 ]
 description = "A TDS (MSSQL) driver"
 documentation = "https://docs.rs/tiberius/"
@@ -12,7 +13,7 @@ license = "MIT/Apache-2.0"
 name = "tiberius"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
-version = "0.4.9"
+version = "0.5.5"
 
 [workspace]
 members = ["runtimes-macro"]
@@ -38,26 +39,34 @@ byteorder = "1.0"
 encoding = "0.2"
 once_cell = "1.3"
 thiserror = "1.0"
-bytes = "0.5"
+bytes = "1.0"
 pretty-hex = "0.1"
-pin-project-lite = "0.1"
-futures_codec = "0.4"
+pin-project-lite = "0.2"
+asynchronous-codec = "0.5"
 futures-sink = "0.3"
 async-trait = "0.1"
+connection-string = "0.1.4"
+num-traits = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 winauth = "0.0.4"
 
 [target.'cfg(unix)'.dependencies]
-libgssapi = { version = "0.4", optional = true }
+libgssapi = { version = "0.4.4", optional = true, default-features = false }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+opentls = { version = "0.2.1", features = ["io-async-std"]}
+
+[target.'cfg(not(any(target_os = "macos", target_os = "ios")))'.dependencies]
+async-native-tls = { version = "0.3", features = ["runtime-async-std"]}
 
 [dependencies.tokio]
-version = "0.2"
+version = "1.0"
 optional = true
-features = ["udp", "dns"]
+features = ["net"]
 
 [dependencies.tokio-util]
-version = "0.3"
+version = "0.6"
 features = ["compat"]
 optional = true
 
@@ -80,10 +89,6 @@ version = "0.3"
 [dependencies.futures-util]
 version = "0.3"
 
-[dependencies.async-native-tls]
-optional = true
-version = "0.3"
-
 [dependencies.tracing]
 features = ["log"]
 version = "0.1"
@@ -92,13 +97,24 @@ version = "0.1"
 version = "1.6"
 optional = true
 
+[dependencies.bigdecimal_]
+version = "0.2.0"
+optional = true
+package = "bigdecimal"
+
+[dependencies.num-bigint]
+version = "0.3.0"
+default-features = false
+optional = true
+features = ["std"]
+
 [dev-dependencies.tokio-util]
-version = "0.3"
+version = "0.6"
 features = ["compat"]
 
 [dev-dependencies.tokio]
-features = ["macros", "sync", "io-std", "stream", "time", "io-util", "tcp", "udp", "dns"]
-version = "0.2"
+features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]
+version = "1.0"
 
 [dev-dependencies.async-std]
 features = ["attributes"]
@@ -113,12 +129,23 @@ anyhow = "1"
 env_logger = "0.7"
 
 [package.metadata.docs.rs]
-features = ["tls", "chrono", "tds73", "sql-browser-async-std", "sql-browser-tokio"]
+features = ["all", "docs"]
 
 [features]
-default = ["tls", "tds73"]
-tls = ["async-native-tls"]
+all = [
+    "chrono",
+    "tds73",
+    "sql-browser-async-std",
+    "sql-browser-tokio",
+    "integrated-auth-gssapi",
+    "rust_decimal",
+    "bigdecimal"
+]
+default = ["tds73"]
+vendored-openssl = ["opentls/vendored", "async-native-tls/vendored"]
 tds73 = []
+docs = []
 sql-browser-async-std = ["async-std"]
 sql-browser-tokio = ["tokio", "tokio-util"]
 integrated-auth-gssapi = ["libgssapi"]
+bigdecimal = [ "bigdecimal_", "num-bigint" ]

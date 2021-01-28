@@ -3,7 +3,7 @@
 [![docs.rs](https://docs.rs/tiberius/badge.svg)](https://docs.rs/tiberius)
 [![Build status](https://badge.buildkite.com/172053d935f64a275beca911ab20bad34e7597775ce024469d.svg)](https://buildkite.com/prisma/tiberius)
 [![Build status](https://ci.appveyor.com/api/projects/status/vr39e8qd42n3yf0i/branch/master?svg=true)](https://ci.appveyor.com/project/pimeys/tiberius/branch/master)
-[![Chat](https://img.shields.io/discord/664092374359605268)](https://discord.gg/8sF4ej)
+[![Chat](https://img.shields.io/discord/664092374359605268)](https://discord.gg/xX4xp9x)
 
 A native Microsoft SQL Server (TDS) client for Rust.
 
@@ -32,13 +32,14 @@ things:
 
 | Flag           | Description                                                                           | Default    |
 |----------------|---------------------------------------------------------------------------------------|------------|
-| `tls`          | Enables TLS support.                                                                  | `enabled`  |
 | `tds73`        | Support for new date and time types in TDS version 7.3. Disable if using version 7.2. | `enabled`  |
 | `chrono`       | Read and write date and time values using `chrono`'s types.                           | `disabled` |
 | `rust_decimal` | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
-| `sql-browser-async-std` | SQL Browser implementation for the `TcpStream` of async-std.                  | `disabled` |
-| `sql-browser-tokio`     | SQL Browser implementation for the `TcpStream` of Tokio.                      | `disabled` |
+| `bigdecimal`   | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.          | `disabled` |
+| `sql-browser-async-std` | SQL Browser implementation for the `TcpStream` of async-std.                 | `disabled` |
+| `sql-browser-tokio`     | SQL Browser implementation for the `TcpStream` of Tokio.                     | `disabled` |
 | `integrated-auth-gssapi`     | Support for using Integrated Auth via GSSAPI                            | `disabled` |
+| `vendored-openssl` | On Linux and macOS platforms links statically against a vendored version of OpenSSL | `disabled` |
 
 ### Supported protocols
 
@@ -71,13 +72,17 @@ CA.
 #### b) Disable certificate validation by using `TrustServerCertificate=true` in your connection string (requires 0.2.2)
 
 #### c) Alternatively: Disable Encryption for LOCALHOST
-For a connection to localhost, which will never leave your machine, it's safe to disable encryption. Currently this is only possible by doing someting like the following in your `cargo.toml`:
+For a connection to localhost, which will never leave your machine, it's safe to disable encryption. Add `encrypt=DANGER_PLAINTEXT` to your connection string or set use the `EncryptionLevel::NotSupported` variant.
 
 ```toml
 tiberius = { version = "0.X", default-features=false, features=["chrono"] }
 ```
 
-**This will disable encryption for your ENTIRE crate**  
+#### MacOS Catalina and TLS
+
+Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. Therefore on macOS systems we use OpenSSL instead of Secure Transport, meaning by default Tiberius requires a working OpenSSL installation. By using a feature flag `vendored-openssl` the compilation links statically to a vendored version of OpenSSL, allowing compilation on systems with no OpenSSL installed.
+
+Please be aware of the security implications if deciding to use vendoring.
 
 ### Integrated Authentication (TrustedConnection) on \*nix
 
@@ -86,7 +91,7 @@ With the `integrated-auth-gssapi` feature enabled, the crate requires the GSSAPI
   * [Arch](https://www.archlinux.org/packages/core/x86_64/krb5/)
   * [Debian](https://tracker.debian.org/pkg/krb5) (you need the -dev packages to build)
   * [Ubuntu](https://packages.ubuntu.com/bionic-updates/libkrb5-dev)
-  * [Mac - Homebrew](https://formulae.brew.sh/formula/krb5)
+  * Mac: as of version `0.4.2` the [libgssapi](https://crates.io/crates/libgssapi) crate used for this feature now uses Apple's [GSS Framework](https://developer.apple.com/documentation/gss?language=objc) which ships with MacOS 10.14+.
 
 Additionally, your runtime system will need to be trusted by and configured for the Active Directory domain your SQL Server is part of. In particular, you'll need to be able to get a valid TGT for your identity, via `kinit` or a keytab. This setup varies by environment and OS, but your friendly network/system administrator should be able to help figure out the specifics.
 
