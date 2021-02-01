@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.6
+
+-  Fix for handling nullable values (#119 #121)
+
 ## Version 0.5.5 and 0.4.21
 
 Catastropichal build failures with feature flags fixed.
