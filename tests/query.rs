@@ -174,6 +174,37 @@ where
 }
 
 #[test_on_runtimes]
+async fn read_and_write_tinyint<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(format!("CREATE TABLE ##{} (content TINYINT)", table), &[])
+        .await?;
+
+    let res = conn
+        .execute(
+            format!("INSERT INTO ##{} (content) VALUES (@P1), (@P2)", table),
+            &[&u8::MIN, &u8::MAX],
+        )
+        .await?;
+
+    assert_eq!(2, res.total());
+
+    let rows = conn
+        .query(format!("SELECT content FROM ##{}", table), &[])
+        .await?
+        .into_first_result()
+        .await?;
+
+    assert_eq!(Some(u8::MIN), rows[0].get(0));
+    assert_eq!(Some(u8::MAX), rows[1].get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn read_and_write_kanji_varchars<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
