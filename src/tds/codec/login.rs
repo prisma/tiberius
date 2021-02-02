@@ -93,6 +93,7 @@ impl FeatureLevel {
 }
 
 /// the login packet
+#[derive(Debug)]
 pub struct LoginMessage<'a> {
     /// the highest TDS version the client supports
     pub tds_version: FeatureLevel,

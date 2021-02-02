@@ -15,11 +15,11 @@ use crate::{
 };
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use async_native_tls::TlsConnector;
+use asynchronous_codec::Framed;
 use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
 use codec::TokenSSPI;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
-use asynchronous_codec::Framed;
 #[cfg(feature = "integrated-auth-gssapi")]
 use libgssapi::{
     context::{ClientCtx, CtxFlags},
@@ -47,7 +47,10 @@ use winauth::{windows::NtlmSspiBuilder, NextBytes};
 ///
 /// [`Client`]: struct.Encode.html
 /// [`Packet`]: ../protocol/codec/struct.Packet.html
-pub(crate) struct Connection<S: AsyncRead + AsyncWrite + Unpin + Send> {
+pub(crate) struct Connection<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
     transport: Framed<MaybeTlsStream<S>, PacketCodec>,
     flushed: bool,
     context: Context,
@@ -91,7 +94,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             .await?;
 
         let mut connection = connection
-            .login(config.auth, encryption, config.database)
+            .login(config.auth, encryption, config.database, config.host)
             .await?;
 
         connection.flush_done().await?;
@@ -229,11 +232,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         auth: AuthMethod,
         encryption: EncryptionLevel,
         db: Option<String>,
+        server_name: Option<String>,
     ) -> crate::Result<Self> {
         let mut msg = LoginMessage::new();
 
         if let Some(db) = db {
             msg.db_name = db.into();
+        }
+
+        if let Some(server_name) = server_name {
+            msg.server_name = server_name.into();
         }
 
         match auth {

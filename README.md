@@ -95,6 +95,52 @@ With the `integrated-auth-gssapi` feature enabled, the crate requires the GSSAPI
 
 Additionally, your runtime system will need to be trusted by and configured for the Active Directory domain your SQL Server is part of. In particular, you'll need to be able to get a valid TGT for your identity, via `kinit` or a keytab. This setup varies by environment and OS, but your friendly network/system administrator should be able to help figure out the specifics.
 
+## Redirects
+
+With certain Azure firewall settings, a login might return `Error::Routing { host, port }`. This means the user must create a new `TcpStream` to the given address, and connect again.
+
+A simple connection procedure would then be:
+
+```rust
+use tiberius::{Client, Config, AuthMethod, error::Error};
+use tokio_util::compat::TokioAsyncWriteCompatExt;
+use tokio::net::TcpStream;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::new();
+
+    config.host("0.0.0.0");
+    config.port(1433);
+    config.authentication(AuthMethod::sql_server("SA", "<Mys3cureP4ssW0rD>"));
+
+    let tcp = TcpStream::connect(config.get_addr()).await?;
+    tcp.set_nodelay(true)?;
+
+    let client = match Client::connect(config, tcp.compat_write()).await {
+        // Connection successful.
+        Ok(client) => client,
+        // The server wants us to redirect to a different address
+        Err(Error::Routing { host, port }) => {
+            let mut config = Config::new();
+
+            config.host(&host);
+            config.port(port);
+            config.authentication(AuthMethod::sql_server("SA", "<Mys3cureP4ssW0rD>"));
+
+            let tcp = TcpStream::connect(config.get_addr()).await?;
+            tcp.set_nodelay(true)?;
+
+            // we should not have more than one redirect, so we'll short-circuit here.
+            Client::connect(config, tcp.compat_write()).await?
+        }
+        Err(e) => Err(e)?,
+    };
+
+    Ok(())
+}
+```
+
 ## Security
 
 If you have a security issue to report, please contact us at [security@prisma.io](mailto:security@prisma.io?subject=[GitHub]%20Prisma%202%20Security%20Report%20Tiberius)
