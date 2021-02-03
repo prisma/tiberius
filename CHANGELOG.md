@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.7
+
+- Set server name in the login packet (#122)
+
 ## Version 0.5.6
 
 -  Fix for handling nullable values (#119 #121)
