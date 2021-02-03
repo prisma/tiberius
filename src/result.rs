@@ -1,9 +1,6 @@
 use crate::{
     client::Connection,
-    tds::{
-        codec::DoneStatus,
-        stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
-    },
+    tds::stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
     Column, Row,
 };
 use futures::{stream::BoxStream, AsyncRead, AsyncWrite, Stream, StreamExt, TryStreamExt};
@@ -231,14 +228,15 @@ impl<'a> ExecuteResult {
     pub(crate) async fn new<S: AsyncRead + AsyncWrite + Unpin + Send>(
         connection: &'a mut Connection<S>,
     ) -> crate::Result<Self> {
+        dbg!("foo");
         let token_stream = TokenStream::new(connection).try_unfold();
 
         let rows_affected = token_stream
             .try_fold(Vec::new(), |mut acc, token| async move {
                 match token {
-                    ReceivedToken::DoneProc(done) if done.status.contains(DoneStatus::FINAL) => (),
-                    ReceivedToken::DoneProc(done) => acc.push(done.done_rows),
-                    ReceivedToken::DoneInProc(done) => acc.push(done.done_rows),
+                    ReceivedToken::DoneProc(done) if done.is_final() => (),
+                    ReceivedToken::DoneProc(done) => acc.push(done.rows()),
+                    ReceivedToken::DoneInProc(done) => acc.push(done.rows()),
                     _ => (),
                 }
                 Ok(acc)

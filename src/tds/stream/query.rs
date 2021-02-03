@@ -1,4 +1,4 @@
-use crate::tds::{codec::DoneStatus, stream::ReceivedToken};
+use crate::tds::stream::ReceivedToken;
 use crate::{row::ColumnType, Column, Row};
 use futures::{ready, stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use std::{
@@ -143,7 +143,7 @@ impl<'a> Stream for QueryStream<'a> {
                 ReceivedToken::Done(ref done)
                 | ReceivedToken::DoneProc(ref done)
                 | ReceivedToken::DoneInProc(ref done) => {
-                    if !done.status.contains(DoneStatus::MORE) {
+                    if !done.has_more() {
                         this.state = QueryStreamState::Done;
                     } else {
                         // Justification here: if there are no columns set this is because

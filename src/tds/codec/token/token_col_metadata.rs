@@ -1,8 +1,9 @@
 use crate::{
+    error::Error,
     tds::codec::{FixedLenType, TypeInfo, VarLenType},
     ColumnData, SqlReadBytes,
 };
-use bitflags::bitflags;
+use enumflags2::BitFlags;
 
 #[derive(Debug)]
 pub struct TokenColMetaData {
@@ -17,7 +18,7 @@ pub struct MetaDataColumn {
 
 #[derive(Debug)]
 pub struct BaseMetaDataColumn {
-    pub flags: ColmetaDataFlags,
+    pub flags: BitFlags<ColumnFlag>,
     pub ty: TypeInfo,
 }
 
@@ -103,22 +104,39 @@ impl BaseMetaDataColumn {
     }
 }
 
-bitflags! {
-    pub struct ColmetaDataFlags: u16 {
-        const CDF_NULLABLE            = 1<<0;
-        const CDF_CASE_SENSITIVE      = 1<<1;
-        const CDF_UPDATEABLE          = 1<<3;
-        const CDF_UPDATEABLE_UNKNOWN  = 1<<4;
-        const CDF_IDENTITY            = 1<<5;
-        const CDF_COMPUTED            = 1<<7;
-        // 2 bits reserved for ODBC gateway
-        const CDF_FIXED_LEN_CLR_TYPE  = 1<<10;
-        const CDF_SPARSE_COLUMN_SET   = 1<<11;
-        const CDF_ENCRYPTED           = 1<<12;
-        const CDF_HIDDEN              = 1<<13;
-        const CDF_KEY                 = 1<<14;
-        const CDF_NULLABLE_UNKNOWN    = 1<<15;
-    }
+#[derive(Debug, Clone, Copy, PartialEq, BitFlags)]
+#[repr(u16)]
+pub enum ColumnFlag {
+    /// The column can be null.
+    Nullable = 1 << 0,
+    /// Set for string columns with binary collation and always for the XML data
+    /// type.
+    CaseSensitive = 1 << 1,
+    /// If column is writeable.
+    Updateable = 1 << 3,
+    /// Column modification status unknown.
+    UpdateableUnknown = 1 << 4,
+    /// Column is an identity.
+    Identity = 1 << 5,
+    /// Coulumn is computed.
+    Computed = 1 << 7,
+    /// Column is a fixed-length common language runtime user-defined type (CLR
+    /// UDT).
+    FixedLenClrType = 1 << 10,
+    /// Column is the special XML column for the sparse column set.
+    SparseColumnSet = 1 << 11,
+    /// Column is encrypted transparently and has to be decrypted to view the
+    /// plaintext value. This flag is valid when the column encryption feature
+    /// is negotiated between client and server and is turned on.
+    Encrypted = 1 << 12,
+    /// Column is part of a hidden primary key created to support a T-SQL SELECT
+    /// statement containing FOR BROWSE.
+    Hidden = 1 << 13,
+    /// Column is part of a primary key for the row and the T-SQL SELECT
+    /// statement contains FOR BROWSE.
+    Key = 1 << 14,
+    /// It is unknown whether the column might be nullable.
+    NullableUnknown = 1 << 15,
 }
 
 #[allow(dead_code)]
@@ -149,8 +167,10 @@ impl BaseMetaDataColumn {
         R: SqlReadBytes + Unpin,
     {
         let _user_ty = src.read_u32_le().await?;
-        let raw_flags = src.read_u16_le().await?;
-        let flags = ColmetaDataFlags::from_bits(raw_flags).unwrap();
+
+        let flags = BitFlags::from_bits(src.read_u16_le().await?)
+            .map_err(|_| Error::Protocol("column metadata: invalid flags".into()))?;
+
         let ty = TypeInfo::decode(src).await?;
 
         match ty {
