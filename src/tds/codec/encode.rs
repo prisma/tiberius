@@ -1,6 +1,6 @@
 use super::{Packet, PacketCodec};
-use bytes::{BufMut, BytesMut};
 use asynchronous_codec::Encoder;
+use bytes::{BufMut, BytesMut};
 
 pub(crate) trait Encode<B: BufMut> {
     fn encode(self, dst: &mut B) -> crate::Result<()>;
