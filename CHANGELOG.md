@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.8
+
+- Try out all resolved IP addresses (SQL Browser) (#124)
+
 ## Version 0.5.7
 
 - Set server name in the login packet (#122)
