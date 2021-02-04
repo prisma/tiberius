@@ -63,7 +63,7 @@ async-native-tls = { version = "0.3", features = ["runtime-async-std"]}
 [dependencies.tokio]
 version = "1.0"
 optional = true
-features = ["net"]
+features = ["net", "time"]
 
 [dependencies.tokio-util]
 version = "0.6"
