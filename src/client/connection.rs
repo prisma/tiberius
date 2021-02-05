@@ -234,14 +234,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         db: Option<String>,
         server_name: Option<String>,
     ) -> crate::Result<Self> {
-        let mut msg = LoginMessage::new();
+        let mut login_message = LoginMessage::new();
 
         if let Some(db) = db {
-            msg.db_name = db.into();
+            login_message.db_name(db);
         }
 
         if let Some(server_name) = server_name {
-            msg.server_name = server_name.into();
+            login_message.server_name(server_name);
         }
 
         match auth {
@@ -251,10 +251,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                     .target_spn(self.context.spn())
                     .build()?;
 
-                msg.integrated_security = client.next_bytes(None)?;
+                login_message.integrated_security(client.next_bytes(None)?);
 
                 let id = self.context.next_packet_id();
-                self.send(PacketHeader::login(id), msg).await?;
+                self.send(PacketHeader::login(id), login_message).await?;
 
                 self = self.post_login_encryption(encryption);
 
@@ -289,10 +289,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
                 let init_token = ctx.step(None)?;
 
-                msg.integrated_security = Some(Vec::from(init_token.unwrap().deref()));
+                login_message.integrated_security(Some(Vec::from(init_token.unwrap().deref())));
 
                 let id = self.context.next_packet_id();
-                self.send(PacketHeader::login(id), msg).await?;
+                self.send(PacketHeader::login(id), login_message).await?;
 
                 self = self.post_login_encryption(encryption);
 
@@ -320,10 +320,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);
                 let mut client = builder.build(auth.domain, auth.user, auth.password);
 
-                msg.integrated_security = client.next_bytes(None)?;
+                login_message.integrated_security(client.next_bytes(None)?);
 
                 let id = self.context.next_packet_id();
-                self.send(PacketHeader::login(id), msg).await?;
+                self.send(PacketHeader::login(id), login_message).await?;
 
                 self = self.post_login_encryption(encryption);
 
@@ -344,15 +344,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             }
             AuthMethod::None => {
                 let id = self.context.next_packet_id();
-                self.send(PacketHeader::login(id), msg).await?;
+                self.send(PacketHeader::login(id), login_message).await?;
                 self = self.post_login_encryption(encryption);
             }
             AuthMethod::SqlServer(auth) => {
-                msg.username = auth.user().into();
-                msg.password = auth.password().into();
+                login_message.user_name(auth.user());
+                login_message.password(auth.password());
 
                 let id = self.context.next_packet_id();
-                self.send(PacketHeader::login(id), msg).await?;
+                self.send(PacketHeader::login(id), login_message).await?;
                 self = self.post_login_encryption(encryption);
             }
         }

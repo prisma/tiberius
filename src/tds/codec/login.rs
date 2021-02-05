@@ -1,7 +1,7 @@
 use super::Encode;
-use bitflags::bitflags;
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::BytesMut;
+use enumflags2::BitFlags;
 use io::{Cursor, Write};
 use std::{borrow::Cow, io};
 
@@ -20,65 +20,9 @@ uint_enum! {
     }
 }
 
-bitflags! {
-    pub struct LoginOptionFlags1: u8 {
-        const BIG_ENDIAN           = 0b00000001;
-        /// Charset_EBDDIC, default/bit not set = Charset_ASCII
-        const CHARSET_EBDDIC       = 0b00000010;
-        /// default float is IEEE_754
-        const FLOAT_VAX            = 0b00000100;
-        const FLOAT_ND5000         = 0b00001000;
-        const DUMPLOAD_ON          = 0b00010000;
-        /// Set if the client requires warning messages on execution of the USE SQL
-        /// statement. If this flag is NOT SET, the server MUST NOT inform the client when the database
-        /// changes, and therefore the client will be unaware of any accompanying collation changes.
-        const USE_DB_NOTIFY        = 0b00100000;
-        /// Set if the change to initial database needs to succeed if the connection is to succeed. (false: warn)
-        const INITIAL_DB_FATAL     = 0b01000000;
-        /// Set if the client requires warning messages on execution of a language change statement.
-        const LANG_CHANGE_WARN     = 0b10000000;
-    }
-}
-bitflags! {
-    pub struct LoginOptionFlags2: u8 {
-        /// Set if the change to initial language needs to succeed if the connect is to succeed.
-        const INIT_LANG_FATAL      = 0b00000001;
-        /// Set if the client is the ODBC driver. This causes the server to set ANSI_DEFAULTS=ON,
-        /// CURSOR_CLOSE_ON_COMMIT, IMPLICIT_TRANSACTIONS=OFF, TEXTSIZE=0x7FFFFFFF (2GB) (TDS 7.2 and earlier)
-        /// TEXTSIZE to infinite (TDS 7.3), and ROWCOUNT to infinite
-        /// (2.2.6.4)
-        const ODBC_DRIVER          = 0b00000010;
-        const TRANS_BOUNDARY       = 0b00000100;
-        const CACHE_CONNECT        = 0b00001000;
-        /// reserved
-        const USER_TYPE_SERVER     = 0b00010000;
-        /// Distributed Query login
-        const USER_TYPE_REM_USER   = 0b00100000;
-        /// Replication login
-        const USER_TYPE_SQL_REPL   = 0b00110000;
-        const INTEGRATED_SECURITY  = 0b10000000;
-    }
-}
-bitflags! {
-    pub struct LoginTypeFlags: u8 {
-        /// use TSQL insteadof DFLT
-        const SQL_TSQL             = 0b00000001;
-        /// Set if the client is the OLEDB driver. This causes the server to set ANSI_DEFAULTS to ON ...
-        const OLEDB_DRIVER         = 0b00010000;
-        const READ_ONLY_INTENT     = 0b00100000;
-    }
-}
-bitflags! {
-    pub struct LoginOptionFlags3: u8 {
-        const REQUEST_CHANGE_PWD   = 0b00000001;
-        /// 1 if XML data type instances are returned as binary XML
-        const SEND_YUKON_BINARY    = 0b00000010;
-        /// 1 if client is requesting separate process to be spawned as user instance
-        const SPAWN_USER_INSTANCE  = 0b00000100;
-        /// 0 = The server MUST restrict the collations sent to a specific set of collations.
-        /// 1 = The server MAY send any collation that fits in the storage space.
-        const SUPPORT_UNKNOWN_COLL = 0b00001000;
-        // TODO: fExtension?
+impl Default for FeatureLevel {
+    fn default() -> Self {
+        Self::SqlServerN
     }
 }
 
@@ -92,63 +36,162 @@ impl FeatureLevel {
     }
 }
 
+#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[repr(u8)]
+pub enum OptionFlag1 {
+    /// The byte order used by client for numeric and datetime data types.
+    /// (default: little-endian)
+    BigEndian = 0x01,
+    /// The character set used on the client. (default: ASCII)
+    CharsetEBDDIC = 0x02,
+    /// Use VAX floating point representation. (default: IEEE 754)
+    FloatVax = 0x04,
+    /// Use ND5000 floating point representation. (default: IEEE 754)
+    FloatND5000 = 0x08,
+    /// Set is dump/load or BCP capabilities are needed by the client.
+    /// (default: ON)
+    BcpDumploadOff = 0x10,
+    /// Set if the client requires warning messages on execution of the USE SQL
+    /// statement. If this flag is not set, the server MUST NOT inform the
+    /// client when the database changes, and therefore the client will be
+    /// unaware of any accompanying collation changes. (default: ON)
+    UseDbNotify = 0x20,
+    /// Set if the change to initial database needs to succeed if the connection
+    /// is to succeed. (default: OFF)
+    InitDbFatal = 0x40,
+    /// Set if the client requires warning messages on execution of a language
+    /// change statement. (default: OFF)
+    LangChangeWarn = 0x80,
+}
+
+#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[repr(u8)]
+pub enum OptionFlag2 {
+    /// Set if the change to initial language needs to succeed if the connect is
+    /// to succeed.
+    InitLangFatal = 0x01,
+    /// Set if the client is the ODBC driver. This causes the server to set
+    /// `ANSI_DEFAULTS=ON`, `CURSOR_CLOSE_ON_COMMIT`, `IMPLICIT_TRANSACTIONS=OFF`,
+    /// `TEXTSIZE=0x7FFFFFFF` (2GB) (TDS 7.2 and earlier) `TEXTSIZE` to infinite
+    /// (TDS 7.3), and `ROWCOUNT` to infinite.
+    OdbcDriver = 0x02,
+    /// (not documented)
+    TransBoundary = 0x04,
+    /// (not documented)
+    CacheConnect = 0x08,
+    /// Reserved (not really documented)
+    UserTypeServer = 0x10,
+    /// Distributed Query login
+    UserTypeRemUser = 0x20,
+    /// Replication login
+    UserTypeSqlRepl = 0x40,
+    /// Use integrated security in the client.
+    IntegratedSecurity = 0x80,
+}
+
+#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[repr(u8)]
+pub enum OptionFlag3 {
+    /// Request to change login's password.
+    RequestChangePassword = 0x01,
+    /// XML data type instances are returned as binary XML.
+    BinaryXML = 0x02,
+    /// Client is requesting separate process to be spawned as user instance.
+    SpawnUserInstance = 0x04,
+    /// This bit is used by the server to determine if a client is able to
+    /// properly handle collations introduced after TDS 7.2. TDS 7.2 and earlier
+    /// clients are encouraged to use this loginpacket bit. Servers MUST ignore
+    /// this bit when it is sent by TDS 7.3 or 7.4 clients.
+    UnknownCollationHandling = 0x08,
+    /// ibExtension/cbExtension fields are used.
+    ExtensionUsed = 0x10,
+}
+
+#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[repr(u8)]
+pub enum LoginTypeFlag {
+    /// Use T-SQL syntax.
+    UseTSQL = 0x01,
+    /// Set if the client is the OLEDB driver. This causes the server to set
+    /// ANSI_DEFAULTS to ON, CURSOR_CLOSE_ON_COMMIT and IMPLICIT_TRANSACTIONS to
+    /// OFF, TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and earlier), TEXTSIZE to
+    /// infinite (introduced in TDS 7.3), and ROWCOUNT to infinite.
+    UseOLEDB = 0x10,
+    /// This bit was introduced in TDS 7.4; however, TDS 7.1, 7.2, and 7.3
+    /// clients can also use this bit in LOGIN7 to specify that the application
+    /// intent of the connection is read-only. The server SHOULD ignore this bit
+    /// if the highest TDS version supported by the server is lower than TDS 7.4.
+    ReadOnlyIntent = 0x20,
+}
+
 /// the login packet
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct LoginMessage<'a> {
     /// the highest TDS version the client supports
-    pub tds_version: FeatureLevel,
+    tds_version: FeatureLevel,
     /// the requested packet size
-    pub packet_size: u32,
+    packet_size: u32,
     /// the version of the interface library
-    pub client_prog_ver: u32,
+    client_prog_ver: u32,
     /// the process id of the client application
-    pub client_pid: u32,
+    client_pid: u32,
     /// the connection id of the primary server
     /// (used when connecting to an "Always UP" backup server)
-    pub connection_id: u32,
-
-    pub option_flags_1: LoginOptionFlags1,
-    pub option_flags_2: LoginOptionFlags2,
-
+    connection_id: u32,
+    option_flags_1: BitFlags<OptionFlag1>,
+    option_flags_2: BitFlags<OptionFlag2>,
     /// flag included in option_flags_2
-    pub integrated_security: Option<Vec<u8>>,
-    pub type_flags: LoginTypeFlags,
-    pub option_flags_3: LoginOptionFlags3,
-
-    pub client_timezone: i32,
-    pub client_lcid: u32,
-
-    pub hostname: Cow<'a, str>,
-    pub username: Cow<'a, str>,
-    pub password: Cow<'a, str>,
-    pub app_name: Cow<'a, str>,
-    pub server_name: Cow<'a, str>,
+    integrated_security: Option<Vec<u8>>,
+    type_flags: BitFlags<LoginTypeFlag>,
+    option_flags_3: BitFlags<OptionFlag3>,
+    client_timezone: i32,
+    client_lcid: u32,
+    hostname: Cow<'a, str>,
+    username: Cow<'a, str>,
+    password: Cow<'a, str>,
+    app_name: Cow<'a, str>,
+    server_name: Cow<'a, str>,
     /// the default database to connect to
-    pub db_name: Cow<'a, str>,
+    db_name: Cow<'a, str>,
 }
 
 impl<'a> LoginMessage<'a> {
     pub fn new() -> LoginMessage<'a> {
-        LoginMessage {
-            tds_version: FeatureLevel::SqlServerN,
+        Self {
             packet_size: 4096,
-            client_prog_ver: 0,
-            client_pid: 0,
-            connection_id: 0,
-            option_flags_1: LoginOptionFlags1::USE_DB_NOTIFY | LoginOptionFlags1::INITIAL_DB_FATAL,
-            option_flags_2: LoginOptionFlags2::INIT_LANG_FATAL | LoginOptionFlags2::ODBC_DRIVER,
-            integrated_security: None,
-            type_flags: LoginTypeFlags::empty(),
-            option_flags_3: LoginOptionFlags3::SUPPORT_UNKNOWN_COLL,
-            client_timezone: 0, //TODO
-            client_lcid: 0,     // TODO
-            hostname: "".into(),
-            username: "".into(),
-            password: "".into(),
-            app_name: "".into(),
-            server_name: "".into(),
-            db_name: "".into(),
+            option_flags_1: OptionFlag1::UseDbNotify | OptionFlag1::InitDbFatal,
+            option_flags_2: OptionFlag2::InitLangFatal | OptionFlag2::OdbcDriver,
+            option_flags_3: BitFlags::from_flag(OptionFlag3::UnknownCollationHandling),
+            app_name: "tiberius".into(),
+            ..Default::default()
         }
+    }
+
+    #[cfg(any(all(unix, feature = "integrated-auth-gssapi"), windows))]
+    pub fn integrated_security(&mut self, bytes: Option<Vec<u8>>) {
+        if bytes.is_some() {
+            self.option_flags_2.insert(OptionFlag2::IntegratedSecurity);
+        } else {
+            self.option_flags_2.remove(OptionFlag2::IntegratedSecurity);
+        }
+
+        self.integrated_security = bytes;
+    }
+
+    pub fn db_name(&mut self, db_name: impl Into<Cow<'a, str>>) {
+        self.db_name = db_name.into();
+    }
+
+    pub fn server_name(&mut self, server_name: impl Into<Cow<'a, str>>) {
+        self.server_name = server_name.into();
+    }
+
+    pub fn user_name(&mut self, user_name: impl Into<Cow<'a, str>>) {
+        self.username = user_name.into();
+    }
+
+    pub fn password(&mut self, password: impl Into<Cow<'a, str>>) {
+        self.password = password.into();
     }
 }
 
@@ -159,13 +202,6 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
         // Space for the length
         cursor.write_u32::<LittleEndian>(0)?;
 
-        // ignore the specified value for integrated security since we determine that by the struct field
-        let option_flags2 = if self.integrated_security.is_some() {
-            self.option_flags_2 | LoginOptionFlags2::INTEGRATED_SECURITY
-        } else {
-            self.option_flags_2 & !LoginOptionFlags2::INTEGRATED_SECURITY
-        };
-
         cursor.write_u32::<LittleEndian>(self.tds_version as u32)?;
         cursor.write_u32::<LittleEndian>(self.packet_size)?;
         cursor.write_u32::<LittleEndian>(self.client_prog_ver)?;
@@ -173,7 +209,7 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
         cursor.write_u32::<LittleEndian>(self.connection_id)?;
 
         cursor.write_u8(self.option_flags_1.bits())?;
-        cursor.write_u8(option_flags2.bits())?;
+        cursor.write_u8(self.option_flags_2.bits())?;
         cursor.write_u8(self.type_flags.bits())?;
         cursor.write_u8(self.option_flags_3.bits())?;
 

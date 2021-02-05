@@ -1,14 +1,33 @@
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
 use crate::{tds::codec::ColumnData, Result};
-use bitflags::bitflags;
 use bytes::{BufMut, BytesMut};
+use enumflags2::BitFlags;
 use std::borrow::BorrowMut;
 use std::borrow::Cow;
+
+#[derive(BitFlags, Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum RpcStatus {
+    ParamByRefValue = 0x01,
+    ParamDefaultValue = 0x02,
+    // 5 bits reserved
+    ParamEncrypted = 0x08,
+    // 4 bits reserved
+}
+
+#[derive(BitFlags, Copy, Clone, Debug, PartialEq)]
+#[repr(u16)]
+pub enum RpcOption {
+    WithRecomp = 0x01,
+    NoMeta = 0x02,
+    ReuseMeta = 0x04,
+    // 13 bits reserved
+}
 
 #[derive(Debug)]
 pub struct TokenRpcRequest<'a> {
     proc_id: RpcProcIdValue<'a>,
-    flags: RpcOptionFlags,
+    flags: BitFlags<RpcOption>,
     params: Vec<RpcParam<'a>>,
     transaction_desc: [u8; 8],
 }
@@ -20,7 +39,7 @@ impl<'a> TokenRpcRequest<'a> {
     {
         Self {
             proc_id: proc_id.into(),
-            flags: RpcOptionFlags::empty(),
+            flags: BitFlags::empty(),
             params,
             transaction_desc,
         }
@@ -30,7 +49,7 @@ impl<'a> TokenRpcRequest<'a> {
 #[derive(Debug)]
 pub struct RpcParam<'a> {
     pub name: Cow<'a, str>,
-    pub flags: RpcStatusFlags,
+    pub flags: BitFlags<RpcStatus>,
     pub value: ColumnData<'a>,
 }
 
@@ -68,25 +87,6 @@ where
 impl<'a> From<RpcProcId> for RpcProcIdValue<'a> {
     fn from(id: RpcProcId) -> Self {
         Self::Id(id)
-    }
-}
-
-bitflags! {
-    pub struct RpcStatusFlags: u8 {
-        const PARAM_BY_REF_VALUE    = 0x01;
-        const PARAM_DEFAULT_VALUE   = 0x02;
-        // <- reserved
-        const PARAM_ENCRYPTED       = 0x08;
-        // <- 4 bits reserved
-    }
-}
-
-bitflags! {
-    pub struct RpcOptionFlags: u16 {
-        const WITH_RECOMP   = 0x01;
-        const NO_META       = 0x02;
-        const REUSE_META    = 0x04;
-        // <- 13 reserved bits
     }
 }
 

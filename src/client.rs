@@ -9,13 +9,11 @@ pub(crate) use connection::*;
 
 use crate::{
     result::{ExecuteResult, QueryResult},
-    tds::{
-        codec::{self, RpcStatusFlags},
-        stream::TokenStream,
-    },
+    tds::{codec, stream::TokenStream},
     SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
+use enumflags2::BitFlags;
 use futures::{AsyncRead, AsyncWrite};
 use std::{borrow::Cow, fmt::Debug};
 
@@ -234,12 +232,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
-                flags: RpcStatusFlags::empty(),
+                flags: BitFlags::empty(),
                 value: ColumnData::String(Some(query.into())),
             },
             RpcParam {
                 name: Cow::Borrowed("params"),
-                flags: RpcStatusFlags::empty(),
+                flags: BitFlags::empty(),
                 value: ColumnData::I32(Some(0)),
             },
         ]
@@ -266,7 +264,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
 
             rpc_params.push(RpcParam {
                 name: Cow::Owned(format!("@P{}", i + 1)),
-                flags: RpcStatusFlags::empty(),
+                flags: BitFlags::empty(),
                 value: param_data,
             });
         }

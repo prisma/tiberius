@@ -1,25 +1,24 @@
 use crate::{Error, SqlReadBytes};
-use bitflags::bitflags;
+use enumflags2::BitFlags;
 use std::fmt;
 
 #[derive(Debug)]
 pub struct TokenDone {
-    pub status: DoneStatus,
-    pub cur_cmd: u16,
-    pub done_rows: u64,
+    status: BitFlags<DoneStatus>,
+    cur_cmd: u16,
+    done_rows: u64,
 }
 
-bitflags! {
-    pub struct DoneStatus: u16 {
-        const FINAL = 0x0;
-        const MORE = 0x1;
-        const ERROR = 0x2;
-        const INEXACT = 0x4;
-        const COUNT = 0x10;
-        const ATTENTION = 0x20;
-        const RPC_IN_BATCH  = 0x80;
-        const SRVERROR = 0x100;
-    }
+#[derive(Debug, Clone, Copy, PartialEq, BitFlags)]
+#[repr(u16)]
+pub enum DoneStatus {
+    More = 0x1,
+    Error = 0x2,
+    Inexact = 0x4,
+    Count = 0x10,
+    Attention = 0x20,
+    RpcInBatch = 0x80,
+    SrvError = 0x100,
 }
 
 impl TokenDone {
@@ -27,8 +26,8 @@ impl TokenDone {
     where
         R: SqlReadBytes + Unpin,
     {
-        let status = DoneStatus::from_bits(src.read_u16_le().await?)
-            .ok_or(Error::Protocol("done(variant): invalid status".into()))?;
+        let status = BitFlags::from_bits(src.read_u16_le().await?)
+            .map_err(|_| Error::Protocol("done(variant): invalid status".into()))?;
 
         let cur_cmd = src.read_u16_le().await?;
         let done_row_count_bytes = src.context().version().done_row_count_bytes();
@@ -47,7 +46,15 @@ impl TokenDone {
     }
 
     pub(crate) fn has_more(&self) -> bool {
-        self.status.contains(DoneStatus::MORE)
+        self.status.contains(DoneStatus::More)
+    }
+
+    pub(crate) fn is_final(&self) -> bool {
+        self.status.is_empty()
+    }
+
+    pub(crate) fn rows(&self) -> u64 {
+        self.done_rows
     }
 }
 
