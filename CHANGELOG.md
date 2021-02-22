@@ -1,5 +1,14 @@
 # Changes
 
+## Version 0.5.9
+
+- Set the `app_name` in LOGIN7 to `tiberius`. This allows connecting to servers
+  that expect the value to not be empty (see issue #127).
+
+## Version 0.5.8
+
+- Try out all resolved IP addresses (#124)
+
 ## Version 0.5.7
 
 - Set server name in the login packet (#122)
