@@ -16,6 +16,12 @@ pub enum Error {
         /// The error description.
         message: String,
     },
+    /// An error occurred in the connection handling half of the split Client.
+    #[error(
+        "An error occurred within the split Client's connection handle half: {}",
+        _0
+    )]
+    SplitClient(String),
     #[error("Protocol error: {}", _0)]
     /// An error happened during the request or response parsing.
     Protocol(Cow<'static, str>),

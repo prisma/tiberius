@@ -16,6 +16,7 @@ pub(crate) use connection::*;
 
 use crate::tds::stream::ReceivedToken;
 use crate::{
+    error::Error,
     result::ExecuteResult,
     tds::{
         codec::{self, IteratorJoin},
@@ -27,7 +28,10 @@ use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRp
 use enumflags2::BitFlags;
 use futures::{AsyncRead, AsyncWrite};
 use futures_util::TryStreamExt;
-use std::{borrow::Cow, fmt::Debug};
+// use futures::{SinkExt, StreamExt, TryStreamExt};
+use std::{borrow::Cow, fmt::Debug, ops, future};
+// use tracing::Level;
+
 
 /// `Client` is the main entry point to the SQL Server, providing query
 /// execution capabilities.
@@ -52,7 +56,8 @@ use std::{borrow::Cow, fmt::Debug};
 /// let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
 /// tcp.set_nodelay(true)?;
 /// // Client is ready to use.
-/// let client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+/// # #[allow(unused_mut)]
+/// let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -61,6 +66,109 @@ use std::{borrow::Cow, fmt::Debug};
 #[derive(Debug)]
 pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
     pub(crate) connection: Connection<S>,
+}
+
+
+impl<S> Connection<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    async fn send_simple_query<'b>(&mut self, query: impl Into<Cow<'b, str>>) -> crate::Result<()> {
+        let req = BatchRequest::new(query, self.context().transaction_descriptor());
+
+        let id = self.context_mut().next_packet_id();
+
+        self.send(PacketHeader::batch(id), req).await
+    }
+
+    async fn send_query_parts<'b>(
+        &mut self,
+        sql: impl Into<Cow<'b, str>>,
+        params: &'b [&'b dyn ToSql],
+    ) -> crate::Result<()> {
+        let mut query = crate::Query::new(sql);
+
+        for param in params {
+            query.bind_borrowed(*param);
+        }
+
+        self.send_query(query).await
+    }
+
+    pub(crate) async fn send_query(&mut self, query: crate::Query<'_>) -> crate::Result<()> {
+        let mut rpc_params = vec![
+            RpcParam {
+                name: Cow::Borrowed("stmt"),
+                flags: BitFlags::empty(),
+                value: ColumnData::String(Some(query.sql)),
+            },
+            RpcParam {
+                name: Cow::Borrowed("params"),
+                flags: BitFlags::empty(),
+                value: ColumnData::I32(Some(0)),
+            },
+        ];
+
+        let mut param_str = String::new();
+
+        for (i, param_data) in query.params.into_iter().enumerate() {
+            if i > 0 {
+                param_str.push(',')
+            }
+            param_str.push_str(&format!("@P{} ", i + 1));
+            param_str.push_str(&param_data.type_name());
+
+            rpc_params.push(RpcParam {
+                name: Cow::Owned(format!("@P{}", i + 1)),
+                flags: BitFlags::empty(),
+                value: param_data,
+            });
+        }
+
+        if let Some(params) = rpc_params.iter_mut().find(|x| x.name == "params") {
+            params.value = ColumnData::String(Some(param_str.into()));
+        }
+
+        dbg!(self.context().transaction_descriptor());
+
+        let req = TokenRpcRequest::new(
+            RpcProcId::ExecuteSQL,
+            rpc_params,
+            self.context().transaction_descriptor(),
+        );
+
+        let id = self.context_mut().next_packet_id();
+        self.send(PacketHeader::rpc(id), req).await
+    }
+}
+
+/// abc
+#[macro_export]
+macro_rules! params {
+    ( ) => {
+        compile_error!("`params!` must be called with at least one arguent, otherwise you should be using `simple_query` instead");
+    };
+    ( $( $x:expr ),+ ) => {
+        {
+            &[
+
+                $(
+                    &$x as &dyn ::tiberius::ToSql,
+                )*
+            ]
+        }
+    };
+}
+
+/// abc
+#[macro_export]
+macro_rules! transaction {
+    ( | $client:ident | async move  $tran:tt ) => {
+
+        $client.transaction(|$client| Box::pin( async move $tran )).await?;
+
+        Ok::<_, ::tiberius::error::Error>(())
+    };
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
@@ -74,6 +182,47 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             connection: Connection::connect(config, tcp_stream).await?,
         })
     }
+
+
+    pub fn transaction<'a, F>(
+        &'a mut self,
+        func: F,
+    ) -> futures::future::BoxFuture<'a, crate::Result<()>> 
+    where 
+        F: for<'c> FnOnce(&'c mut Client<S>) ->futures::future::BoxFuture<'c, crate::Result<()>> + 'a + Send,
+    {
+        Box::pin(async move {
+            self.simple_query("begin transaction").await.unwrap();
+            match func(self).await {
+                Ok(()) => {
+                    self.simple_query("commit").await.unwrap();
+    
+                    Ok(())
+                }
+                Err(e) => {
+                    self.simple_query("rollback").await.unwrap();
+    
+                    Err(e)
+                }
+            }
+        })
+    }
+
+    pub async fn transaction_split<F, Fut>(
+        &mut self,
+        mut func: F,
+    ) -> crate::Result<()>
+    where 
+        F: FnOnce(Client<S>) -> Fut,
+        Fut: futures::Future<Output = crate::Result<()>>,
+    {
+        // impl here would create a new transaction type
+        // pass it one end of a channel
+        // and then run the transaction and client in a select
+
+        todo!()
+    }
+
 
     /// Executes SQL statements in the SQL Server, returning the number rows
     /// affected. Useful for `INSERT`, `UPDATE` and `DELETE` statements. The
@@ -121,15 +270,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     pub async fn execute<'a>(
         &mut self,
         query: impl Into<Cow<'a, str>>,
-        params: &[&dyn ToSql],
+        params: &'a [&'a dyn ToSql],
     ) -> crate::Result<ExecuteResult> {
         self.connection.flush_stream().await?;
-        let rpc_params = Self::rpc_params(query);
-
-        let params = params.iter().map(|s| s.to_sql());
-        self.rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, params)
-            .await?;
-
+        self.connection.send_query_parts(query, params).await?;
         ExecuteResult::new(&mut self.connection).await
     }
 
@@ -186,11 +330,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         'a: 'b,
     {
         self.connection.flush_stream().await?;
-        let rpc_params = Self::rpc_params(query);
-
-        let params = params.iter().map(|p| p.to_sql());
-        self.rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, params)
-            .await?;
+        self.connection.send_query_parts(query, params).await?;
 
         let ts = TokenStream::new(&mut self.connection);
         let mut result = QueryStream::new(ts.try_unfold());
@@ -238,10 +378,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     {
         self.connection.flush_stream().await?;
 
-        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
-
-        let id = self.connection.context_mut().next_packet_id();
-        self.connection.send(PacketHeader::batch(id), req).await?;
+        self.connection.send_simple_query(query).await?;
 
         let ts = TokenStream::new(&mut self.connection);
 

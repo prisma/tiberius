@@ -2,16 +2,13 @@ use std::borrow::Cow;
 
 use futures::{AsyncRead, AsyncWrite};
 
-use crate::{
-    tds::{codec::RpcProcId, stream::TokenStream},
-    Client, ColumnData, ExecuteResult, IntoSql, QueryStream,
-};
+use crate::{tds::stream::TokenStream, Client, ColumnData, ExecuteResult, IntoSql, QueryStream};
 
 /// A query object with bind parameters.
 #[derive(Debug)]
 pub struct Query<'a> {
-    sql: Cow<'a, str>,
-    params: Vec<ColumnData<'a>>,
+    pub(crate) sql: Cow<'a, str>,
+    pub(crate) params: Vec<ColumnData<'a>>,
 }
 
 impl<'a> Query<'a> {
@@ -33,6 +30,11 @@ impl<'a> Query<'a> {
     /// on execution.
     pub fn bind(&mut self, param: impl IntoSql<'a> + 'a) {
         self.params.push(param.into_sql());
+    }
+
+    // this is only for use in `Connection.send_query_parts`
+    pub(crate) fn bind_borrowed(&mut self, param: &'a (dyn crate::ToSql + 'a)) {
+        self.params.push(param.to_sql());
     }
 
     /// Executes SQL statements in the SQL Server, returning the number rows
@@ -75,11 +77,7 @@ impl<'a> Query<'a> {
     {
         client.connection.flush_stream().await?;
 
-        let rpc_params = Client::<S>::rpc_params(self.sql);
-
-        client
-            .rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, self.params.into_iter())
-            .await?;
+        client.connection.send_query(self).await?;
 
         ExecuteResult::new(&mut client.connection).await
     }
@@ -123,11 +121,7 @@ impl<'a> Query<'a> {
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
         client.connection.flush_stream().await?;
-        let rpc_params = Client::<S>::rpc_params(self.sql);
-
-        client
-            .rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, self.params.into_iter())
-            .await?;
+        client.connection.send_query(self).await?;
 
         let ts = TokenStream::new(&mut client.connection);
         let mut result = QueryStream::new(ts.try_unfold());

@@ -3,7 +3,7 @@ use crate::{
     client::Connection,
     tds::stream::{ReceivedToken, TokenStream},
 };
-use futures::{AsyncRead, AsyncWrite, TryStreamExt};
+use futures::{stream::BoxStream, AsyncRead, AsyncWrite, TryStreamExt};
 use std::fmt::Debug;
 
 /// A result from a query execution, listing the number of affected rows.
@@ -59,6 +59,24 @@ impl<'a> ExecuteResult {
                     ReceivedToken::DoneProc(done) => acc.push(done.rows()),
                     ReceivedToken::DoneInProc(done) => acc.push(done.rows()),
                     ReceivedToken::Done(done) => acc.push(done.rows()),
+                    _ => (),
+                }
+                Ok(acc)
+            })
+            .await?;
+
+        Ok(Self { rows_affected })
+    }
+
+    pub(crate) async fn from_tokenstream(
+        token_stream: BoxStream<'a, crate::Result<ReceivedToken>>,
+    ) -> crate::Result<Self> {
+        let rows_affected = token_stream
+            .try_fold(Vec::new(), |mut acc, token| async move {
+                match token {
+                    ReceivedToken::DoneProc(done) if done.is_final() => (),
+                    ReceivedToken::DoneProc(done) => acc.push(done.rows()),
+                    ReceivedToken::DoneInProc(done) => acc.push(done.rows()),
                     _ => (),
                 }
                 Ok(acc)
