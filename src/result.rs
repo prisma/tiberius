@@ -228,7 +228,6 @@ impl<'a> ExecuteResult {
     pub(crate) async fn new<S: AsyncRead + AsyncWrite + Unpin + Send>(
         connection: &'a mut Connection<S>,
     ) -> crate::Result<Self> {
-        dbg!("foo");
         let token_stream = TokenStream::new(connection).try_unfold();
 
         let rows_affected = token_stream
