@@ -1817,3 +1817,30 @@ where
 
     Ok(())
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_named_pipes_should_work() -> Result<()> {
+    use tokio::net::windows::named_pipe::NamedPipe;
+    use tokio_util::compat::TokioAsyncWriteCompatExt;
+    use tiberius::{Config, AuthMethod, Client};
+
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+
+    let mut config = Config::new();
+    config.authentication(AuthMethod::Integrated);
+    config.trust_cert();
+
+    let pipe = NamedPipe::connect(r#"\\.\pipe\sql\query"#).await?;
+    let mut client = Client::connect(config, pipe.compat_write()).await?;
+
+    let stream = client.query("SELECT @P1", &[&1i32]).await?;
+    let row = stream.into_row().await?.unwrap();
+
+    println!("{:?}", row);
+    assert_eq!(Some(1), row.get(0));
+
+    Ok(())
+}

@@ -61,12 +61,14 @@ opentls = { version = "0.2.1", features = ["io-async-std"]}
 async-native-tls = { version = "0.3", features = ["runtime-async-std"]}
 
 [dependencies.tokio]
-version = "1.0"
+git = "https://github.com/blackbeam/tokio"
+branch = "named-pipes"
 optional = true
 features = ["net", "time"]
 
 [dependencies.tokio-util]
-version = "0.6"
+git = "https://github.com/blackbeam/tokio"
+branch = "named-pipes"
 features = ["compat"]
 optional = true
 
@@ -109,12 +111,14 @@ optional = true
 features = ["std"]
 
 [dev-dependencies.tokio-util]
-version = "0.6"
+git = "https://github.com/blackbeam/tokio"
+branch = "named-pipes"
 features = ["compat"]
 
 [dev-dependencies.tokio]
+git = "https://github.com/blackbeam/tokio"
 features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]
-version = "1.0"
+branch = "named-pipes"
 
 [dev-dependencies.async-std]
 features = ["attributes"]
