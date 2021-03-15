@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.10
+
+- Remove a rogue `dbg!`
+
 ## Version 0.5.9
 
 - Set the `app_name` in LOGIN7 to `tiberius`. This allows connecting to servers
