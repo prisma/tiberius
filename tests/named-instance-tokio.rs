@@ -27,7 +27,9 @@ fn connect_to_named_instance() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
     });
-    let mut rt = Runtime::new()?;
+
+    let rt = Runtime::new()?;
+
     rt.block_on(async {
         let config = Config::from_ado_string(&NAMED_INSTANCE_CONN_STR)?;
 

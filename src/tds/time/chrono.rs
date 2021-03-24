@@ -13,6 +13,7 @@ use crate::tds::codec::ColumnData;
 #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
 pub use chrono::offset::{FixedOffset, Utc};
 pub use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+#[cfg(feature = "tds73")]
 use std::ops::Sub;
 
 #[inline]
