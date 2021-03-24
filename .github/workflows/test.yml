@@ -1,0 +1,192 @@
+name: Cargo tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  cargo-test-linux:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+          - 2017
+          - 2019
+        rust:
+          - stable
+        features:
+          - "--features=all"
+          - "--no-default-features --features=chrono"
+
+    env:
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+      RUSTFLAGS: "-Dwarnings"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{matrix.rust}}
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.features }}
+
+      - name: Start SQL Server ${{matrix.database}}
+        run: docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+
+      - name: Install dependencies
+        run: sudo apt install -y openssl libkrb5-dev
+
+      - name: Run tests
+        run: cargo test ${{matrix.features}}
+
+  cargo-test-windows:
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+          - 2019
+        rust:
+          - stable
+        features:
+          - "--features=all"
+
+    env:
+      TIBERIUS_TEST_INSTANCE: "MSSQLSERVER"
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Set required PowerShell modules
+        id: psmodulecache
+        uses: potatoqualitee/psmodulecache@v1
+        with:
+          modules-to-cache: SqlServer
+
+      - name: Setup PowerShell module cache
+        id: cacher
+        uses: actions/cache@v2
+        with:
+            path: ${{ steps.psmodulecache.outputs.modulepath }}
+            key: ${{ steps.psmodulecache.outputs.keygen }}
+
+      - name: Setup Chocolatey download cache
+        id: chococache
+        uses: actions/cache@v2
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
+          key: chocolatey-install
+
+      - name: Setup Cargo build cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            C:\Users\runneradmin\.cargo\registry
+            C:\Users\runneradmin\.cargo\git
+            target
+          key: ${{ runner.os }}-cargo
+
+      - name: Install required PowerShell modules
+        if: steps.cacher.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+            Set-PSRepository PSGallery -InstallationPolicy Trusted
+            Install-Module SqlServer -ErrorAction Stop
+
+      - name: Install SQL Server 2019
+        shell: powershell
+        run: |
+          choco install sql-server-2019
+
+      - name: Setup SQL Server 2019
+        shell: powershell
+        run: |
+          Import-Module 'sqlps'
+
+          [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
+          [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.SqlWmiManagement") | Out-Null
+
+          $serverName = $env:COMPUTERNAME
+          $instanceName = "MSSQLSERVER"
+
+          $smo = 'Microsoft.SqlServer.Management.Smo.'
+          $wmi = new-object ($smo + 'Wmi.ManagedComputer')
+          $wmi
+
+          # Enable TCP/IP
+          echo "Enabling TCP/IP"
+          $Tcp = $wmi.GetSmoObject("ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']")
+          $Tcp.IsEnabled = $true
+          $Tcp.alter()
+          $Tcp
+
+          # Enable named pipes
+          echo "Enabling named pipes"
+          $Np = $wmi.GetSmoObject("ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Np']")
+          $Np.IsEnabled = $true
+          $Np.Alter()
+          $Np
+
+          # Set Alias
+          echo "Setting the alias"
+          New-Item HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client -Name ConnectTo | Out-Null
+          Set-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo -Name '(local)' -Value "DBMSSOCN,$serverName\$instanceName" | Out-Null
+
+          # Start services
+          echo "Starting services"
+          Set-Service SQLBrowser -StartupType Manual
+          Start-Service SQLBrowser
+          net stop MSSQLSERVER
+          net start MSSQLSERVER
+
+      - name: Run normal tests
+        shell: powershell
+        run: cargo test --features all
+
+  cargo-test-macos:
+    runs-on: macos-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+          - 2019
+        rust:
+          - stable
+        features:
+          - "--features=all,vendored-openssl"
+
+    env:
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{matrix.rust}}
+
+      - uses: docker-practice/actions-setup-docker@master
+
+      - name: Start SQL Server ${{matrix.database}}
+        run: docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+
+      - name: Run tests
+        run: cargo test ${{matrix.features}}

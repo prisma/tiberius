@@ -47,5 +47,6 @@ fn get_port_from_sql_browser_reply(
         .and_then(|pos| response[pos..].split(';').nth(1))
         .ok_or(err)
         .and_then(|val| Ok(val.parse()?))?;
+
     Ok(port)
 }

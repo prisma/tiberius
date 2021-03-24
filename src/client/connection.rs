@@ -20,7 +20,7 @@ use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
 use codec::TokenSSPI;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
-#[cfg(feature = "integrated-auth-gssapi")]
+#[cfg(all(unix, feature = "integrated-auth-gssapi"))]
 use libgssapi::{
     context::{ClientCtx, CtxFlags},
     credential::{Cred, CredUsage},
@@ -30,7 +30,7 @@ use libgssapi::{
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use opentls::async_io::TlsConnector;
 use pretty_hex::*;
-#[cfg(feature = "integrated-auth-gssapi")]
+#[cfg(all(unix, feature = "integrated-auth-gssapi"))]
 use std::ops::Deref;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
