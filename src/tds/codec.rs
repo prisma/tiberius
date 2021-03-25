@@ -39,7 +39,7 @@ enum AllHeaderTy {
 
 pub struct PacketCodec;
 
-pub(crate) async fn collect_from<'a, S, T>(stream: &'a mut S) -> crate::Result<T>
+pub(crate) async fn collect_from<S, T>(stream: &mut S) -> crate::Result<T>
 where
     T: Decode<BytesMut> + Sized,
     S: Stream<Item = crate::Result<Packet>> + Unpin,

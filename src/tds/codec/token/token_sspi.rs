@@ -3,15 +3,15 @@ use bytes::BytesMut;
 use futures::io::AsyncReadExt;
 
 #[derive(Debug)]
-pub struct TokenSSPI(Vec<u8>);
+pub struct TokenSspi(Vec<u8>);
 
-impl AsRef<[u8]> for TokenSSPI {
+impl AsRef<[u8]> for TokenSspi {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
-impl TokenSSPI {
+impl TokenSspi {
     #[cfg(any(windows, all(unix, feature = "integrated-auth-gssapi")))]
     pub fn new(bytes: Vec<u8>) -> Self {
         Self(bytes)
@@ -29,7 +29,7 @@ impl TokenSSPI {
     }
 }
 
-impl Encode<BytesMut> for TokenSSPI {
+impl Encode<BytesMut> for TokenSspi {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         dst.extend(self.0);
         Ok(())

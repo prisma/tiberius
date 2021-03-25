@@ -279,9 +279,8 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
             // prepare the password in MS-fashion
             if i == 2 {
                 let buffer = cursor.get_mut();
-                for idx in data_offset..new_position {
-                    let byte = buffer[idx];
-                    buffer[idx] = ((byte << 4) & 0xf0 | (byte >> 4) & 0x0f) ^ 0xA5;
+                for byte in buffer.iter_mut().take(new_position).skip(data_offset) {
+                    *byte = ((*byte << 4) & 0xf0 | (*byte >> 4) & 0x0f) ^ 0xA5;
                 }
             }
 

@@ -32,8 +32,8 @@ impl TokenReturnValue {
             param_ordinal,
             param_name,
             udf,
-            value,
             meta,
+            value,
         };
 
         Ok(token)

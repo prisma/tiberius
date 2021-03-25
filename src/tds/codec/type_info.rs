@@ -143,7 +143,7 @@ impl TypeInfo {
 
                 Ok(TypeInfo::Xml {
                     schema,
-                    size: 0xfffffffffffffffe as usize,
+                    size: 0xfffffffffffffffe_usize,
                 })
             }
             Ok(ty) => {
@@ -179,20 +179,27 @@ impl TypeInfo {
                     | VarLenType::BigChar
                     | VarLenType::NChar
                     | VarLenType::NVarchar
-                    | VarLenType::BigVarChar => Some(Collation::new(
-                        src.read_u32_le().await?,
-                        src.read_u8().await?,
-                    )),
+                    | VarLenType::BigVarChar => {
+                        let info = src.read_u32_le().await?;
+                        let sort_id = src.read_u8().await?;
+
+                        Some(Collation::new(info, sort_id))
+                    }
                     _ => None,
                 };
 
                 let vty = match ty {
-                    VarLenType::Decimaln | VarLenType::Numericn => TypeInfo::VarLenSizedPrecision {
-                        ty,
-                        size: len,
-                        precision: src.read_u8().await?,
-                        scale: src.read_u8().await?,
-                    },
+                    VarLenType::Decimaln | VarLenType::Numericn => {
+                        let precision = src.read_u8().await?;
+                        let scale = src.read_u8().await?;
+
+                        TypeInfo::VarLenSizedPrecision {
+                            size: len,
+                            ty,
+                            precision,
+                            scale,
+                        }
+                    }
                     _ => TypeInfo::VarLenSized(ty, len, collation),
                 };
 

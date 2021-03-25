@@ -13,7 +13,7 @@ pub use num_bigint::{BigInt, Sign};
 #[cfg(feature = "rust_decimal")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "rust_decimal")))]
 pub use rust_decimal::Decimal;
-use std::cmp::PartialEq;
+use std::cmp::{Ordering, PartialEq};
 use std::fmt::{self, Debug, Display, Formatter};
 
 /// Represent a sql Decimal / Numeric type. It is stored in a i128 and has a
@@ -135,15 +135,15 @@ impl Numeric {
                 9 => src.read_u64_le().await? as i128 * sign,
                 13 => {
                     let mut bytes = [0u8; 12]; //u96
-                    for i in 0..12 {
-                        bytes[i] = src.read_u8().await?;
+                    for item in &mut bytes {
+                        *item = src.read_u8().await?;
                     }
                     decode_d128(&bytes) as i128 * sign
                 }
                 17 => {
                     let mut bytes = [0u8; 16];
-                    for i in 0..16 {
-                        bytes[i] = src.read_u8().await?;
+                    for item in &mut bytes {
+                        *item = src.read_u8().await?;
                     }
                     decode_d128(&bytes) as i128 * sign
                 }
@@ -225,12 +225,14 @@ impl From<Numeric> for u128 {
 
 impl PartialEq for Numeric {
     fn eq(&self, other: &Self) -> bool {
-        if self.scale < other.scale {
-            10i128.pow((other.scale - self.scale) as u32) * self.value == other.value
-        } else if self.scale > other.scale {
-            10i128.pow((self.scale - other.scale) as u32) * other.value == self.value
-        } else {
-            self.value == other.value
+        match self.scale.cmp(&other.scale) {
+            Ordering::Greater => {
+                10i128.pow((self.scale - other.scale) as u32) * other.value == self.value
+            }
+            Ordering::Less => {
+                10i128.pow((other.scale - self.scale) as u32) * self.value == other.value
+            }
+            Ordering::Equal => self.value == other.value,
         }
     }
 }

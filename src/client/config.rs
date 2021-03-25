@@ -110,10 +110,7 @@ impl Config {
     }
 
     pub(crate) fn get_host(&self) -> &str {
-        self.host
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("localhost")
+        self.host.as_deref().unwrap_or("localhost")
     }
 
     pub(crate) fn get_port(&self) -> u16 {
@@ -244,7 +241,7 @@ pub(crate) trait ConfigString {
     fn trust_cert(&self) -> crate::Result<bool> {
         self.dict()
             .get("trustservercertificate")
-            .map(|val| Self::parse_bool(val))
+            .map(Self::parse_bool)
             .unwrap_or(Ok(false))
     }
 
@@ -255,7 +252,7 @@ pub(crate) trait ConfigString {
                 Ok(true) => Ok(EncryptionLevel::Required),
                 Ok(false) => Ok(EncryptionLevel::Off),
                 Err(_) if val == "DANGER_PLAINTEXT" => Ok(EncryptionLevel::NotSupported),
-                Err(e) => Err(e)?,
+                Err(e) => Err(e),
             })
             .unwrap_or(Ok(EncryptionLevel::Off))
     }

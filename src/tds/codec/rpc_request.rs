@@ -100,7 +100,7 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
 
         match self.proc_id {
             RpcProcIdValue::Id(ref id) => {
-                let val = (0xffff as u32) | ((*id as u16) as u32) << 16;
+                let val = (0xffff_u32) | ((*id as u16) as u32) << 16;
                 dst.put_u32_le(val);
             }
             RpcProcIdValue::Name(ref _name) => {

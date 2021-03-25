@@ -18,7 +18,7 @@ use async_native_tls::TlsConnector;
 use asynchronous_codec::Framed;
 use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
-use codec::TokenSSPI;
+use codec::TokenSspi;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
 #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
 use libgssapi::{
@@ -109,7 +109,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
     /// Flush the incoming token stream until receiving `SSPI` token.
-    async fn flush_sspi(&mut self) -> crate::Result<TokenSSPI> {
+    async fn flush_sspi(&mut self) -> crate::Result<TokenSspi> {
         TokenStream::new(self).flush_sspi().await
     }
 
@@ -267,7 +267,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                         let id = self.context.next_packet_id();
                         let header = PacketHeader::login(id);
 
-                        let token = TokenSSPI::new(sspi_response);
+                        let token = TokenSspi::new(sspi_response);
                         self.send(header, token).await?;
                     }
                     None => unreachable!(),
@@ -301,11 +301,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 let next_token = match ctx.step(Some(auth_bytes.as_ref()))? {
                     Some(response) => {
                         event!(Level::TRACE, response_len = response.len());
-                        TokenSSPI::new(Vec::from(response.deref()))
+                        TokenSspi::new(Vec::from(response.deref()))
                     }
                     None => {
                         event!(Level::TRACE, response_len = 0);
-                        TokenSSPI::new(Vec::new())
+                        TokenSspi::new(Vec::new())
                     }
                 };
 
@@ -336,7 +336,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                         let id = self.context.next_packet_id();
                         let header = PacketHeader::login(id);
 
-                        let token = TokenSSPI::new(sspi_response);
+                        let token = TokenSspi::new(sspi_response);
                         self.send(header, token).await?;
                     }
                     None => unreachable!(),
@@ -428,7 +428,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Stream for Connection<S> {
                 this.flushed = packet.is_last();
                 Poll::Ready(Some(Ok(packet)))
             }
-            Some(Err(e)) => Err(e)?,
+            Some(Err(e)) => Poll::Ready(Some(Err(e))),
             None => Poll::Ready(None),
         }
     }

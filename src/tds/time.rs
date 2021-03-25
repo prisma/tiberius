@@ -69,9 +69,12 @@ impl DateTime {
     where
         R: SqlReadBytes + Unpin,
     {
+        let days = src.read_i32_le().await?;
+        let seconds_fragments = src.read_u32_le().await?;
+
         Ok(Self {
-            days: src.read_i32_le().await?,
-            seconds_fragments: src.read_u32_le().await?,
+            days,
+            seconds_fragments,
         })
     }
 }
@@ -120,9 +123,12 @@ impl SmallDateTime {
     where
         R: SqlReadBytes + Unpin,
     {
+        let days = src.read_u16_le().await?;
+        let seconds_fragments = src.read_u16_le().await?;
+
         Ok(Self {
-            days: src.read_u16_le().await?,
-            seconds_fragments: src.read_u16_le().await?,
+            days,
+            seconds_fragments,
         })
     }
 }
@@ -255,9 +261,19 @@ impl Time {
         R: SqlReadBytes + Unpin,
     {
         let val = match (n, rlen) {
-            (0..=2, 3) => src.read_u16_le().await? as u64 | (src.read_u8().await? as u64) << 16,
+            (0..=2, 3) => {
+                let hi = src.read_u16_le().await? as u64;
+                let lo = src.read_u8().await? as u64;
+
+                hi | lo << 16
+            }
             (3..=4, 4) => src.read_u32_le().await? as u64,
-            (5..=7, 5) => src.read_u32_le().await? as u64 | (src.read_u8().await? as u64) << 32,
+            (5..=7, 5) => {
+                let hi = src.read_u32_le().await? as u64;
+                let lo = src.read_u8().await? as u64;
+
+                hi | lo << 32
+            }
             _ => {
                 return Err(crate::Error::Protocol(
                     format!("timen: invalid length {}", n).into(),

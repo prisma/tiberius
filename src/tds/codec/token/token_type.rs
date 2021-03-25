@@ -46,7 +46,7 @@ uint_enum! {
         NbcRow = 0xD2,
 
         /// The SSPI token returned during the login process.
-        SSPI = 0xED,
+        Sspi = 0xED,
 
         /// A notification of an environment change (such as database and
         /// language).
