@@ -1,5 +1,12 @@
 # Changes
 
+## Version 0.5.11
+
+- Fixing of all clippy warnings. This might have some performance benefits and
+might also fix some weird bugs in environments where we can't guarantee the
+evaluation order. (#136)
+- Add info of LCID and sort id to colation errors (#138)
+
 ## Version 0.5.10
 
 - Remove a rogue `dbg!`
