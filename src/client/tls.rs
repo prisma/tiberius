@@ -126,7 +126,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
         // connection handling.
         if !inner.header_buf[inner.header_pos..].is_empty() {
             while !inner.header_buf[inner.header_pos..].is_empty() {
-                let read = ready!(Pin::new(&mut inner.stream.as_mut().unwrap())
+                let read = ready!(Pin::new(inner.stream.as_mut().unwrap())
                     .poll_read(cx, &mut inner.header_buf[inner.header_pos..]))?;
 
                 if read == 0 {
@@ -215,9 +215,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
                     inner.wr_buf.len(),
                 );
 
-                let written =
-                    ready!(Pin::new(&mut inner.stream.as_mut().unwrap())
-                        .poll_write(cx, &mut inner.wr_buf))?;
+                let written = ready!(
+                    Pin::new(&mut inner.stream.as_mut().unwrap()).poll_write(cx, &inner.wr_buf)
+                )?;
 
                 inner.wr_buf.drain(..written);
             }

@@ -10,7 +10,7 @@ uint_enum! {
         SQLBatch = 1,
         /// unused
         PreTDSv7Login = 2,
-        RPC = 3,
+        Rpc = 3,
         TabularResult = 4,
         AttentionSignal = 6,
         BulkLoad = 7,
@@ -18,7 +18,7 @@ uint_enum! {
         Fat = 8,
         TransactionManagerReq = 14,
         TDSv7Login = 16,
-        SSPI = 17,
+        Sspi = 17,
         PreLogin = 18,
     }
 }
@@ -70,7 +70,7 @@ impl PacketHeader {
 
     pub fn rpc(id: u8) -> Self {
         Self {
-            ty: PacketType::RPC,
+            ty: PacketType::Rpc,
             status: PacketStatus::NormalMessage,
             ..Self::new(0, id)
         }

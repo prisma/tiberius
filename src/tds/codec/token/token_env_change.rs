@@ -26,7 +26,7 @@ uint_enum! {
         RollbackTransaction = 10,
         EnlistDTCTransaction = 11,
         DefectTransaction = 12,
-        RTLS = 13,
+        Rtls = 13,
         PromoteTransaction = 15,
         TransactionManagerAddress = 16,
         TransactionEnded = 17,
@@ -52,7 +52,7 @@ impl fmt::Display for EnvChangeTy {
             EnvChangeTy::RollbackTransaction => write!(f, "RollbackTransaction"),
             EnvChangeTy::EnlistDTCTransaction => write!(f, "EnlistDTCTransaction"),
             EnvChangeTy::DefectTransaction => write!(f, "DefectTransaction"),
-            EnvChangeTy::RTLS => write!(f, "RTLS"),
+            EnvChangeTy::Rtls => write!(f, "RTLS"),
             EnvChangeTy::PromoteTransaction => write!(f, "PromoteTransaction"),
             EnvChangeTy::TransactionManagerAddress => write!(f, "TransactionManagerAddress"),
             EnvChangeTy::TransactionEnded => write!(f, "TransactionEnded"),
@@ -173,8 +173,8 @@ impl TokenEnvChange {
                 let len = buf.read_u8()? as usize;
                 let mut bytes = vec![0; len];
 
-                for i in 0..len {
-                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                for item in bytes.iter_mut().take(len) {
+                    *item = buf.read_u16::<LittleEndian>()?;
                 }
 
                 let new_value = String::from_utf16(&bytes[..])?;
@@ -182,8 +182,8 @@ impl TokenEnvChange {
                 let len = buf.read_u8()? as usize;
                 let mut bytes = vec![0; len];
 
-                for i in 0..len {
-                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                for item in bytes.iter_mut().take(len) {
+                    *item = buf.read_u16::<LittleEndian>()?;
                 }
 
                 let old_value = String::from_utf16(&bytes[..])?;
@@ -194,8 +194,8 @@ impl TokenEnvChange {
                 let len = buf.read_u8()? as usize;
                 let mut bytes = vec![0; len];
 
-                for i in 0..len {
-                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                for item in bytes.iter_mut().take(len) {
+                    *item = buf.read_u16::<LittleEndian>()?;
                 }
 
                 let new_value = String::from_utf16(&bytes[..])?;
@@ -203,8 +203,8 @@ impl TokenEnvChange {
                 let len = buf.read_u8()? as usize;
                 let mut bytes = vec![0; len];
 
-                for i in 0..len {
-                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                for item in bytes.iter_mut().take(len) {
+                    *item = buf.read_u16::<LittleEndian>()?;
                 }
 
                 let old_value = String::from_utf16(&bytes[..])?;
@@ -248,20 +248,20 @@ impl TokenEnvChange {
                 let len = buf.read_u16::<LittleEndian>()? as usize; // hostname string length
                 let mut bytes = vec![0; len];
 
-                for i in 0..len {
-                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                for item in bytes.iter_mut().take(len) {
+                    *item = buf.read_u16::<LittleEndian>()?;
                 }
 
                 let host = String::from_utf16(&bytes[..])?;
 
                 TokenEnvChange::Routing { host, port }
             }
-            EnvChangeTy::RTLS => {
+            EnvChangeTy::Rtls => {
                 let len = buf.read_u8()? as usize;
                 let mut bytes = vec![0; len];
 
-                for i in 0..len {
-                    bytes[i] = buf.read_u16::<LittleEndian>()?;
+                for item in bytes.iter_mut().take(len) {
+                    *item = buf.read_u16::<LittleEndian>()?;
                 }
 
                 let mirror_name = String::from_utf16(&bytes[..])?;

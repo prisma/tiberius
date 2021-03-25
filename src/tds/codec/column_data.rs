@@ -425,8 +425,8 @@ impl<'a> ColumnData<'a> {
             16 => {
                 let mut data = [0u8; 16];
 
-                for i in 0..16 {
-                    data[i] = src.read_u8().await?;
+                for item in &mut data {
+                    *item = src.read_u8().await?;
                 }
 
                 guid::reorder_bytes(&mut data);
@@ -483,8 +483,8 @@ impl<'a> ColumnData<'a> {
             let len = src.read_u32_le().await? as usize / 2;
             let mut buf = vec![0u16; len];
 
-            for i in 0..len {
-                buf[i] = src.read_u16_le().await?;
+            for item in buf.iter_mut().take(len) {
+                *item = src.read_u16_le().await?;
             }
 
             let text = String::from_utf16(&buf[..])?;
@@ -565,7 +565,7 @@ impl<'a> ColumnData<'a> {
                 .as_ref()
                 .unwrap()
                 .encoding()
-                .ok_or(Error::Encoding("encoding: unspported encoding".into()))?;
+                .ok_or_else(|| Error::Encoding("encoding: unspported encoding".into()))?;
 
             let s: String = encoder
                 .decode(bytes.as_ref(), DecoderTrap::Strict)
@@ -724,7 +724,7 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
 
                 dst.extend_from_slice(&header);
-                let mut data = uuid.as_bytes().clone();
+                let mut data = *uuid.as_bytes();
                 guid::reorder_bytes(&mut data);
                 dst.extend_from_slice(&data);
             }
@@ -753,12 +753,12 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
             ColumnData::String(Some(ref s)) => {
                 // length: 0xffff and raw collation
                 dst.put_u8(VarLenType::NVarchar as u8);
-                dst.extend_from_slice(&[0xff as u8; 2][..]);
+                dst.extend_from_slice(&[0xff_u8; 2][..]);
                 dst.extend_from_slice(&[0u8; 5][..]);
 
                 // we cannot cheaply predetermine the length of the UCS2 string beforehand
                 // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
-                dst.put_u64_le(0xfffffffffffffffe as u64);
+                dst.put_u64_le(0xfffffffffffffffe_u64);
 
                 // Write the varchar length
                 let mut length = 0u32;
@@ -790,9 +790,9 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
             ColumnData::Binary(Some(bytes)) => {
                 dst.put_u8(VarLenType::BigVarBin as u8);
                 // Max length
-                dst.put_u16_le(0xffff as u16);
+                dst.put_u16_le(0xffff_u16);
                 // Also the length is unknown
-                dst.put_u64_le(0xfffffffffffffffe as u64);
+                dst.put_u64_le(0xfffffffffffffffe_u64);
                 // We'll write in one chunk, length is the whole bytes length
                 dst.put_u32_le(bytes.len() as u32);
                 // Payload

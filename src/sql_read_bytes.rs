@@ -165,7 +165,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     fn context_mut(&mut self) -> &mut Context;
 
     // Read a single i8 value.
-    fn read_i8<'a>(&'a mut self) -> ReadI8<&'a mut Self>
+    fn read_i8(&mut self) -> ReadI8<&mut Self>
     where
         Self: Unpin,
     {
@@ -173,7 +173,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single byte value.
-    fn read_u8<'a>(&'a mut self) -> ReadU8<&'a mut Self>
+    fn read_u8(&mut self) -> ReadU8<&mut Self>
     where
         Self: Unpin,
     {
@@ -181,7 +181,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single big-endian u32 value.
-    fn read_u32<'a>(&'a mut self) -> ReadU32Be<&'a mut Self>
+    fn read_u32(&mut self) -> ReadU32Be<&mut Self>
     where
         Self: Unpin,
     {
@@ -189,7 +189,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single big-endian f32 value.
-    fn read_f32<'a>(&'a mut self) -> ReadF32<&'a mut Self>
+    fn read_f32(&mut self) -> ReadF32<&mut Self>
     where
         Self: Unpin,
     {
@@ -197,7 +197,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single big-endian f64 value.
-    fn read_f64<'a>(&'a mut self) -> ReadF64<&'a mut Self>
+    fn read_f64(&mut self) -> ReadF64<&mut Self>
     where
         Self: Unpin,
     {
@@ -205,7 +205,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single f32 value.
-    fn read_f32_le<'a>(&'a mut self) -> ReadF32Le<&'a mut Self>
+    fn read_f32_le(&mut self) -> ReadF32Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -213,7 +213,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single f64 value.
-    fn read_f64_le<'a>(&'a mut self) -> ReadF64Le<&'a mut Self>
+    fn read_f64_le(&mut self) -> ReadF64Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -221,7 +221,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single u16 value.
-    fn read_u16_le<'a>(&'a mut self) -> ReadU16Le<&'a mut Self>
+    fn read_u16_le(&mut self) -> ReadU16Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -229,7 +229,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single u32 value.
-    fn read_u32_le<'a>(&'a mut self) -> ReadU32Le<&'a mut Self>
+    fn read_u32_le(&mut self) -> ReadU32Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -237,7 +237,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single u64 value.
-    fn read_u64_le<'a>(&'a mut self) -> ReadU64Le<&'a mut Self>
+    fn read_u64_le(&mut self) -> ReadU64Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -245,7 +245,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single u128 value.
-    fn read_u128_le<'a>(&'a mut self) -> ReadU128Le<&'a mut Self>
+    fn read_u128_le(&mut self) -> ReadU128Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -253,7 +253,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single i16 value.
-    fn read_i16_le<'a>(&'a mut self) -> ReadI16Le<&'a mut Self>
+    fn read_i16_le(&mut self) -> ReadI16Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -261,7 +261,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single i32 value.
-    fn read_i32_le<'a>(&'a mut self) -> ReadI32Le<&'a mut Self>
+    fn read_i32_le(&mut self) -> ReadI32Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -269,7 +269,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single i64 value.
-    fn read_i64_le<'a>(&'a mut self) -> ReadI64Le<&'a mut Self>
+    fn read_i64_le(&mut self) -> ReadI64Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -277,7 +277,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single i128 value.
-    fn read_i128_le<'a>(&'a mut self) -> ReadI128Le<&'a mut Self>
+    fn read_i128_le(&mut self) -> ReadI128Le<&mut Self>
     where
         Self: Unpin,
     {
@@ -285,7 +285,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // A variable-length character stream defined by a length-field of an u8.
-    fn read_b_varchar<'a>(&'a mut self) -> ReadBVarchar<&'a mut Self>
+    fn read_b_varchar(&mut self) -> ReadBVarchar<&mut Self>
     where
         Self: Unpin,
     {
@@ -293,7 +293,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // A variable-length character stream defined by a length-field of an u16.
-    fn read_us_varchar<'a>(&'a mut self) -> ReadUSVarchar<&'a mut Self>
+    fn read_us_varchar(&mut self) -> ReadUSVarchar<&mut Self>
     where
         Self: Unpin,
     {

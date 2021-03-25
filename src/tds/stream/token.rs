@@ -1,4 +1,4 @@
-use crate::tds::codec::TokenSSPI;
+use crate::tds::codec::TokenSspi;
 use crate::{
     client::Connection,
     tds::codec::{
@@ -24,7 +24,7 @@ pub enum ReceivedToken {
     EnvChange(TokenEnvChange),
     Info(TokenInfo),
     LoginAck(TokenLoginAck),
-    SSPI(TokenSSPI),
+    Sspi(TokenSspi),
 }
 
 pub(crate) struct TokenStream<'a, S: AsyncRead + AsyncWrite + Unpin + Send> {
@@ -60,12 +60,12 @@ where
     }
 
     #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
-    pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSSPI> {
+    pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSspi> {
         let mut stream = self.try_unfold();
 
         loop {
             match stream.try_next().await? {
-                Some(ReceivedToken::SSPI(token)) => return Ok(token),
+                Some(ReceivedToken::Sspi(token)) => return Ok(token),
                 Some(_) => (),
                 None => return Err(crate::Error::Protocol("Never got SSPI token.".into())),
             }
@@ -172,9 +172,9 @@ where
     }
 
     async fn get_sspi(&mut self) -> crate::Result<ReceivedToken> {
-        let sspi = TokenSSPI::decode_async(self.conn).await?;
+        let sspi = TokenSspi::decode_async(self.conn).await?;
         event!(Level::TRACE, "SSPI response");
-        Ok(ReceivedToken::SSPI(sspi))
+        Ok(ReceivedToken::Sspi(sspi))
     }
 
     pub fn try_unfold(self) -> BoxStream<'a, crate::Result<ReceivedToken>> {
@@ -202,7 +202,7 @@ where
                 TokenType::EnvChange => this.get_env_change().await?,
                 TokenType::Info => this.get_info().await?,
                 TokenType::LoginAck => this.get_login_ack().await?,
-                TokenType::SSPI => this.get_sspi().await?,
+                TokenType::Sspi => this.get_sspi().await?,
                 _ => panic!("Token {:?} unimplemented!", ty),
             };
 

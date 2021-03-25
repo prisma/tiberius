@@ -64,6 +64,6 @@ impl Context {
 
     #[cfg(any(windows, all(unix, feature = "integrated-auth-gssapi")))]
     pub fn spn(&self) -> &str {
-        self.spn.as_ref().map(|s| s.as_str()).unwrap_or("")
+        self.spn.as_deref().unwrap_or("")
     }
 }

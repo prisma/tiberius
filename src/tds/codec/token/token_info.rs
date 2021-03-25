@@ -21,14 +21,22 @@ impl TokenInfo {
     {
         let _length = src.read_u16_le().await?;
 
+        let number = src.read_u32_le().await?;
+        let state = src.read_u8().await?;
+        let class = src.read_u8().await?;
+        let message = src.read_us_varchar().await?;
+        let server = src.read_b_varchar().await?;
+        let procedure = src.read_b_varchar().await?;
+        let line = src.read_u32_le().await?;
+
         let token = TokenInfo {
-            number: src.read_u32_le().await?,
-            state: src.read_u8().await?,
-            class: src.read_u8().await?,
-            message: src.read_us_varchar().await?,
-            server: src.read_b_varchar().await?,
-            procedure: src.read_b_varchar().await?,
-            line: src.read_u32_le().await?,
+            number,
+            state,
+            class,
+            message,
+            server,
+            procedure,
+            line,
         };
 
         Ok(token)

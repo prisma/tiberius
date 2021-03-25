@@ -65,6 +65,7 @@ impl XmlData {
     }
 
     /// Returns information about the schema of the XML file, if existing.
+    #[allow(clippy::clippy::option_as_ref_deref)]
     pub fn schema(&self) -> Option<&XmlSchema> {
         self.schema.as_ref().map(|s| &**s)
     }
@@ -90,7 +91,7 @@ impl AsRef<str> for XmlData {
 impl Encode<BytesMut> for XmlData {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         dst.put_u8(0);
-        dst.put_u64_le(0xfffffffffffffffe as u64);
+        dst.put_u64_le(0xfffffffffffffffe_u64);
 
         let mut length = 0u32;
         let len_pos = dst.len();
