@@ -25,6 +25,10 @@ impl Collation {
         (self.info & 0xffff) as u16
     }
 
+    pub fn sort_id(&self) -> u8 {
+        self.sort_id
+    }
+
     /// return an encoding for a given collation
     pub fn encoding(&self) -> Option<&'static (dyn Encoding + Send + Sync)> {
         if self.sort_id == 0 {

@@ -561,11 +561,17 @@ impl<'a> ColumnData<'a> {
         let data = Self::decode_plp_type(src, mode).await?;
 
         let res = if let Some(bytes) = data {
-            let encoder = collation
-                .as_ref()
-                .unwrap()
-                .encoding()
-                .ok_or_else(|| Error::Encoding("encoding: unspported encoding".into()))?;
+            let collation = collation.as_ref().unwrap();
+            let encoder = collation.encoding().ok_or_else(|| {
+                Error::Encoding(
+                    format!(
+                        "encoding: unspported encoding (LCID: {:#02x}, sort ID: {})",
+                        collation.lcid(),
+                        collation.sort_id(),
+                    )
+                    .into(),
+                )
+            })?;
 
             let s: String = encoder
                 .decode(bytes.as_ref(), DecoderTrap::Strict)
