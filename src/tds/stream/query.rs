@@ -50,31 +50,36 @@ impl<'a> QueryStream<'a> {
     }
 
     pub(crate) async fn fetch_metadata(&mut self) -> crate::Result<()> {
-        match self.token_stream.try_next().await? {
-            Some(ReceivedToken::NewResultset(meta)) => {
-                let columns = meta
-                    .columns
-                    .iter()
-                    .map(|x| Column {
-                        name: x.col_name.clone(),
-                        column_type: ColumnType::from(&x.base.ty),
-                    })
-                    .collect::<Vec<_>>();
+        loop {
+            match self.token_stream.try_next().await? {
+                Some(ReceivedToken::NewResultset(meta)) => {
+                    let columns = meta
+                        .columns
+                        .iter()
+                        .map(|x| Column {
+                            name: x.col_name.clone(),
+                            column_type: ColumnType::from(&x.base.ty),
+                        })
+                        .collect::<Vec<_>>();
 
-                self.store_columns(columns);
+                    self.store_columns(columns);
 
-                return Ok(());
-            }
-            Some(ReceivedToken::DoneInProc(done))
-            | Some(ReceivedToken::DoneProc(done))
-            | Some(ReceivedToken::Done(done)) => {
-                if !done.has_more() {
-                    self.state = QueryStreamState::Done;
+                    return Ok(());
                 }
+                Some(ReceivedToken::DoneInProc(done))
+                | Some(ReceivedToken::DoneProc(done))
+                | Some(ReceivedToken::Done(done)) => {
+                    if !done.has_more() {
+                        self.state = QueryStreamState::Done;
+                    }
 
-                return Ok(());
+                    return Ok(());
+                }
+                Some(ReceivedToken::Info(_)) => {
+                    continue;
+                }
+                _ => return Ok(()),
             }
-            _ => return Ok(()),
         }
     }
 

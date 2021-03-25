@@ -4,7 +4,7 @@ use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{numeric::Numeric, xml::XmlData, Result};
+use tiberius::{numeric::Numeric, xml::XmlData, ColumnType, Result};
 use uuid::Uuid;
 
 use runtimes_macro::test_on_runtimes;
@@ -1814,6 +1814,39 @@ where
 
     let res = conn.simple_query(q).await?.into_results().await;
     assert!(res.is_err());
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn warnings_should_not_affect_column_fetch<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let proc = random_table().await;
+
+    let q = format!(
+        r#"
+        CREATE PROCEDURE {}
+        AS
+        BEGIN
+            SET NOCOUNT ON;
+            DECLARE @tmp TABLE (col int);
+            INSERT INTO @tmp
+            SELECT SUM(col) AS col FROM (SELECT NULL AS col UNION SELECT 1) t;
+            SELECT SUM(col) AS col FROM @tmp;
+        END
+    "#,
+        proc
+    );
+
+    conn.simple_query(&q).await?;
+
+    let rs = conn.simple_query(format!("EXEC {}", proc)).await?;
+    let col = rs.columns().and_then(|c| c.first());
+
+    assert_eq!(Some("col"), col.map(|c| c.name()));
+    assert_eq!(Some(ColumnType::Intn), col.map(|c| c.column_type()));
 
     Ok(())
 }
