@@ -65,7 +65,7 @@ Tiberius has three encryption settings:
 | Encryption level | Description                                      |
 |------------------|--------------------------------------------------|
 | `Required`       | All traffic is encrypted.                        |
-| `Off`            | Only the login procedire is encrypted. (default) |
+| `Off`            | Only the login procedure is encrypted. (default) |
 | `NotSupported`   | None of the traffic is encrypted.                |
 
 Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. Therefore on macOS systems we use OpenSSL instead of Secure Transport, meaning by default Tiberius requires a working OpenSSL installation. By using a feature flag `vendored-openssl` the compilation links statically to a vendored version of OpenSSL, allowing encrypted connections from macOS.
