@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.12
+
+- Warnings should not affect metadata fetching (#139)
+
 ## Version 0.5.11
 
 - Fixing of all clippy warnings. This might have some performance benefits and
