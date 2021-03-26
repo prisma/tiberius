@@ -6,6 +6,19 @@
 
 A native Microsoft SQL Server (TDS) client for Rust.
 
+### Goals
+
+- A perfect implementation of the TDS protocol.
+- Asynchronous network IO.
+- Independent of the protocol.
+- Support for latest versions of Linux, Windows and macOS.
+
+### Non-goals
+
+- Connection pooling (use [bb8](https://crates.io/crates/bb8), [mobc](https://crates.io/crates/mobc), [deadpool](https://crates.io/crates/deadpool) or any of the other asynchronous connection pools)
+- Query building
+- Object-relational mapping
+
 ### Supported SQL Server versions
 
 | Version | Support level | Notes                               |
@@ -24,16 +37,16 @@ things:
 
 ### Feature flags
 
-| Flag           | Description                                                                           | Default    |
-|----------------|---------------------------------------------------------------------------------------|------------|
-| `tds73`        | Support for new date and time types in TDS version 7.3. Disable if using version 7.2. | `enabled`  |
-| `chrono`       | Read and write date and time values using `chrono`'s types.                           | `disabled` |
-| `rust_decimal` | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
-| `bigdecimal`   | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.          | `disabled` |
-| `sql-browser-async-std` | SQL Browser implementation for the `TcpStream` of async-std.                 | `disabled` |
-| `sql-browser-tokio`     | SQL Browser implementation for the `TcpStream` of Tokio.                     | `disabled` |
-| `integrated-auth-gssapi`     | Support for using Integrated Auth via GSSAPI                            | `disabled` |
-| `vendored-openssl` | On Linux and macOS platforms links statically against a vendored version of OpenSSL | `disabled` |
+| Flag                     | Description                                                                           | Default    |
+|--------------------------|---------------------------------------------------------------------------------------|------------|
+| `tds73`                  | Support for new date and time types in TDS version 7.3. Disable if using version 7.2. | `enabled`  |
+| `chrono`                 | Read and write date and time values using `chrono`'s types.                           | `disabled` |
+| `rust_decimal`           | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.           | `disabled` |
+| `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.          | `disabled` |
+| `sql-browser-async-std`  | SQL Browser implementation for the `TcpStream` of async-std.                          | `disabled` |
+| `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                              | `disabled` |
+| `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                          | `disabled` |
+| `vendored-openssl`       | On Linux and macOS platforms links statically against a vendored version of OpenSSL   | `disabled` |
 
 ### Supported protocols
 
@@ -41,40 +54,21 @@ Tiberius does not rely on any protocol when connecting to an SQL Server instance
 
 Currently there are good async implementations for TCP in the [async-std](https://crates.io/crates/async-std), [Tokio](https://crates.io/crates/tokio) and [Smol](https://crates.io/crates/smol) projects. To be able to use them together with Tiberius on Windows platforms with SQL Server, the TCP should be enabled in the [server settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx) (disabled by default). In the offficial [Docker image](https://hub.docker.com/_/microsoft-mssql-server) TCP is is enabled by default.
 
-To use named pipes, [Miow](https://crates.io/crates/miow) provides the `NamedPipe` that implements sync `Read` and `Write` traits. With some extra work one could write a crate that implements the `AsyncRead` and `AsyncWrite` traits to it. When this happens, Tiberius will support named pipes without any changes to the crate code.
+Named pipes are coming to Tokio in the near future. The code in the [pull request](https://github.com/tokio-rs/tokio/pull/3388) is already tested and should work. Examples will be added when the feature lands to a stable Tokio release.
 
-The shared memory protocol is not documented and seems there is no Rust crates implementing it.
+The shared memory protocol is not documented and seems there are no Rust crates implementing it.
 
 ### Encryption (TLS/SSL)
 
-#### a) Make sure to use a trusted certificate
+Tiberius has three encryption settings:
 
-Make sure the certificate your using is trusted by your local machine. To create a self-signed certificate that is trusted you can use the following powershell:
+| Encryption level | Description                                      |
+|------------------|--------------------------------------------------|
+| `Required`       | All traffic is encrypted.                        |
+| `Off`            | Only the login procedire is encrypted. (default) |
+| `NotSupported`   | None of the traffic is encrypted.                |
 
-```powershell
-$cert = New-SelfSignedCertificate -DnsName $serverName,localhost -CertStoreLocation cert:\LocalMachine\My
-$rootStore = Get-Item cert:\LocalMachine\Root
-$rootStore.Open("ReadWrite")
-$rootStore.Add($cert)
-$rootStore.Close();
-```
-
-You also have to [change the certificate in the SQL Server settings](https://support.microsoft.com/en-us/help/316898/how-to-enable-ssl-encryption-for-an-instance-of-sql-server-by-using-microsoft-management-console).  
-In a production setting you likely want to use a certificate that is issued by a
-CA.
-
-#### b) Disable certificate validation by using `TrustServerCertificate=true` in your connection string (requires 0.2.2)
-
-#### c) Alternatively: Disable Encryption for LOCALHOST
-For a connection to localhost, which will never leave your machine, it's safe to disable encryption. Add `encrypt=DANGER_PLAINTEXT` to your connection string or set use the `EncryptionLevel::NotSupported` variant.
-
-```toml
-tiberius = { version = "0.X", default-features=false, features=["chrono"] }
-```
-
-#### MacOS Catalina and TLS
-
-Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. Therefore on macOS systems we use OpenSSL instead of Secure Transport, meaning by default Tiberius requires a working OpenSSL installation. By using a feature flag `vendored-openssl` the compilation links statically to a vendored version of OpenSSL, allowing compilation on systems with no OpenSSL installed.
+Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. Therefore on macOS systems we use OpenSSL instead of Secure Transport, meaning by default Tiberius requires a working OpenSSL installation. By using a feature flag `vendored-openssl` the compilation links statically to a vendored version of OpenSSL, allowing encrypted connections from macOS.
 
 Please be aware of the security implications if deciding to use vendoring.
 
@@ -85,6 +79,7 @@ With the `integrated-auth-gssapi` feature enabled, the crate requires the GSSAPI
   * [Arch](https://www.archlinux.org/packages/core/x86_64/krb5/)
   * [Debian](https://tracker.debian.org/pkg/krb5) (you need the -dev packages to build)
   * [Ubuntu](https://packages.ubuntu.com/bionic-updates/libkrb5-dev)
+  * NixOS: Run `nix-shell shell.nix` on the repository root.
   * Mac: as of version `0.4.2` the [libgssapi](https://crates.io/crates/libgssapi) crate used for this feature now uses Apple's [GSS Framework](https://developer.apple.com/documentation/gss?language=objc) which ships with MacOS 10.14+.
 
 Additionally, your runtime system will need to be trusted by and configured for the Active Directory domain your SQL Server is part of. In particular, you'll need to be able to get a valid TGT for your identity, via `kinit` or a keytab. This setup varies by environment and OS, but your friendly network/system administrator should be able to help figure out the specifics.
