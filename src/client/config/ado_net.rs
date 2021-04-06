@@ -226,6 +226,11 @@ mod tests {
 
         assert_eq!(AuthMethod::Integrated, ado.authentication()?);
 
+        let test_str = "Integrated Security=SSPI;";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(AuthMethod::Integrated, ado.authentication()?);
+
         Ok(())
     }
 
@@ -237,6 +242,11 @@ mod tests {
 
         assert_eq!(AuthMethod::Integrated, ado.authentication()?);
 
+        let test_str = "Integrated Security=true;";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(AuthMethod::Integrated, ado.authentication()?);
+
         Ok(())
     }
 
@@ -244,6 +254,14 @@ mod tests {
     #[cfg(windows)]
     fn parsing_windows_authentication() -> crate::Result<()> {
         let test_str = "uid=Musti;pwd=Naukio; IntegratedSecurity=SSPI;";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(
+            AuthMethod::windows("Musti", "Naukio"),
+            ado.authentication()?
+        );
+
+        let test_str = "uid=Musti;pwd=Naukio; Integrated Security=SSPI;";
         let ado: AdoNetConfig = test_str.parse()?;
 
         assert_eq!(

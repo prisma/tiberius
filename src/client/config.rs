@@ -215,7 +215,11 @@ pub(crate) trait ConfigString {
             .or_else(|| self.dict().get("pwd"))
             .map(|s| s.as_str());
 
-        match self.dict().get("integratedsecurity") {
+        match self
+            .dict()
+            .get("integratedsecurity")
+            .or_else(|| self.dict().get("integrated security"))
+        {
             #[cfg(windows)]
             Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => match (user, pw)
             {
