@@ -41,27 +41,27 @@ impl FeatureLevel {
 pub enum OptionFlag1 {
     /// The byte order used by client for numeric and datetime data types.
     /// (default: little-endian)
-    BigEndian = 0x01,
+    BigEndian = 1 << 0,
     /// The character set used on the client. (default: ASCII)
-    CharsetEBDDIC = 0x02,
+    CharsetEBDDIC = 1 << 1,
     /// Use VAX floating point representation. (default: IEEE 754)
-    FloatVax = 0x04,
+    FloatVax = 1 << 2,
     /// Use ND5000 floating point representation. (default: IEEE 754)
-    FloatND5000 = 0x08,
+    FloatND5000 = 1 << 3,
     /// Set is dump/load or BCP capabilities are needed by the client.
     /// (default: ON)
-    BcpDumploadOff = 0x10,
+    BcpDumploadOff = 1 << 4,
     /// Set if the client requires warning messages on execution of the USE SQL
     /// statement. If this flag is not set, the server MUST NOT inform the
     /// client when the database changes, and therefore the client will be
     /// unaware of any accompanying collation changes. (default: ON)
-    UseDbNotify = 0x20,
+    UseDbNotify = 1 << 5,
     /// Set if the change to initial database needs to succeed if the connection
     /// is to succeed. (default: OFF)
-    InitDbFatal = 0x40,
+    InitDbFatal = 1 << 6,
     /// Set if the client requires warning messages on execution of a language
     /// change statement. (default: OFF)
-    LangChangeWarn = 0x80,
+    LangChangeWarn = 1 << 7,
 }
 
 #[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
@@ -69,59 +69,59 @@ pub enum OptionFlag1 {
 pub enum OptionFlag2 {
     /// Set if the change to initial language needs to succeed if the connect is
     /// to succeed.
-    InitLangFatal = 0x01,
+    InitLangFatal = 1 << 0,
     /// Set if the client is the ODBC driver. This causes the server to set
     /// `ANSI_DEFAULTS=ON`, `CURSOR_CLOSE_ON_COMMIT`, `IMPLICIT_TRANSACTIONS=OFF`,
     /// `TEXTSIZE=0x7FFFFFFF` (2GB) (TDS 7.2 and earlier) `TEXTSIZE` to infinite
     /// (TDS 7.3), and `ROWCOUNT` to infinite.
-    OdbcDriver = 0x02,
+    OdbcDriver = 1 << 1,
     /// (not documented)
-    TransBoundary = 0x04,
+    TransBoundary = 1 << 2,
     /// (not documented)
-    CacheConnect = 0x08,
+    CacheConnect = 1 << 3,
     /// Reserved (not really documented)
-    UserTypeServer = 0x10,
+    UserTypeServer = 1 << 4,
     /// Distributed Query login
-    UserTypeRemUser = 0x20,
+    UserTypeRemUser = 1 << 5,
     /// Replication login
-    UserTypeSqlRepl = 0x40,
+    UserTypeSqlRepl = 1 << 6,
     /// Use integrated security in the client.
-    IntegratedSecurity = 0x80,
+    IntegratedSecurity = 1 << 7,
 }
 
 #[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
 #[repr(u8)]
 pub enum OptionFlag3 {
     /// Request to change login's password.
-    RequestChangePassword = 0x01,
+    RequestChangePassword = 1 << 0,
     /// XML data type instances are returned as binary XML.
-    BinaryXML = 0x02,
+    BinaryXML = 1 << 1,
     /// Client is requesting separate process to be spawned as user instance.
-    SpawnUserInstance = 0x04,
+    SpawnUserInstance = 1 << 2,
     /// This bit is used by the server to determine if a client is able to
     /// properly handle collations introduced after TDS 7.2. TDS 7.2 and earlier
     /// clients are encouraged to use this loginpacket bit. Servers MUST ignore
     /// this bit when it is sent by TDS 7.3 or 7.4 clients.
-    UnknownCollationHandling = 0x08,
+    UnknownCollationHandling = 1 << 3,
     /// ibExtension/cbExtension fields are used.
-    ExtensionUsed = 0x10,
+    ExtensionUsed = 1 << 4,
 }
 
 #[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
 #[repr(u8)]
 pub enum LoginTypeFlag {
     /// Use T-SQL syntax.
-    UseTSQL = 0x01,
+    UseTSQL = 1 << 0,
     /// Set if the client is the OLEDB driver. This causes the server to set
     /// ANSI_DEFAULTS to ON, CURSOR_CLOSE_ON_COMMIT and IMPLICIT_TRANSACTIONS to
     /// OFF, TEXTSIZE to 0x7FFFFFFF (2GB) (TDS 7.2 and earlier), TEXTSIZE to
     /// infinite (introduced in TDS 7.3), and ROWCOUNT to infinite.
-    UseOLEDB = 0x10,
+    UseOLEDB = 1 << 4,
     /// This bit was introduced in TDS 7.4; however, TDS 7.1, 7.2, and 7.3
     /// clients can also use this bit in LOGIN7 to specify that the application
     /// intent of the connection is read-only. The server SHOULD ignore this bit
     /// if the highest TDS version supported by the server is lower than TDS 7.4.
-    ReadOnlyIntent = 0x20,
+    ReadOnlyIntent = 1 << 5,
 }
 
 /// the login packet
