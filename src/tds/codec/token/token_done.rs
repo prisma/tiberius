@@ -12,13 +12,15 @@ pub struct TokenDone {
 #[derive(Debug, Clone, Copy, PartialEq, BitFlags)]
 #[repr(u16)]
 pub enum DoneStatus {
-    More = 0x1,
-    Error = 0x2,
-    Inexact = 0x4,
-    Count = 0x10,
-    Attention = 0x20,
-    RpcInBatch = 0x80,
-    SrvError = 0x100,
+    More = 1 << 0,
+    Error = 1 << 1,
+    Inexact = 1 << 2,
+    // reserved
+    Count = 1 << 4,
+    Attention = 1 << 5,
+    // reserved
+    RpcInBatch = 1 << 7,
+    SrvError = 1 << 8,
 }
 
 impl TokenDone {

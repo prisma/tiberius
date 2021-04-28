@@ -8,20 +8,18 @@ use std::borrow::Cow;
 #[derive(BitFlags, Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum RpcStatus {
-    ParamByRefValue = 0x01,
-    ParamDefaultValue = 0x02,
-    // 5 bits reserved
-    ParamEncrypted = 0x08,
-    // 4 bits reserved
+    ParamByRefValue = 1 << 0,
+    ParamDefaultValue = 1 << 1,
+    // reserved
+    ParamEncrypted = 1 << 3,
 }
 
 #[derive(BitFlags, Copy, Clone, Debug, PartialEq)]
 #[repr(u16)]
 pub enum RpcOption {
-    WithRecomp = 0x01,
-    NoMeta = 0x02,
-    ReuseMeta = 0x04,
-    // 13 bits reserved
+    WithRecomp = 1 << 0,
+    NoMeta = 1 << 1,
+    ReuseMeta = 1 << 2,
 }
 
 #[derive(Debug)]
