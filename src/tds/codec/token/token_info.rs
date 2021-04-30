@@ -29,7 +29,7 @@ impl TokenInfo {
         let procedure = src.read_b_varchar().await?;
         let line = src.read_u32_le().await?;
 
-        let token = TokenInfo {
+        Ok(TokenInfo {
             number,
             state,
             class,
@@ -37,8 +37,6 @@ impl TokenInfo {
             server,
             procedure,
             line,
-        };
-
-        Ok(token)
+        })
     }
 }

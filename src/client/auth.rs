@@ -80,7 +80,7 @@ impl AuthMethod {
     #[cfg(any(windows, doc))]
     #[cfg_attr(feature = "docs", doc(cfg(windows)))]
     pub fn windows(user: impl AsRef<str>, password: impl ToString) -> Self {
-        let (domain, user) = match user.as_ref().find("\\") {
+        let (domain, user) = match user.as_ref().find('\\') {
             Some(idx) => (Some(&user.as_ref()[..idx]), &user.as_ref()[idx + 1..]),
             _ => (None, user.as_ref()),
         };
