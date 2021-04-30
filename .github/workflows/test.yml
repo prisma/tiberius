@@ -138,6 +138,9 @@ jobs:
             Set-PSRepository PSGallery -InstallationPolicy Trusted
             Install-Module SqlServer -ErrorAction Stop
 
+      - name: Restart the computer (sigh)
+        run: Restart-Computer
+
       - name: Install SQL Server 2019
         shell: powershell
         run: |
