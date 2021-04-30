@@ -122,7 +122,7 @@ impl Numeric {
         let len = src.read_u8().await?;
 
         if len == 0 {
-            return Ok(None);
+            Ok(None)
         } else {
             let sign = match src.read_u8().await? {
                 0 => -1i128,

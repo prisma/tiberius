@@ -65,7 +65,7 @@ impl XmlData {
     }
 
     /// Returns information about the schema of the XML file, if existing.
-    #[allow(clippy::clippy::option_as_ref_deref)]
+    #[allow(clippy::option_as_ref_deref)]
     pub fn schema(&self) -> Option<&XmlSchema> {
         self.schema.as_ref().map(|s| &**s)
     }

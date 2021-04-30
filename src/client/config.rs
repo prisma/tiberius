@@ -114,7 +114,15 @@ impl Config {
     }
 
     pub(crate) fn get_port(&self) -> u16 {
-        self.port.unwrap_or(1433)
+        match (self.port, self.instance_name.as_ref()) {
+            // A user-defined port, we must use that.
+            (Some(port), _) => port,
+            // If using a named instance, we'll give the default port of SQL
+            // Browser.
+            (None, Some(_)) => 1434,
+            // Otherwise the defaulting to the default SQL Server port.
+            (None, None) => 1433,
+        }
     }
 
     /// Get the host address including port

@@ -25,27 +25,24 @@ impl ConfigString for AdoNetConfig {
                 return Err(crate::Error::Conversion("Server value faulty.".into()));
             }
 
-            let definition = if parts[0].contains('\\') {
-                let port = if parts.len() == 1 {
-                    1434
-                } else {
-                    parts[1].parse::<u16>()?
-                };
+            let port = if parts.len() == 1 {
+                None
+            } else {
+                Some(parts[1].parse::<u16>()?)
+            };
 
+            let definition = if parts[0].contains('\\') {
                 let parts: Vec<&str> = parts[0].split('\\').collect();
 
                 ServerDefinition {
                     host: Some(parts[0].into()),
-                    port: Some(port),
+                    port,
                     instance: Some(parts[1].into()),
                 }
             } else {
-                // Connect using a TCP target
-                let (host, port) = (parts[0], parts[1].parse::<u16>()?);
-
                 ServerDefinition {
-                    host: Some(host.into()),
-                    port: Some(port),
+                    host: Some(parts[0].into()),
+                    port,
                     instance: None,
                 }
             };
@@ -106,7 +103,7 @@ mod tests {
         let server = ado.server()?;
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
-        assert_eq!(Some(1434), server.port);
+        assert_eq!(None, server.port);
         assert_eq!(Some("TIBERIUS".to_string()), server.instance);
 
         Ok(())
