@@ -20,18 +20,20 @@ impl ConfigString for AdoNetConfig {
     }
 
     fn server(&self) -> crate::Result<ServerDefinition> {
+        fn parse_port(parts: &[&str], def: u16) -> crate::Result<u16> {
+            Ok(match parts.get(0) {
+                Some(s) => s.parse()?,
+                None => def,
+            })
+        }
+
         fn parse_server(parts: Vec<&str>) -> crate::Result<ServerDefinition> {
             if parts.is_empty() || parts.len() >= 3 {
                 return Err(crate::Error::Conversion("Server value faulty.".into()));
             }
 
             let definition = if parts[0].contains('\\') {
-                let port = if parts.len() == 1 {
-                    1434
-                } else {
-                    parts[1].parse::<u16>()?
-                };
-
+                let port = parse_port(&parts[1..], 1434)?;
                 let parts: Vec<&str> = parts[0].split('\\').collect();
 
                 ServerDefinition {
@@ -41,7 +43,7 @@ impl ConfigString for AdoNetConfig {
                 }
             } else {
                 // Connect using a TCP target
-                let (host, port) = (parts[0], parts[1].parse::<u16>()?);
+                let (host, port) = (parts[0], parse_port(&parts[1..], 1433)?);
 
                 ServerDefinition {
                     host: Some(host.into()),
