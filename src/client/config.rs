@@ -110,7 +110,10 @@ impl Config {
     }
 
     pub(crate) fn get_host(&self) -> &str {
-        self.host.as_deref().unwrap_or("localhost")
+        self.host
+            .as_deref()
+            .filter(|v| v != &".")
+            .unwrap_or("localhost")
     }
 
     pub(crate) fn get_port(&self) -> u16 {
