@@ -53,7 +53,11 @@ impl ConfigString for AdoNetConfig {
             Ok(definition)
         }
 
-        match self.dict.get("server") {
+        match self
+            .dict
+            .get("server")
+            .or_else(|| self.dict.get("data source"))
+        {
             Some(value) if value.starts_with("tcp:") => {
                 parse_server(value[4..].split(',').collect())
             }
@@ -83,12 +87,28 @@ mod tests {
         assert_eq!(Some(4200), server.port);
         assert_eq!(None, server.instance);
 
+        let test_str = "data source=tcp:my-server.com,4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
         Ok(())
     }
 
     #[test]
     fn server_parsing_no_tcp() -> crate::Result<()> {
         let test_str = "server=my-server.com,4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
+        let test_str = "data source=my-server.com,4200";
         let ado: AdoNetConfig = test_str.parse()?;
         let server = ado.server()?;
 
@@ -109,12 +129,28 @@ mod tests {
         assert_eq!(Some(1434), server.port);
         assert_eq!(Some("TIBERIUS".to_string()), server.instance);
 
+        let test_str = "data source=tcp:my-server.com\\TIBERIUS";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(1434), server.port);
+        assert_eq!(Some("TIBERIUS".to_string()), server.instance);
+
         Ok(())
     }
 
     #[test]
     fn server_parsing_with_browser_and_port() -> crate::Result<()> {
         let test_str = "server=tcp:my-server.com\\TIBERIUS,666";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(666), server.port);
+        assert_eq!(Some("TIBERIUS".to_string()), server.instance);
+
+        let test_str = "data source=tcp:my-server.com\\TIBERIUS,666";
         let ado: AdoNetConfig = test_str.parse()?;
         let server = ado.server()?;
 
