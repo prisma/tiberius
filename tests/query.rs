@@ -26,6 +26,8 @@ async fn random_table() -> String {
     NAMES.lock().await.next().unwrap().replace('-', "")
 }
 
+static DOT_CONN_STR: Lazy<String> = Lazy::new(|| CONN_STR.replace("localhost", "."));
+
 static ENCRYPTED_CONN_STR: Lazy<String> = Lazy::new(|| format!("{};encrypt=true", *CONN_STR));
 
 static PLAIN_TEXT_CONN_STR: Lazy<String> =
@@ -50,6 +52,23 @@ where
 
 #[test_on_runtimes(connection_string = "PLAIN_TEXT_CONN_STR")]
 async fn connect_as_plain_text<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let row = conn
+        .query("SELECT @P1", &[&-4i32])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(-4i32), row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes(connection_string = "DOT_CONN_STR")]
+async fn connect_dot_server_as_localhost<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {

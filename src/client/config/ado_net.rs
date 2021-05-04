@@ -122,6 +122,27 @@ mod tests {
     }
 
     #[test]
+    fn server_parsing_no_port() -> crate::Result<()> {
+        let test_str = "server=tcp:my-server.com";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(1433), server.port);
+        assert_eq!(None, server.instance);
+
+        let test_str = "server=my-server.com";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(1433), server.port);
+        assert_eq!(None, server.instance);
+
+        Ok(())
+    }
+
+    #[test]
     fn server_parsing_with_browser() -> crate::Result<()> {
         let test_str = "server=tcp:my-server.com\\TIBERIUS";
         let ado: AdoNetConfig = test_str.parse()?;
