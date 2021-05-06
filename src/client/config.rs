@@ -176,9 +176,8 @@ impl Config {
             builder.port(port);
         }
 
-        if let Some(_instance) = server.instance {
-            #[cfg(windows)]
-            builder.instance_name(_instance);
+        if let Some(instance) = server.instance {
+            builder.instance_name(instance);
         }
 
         builder.authentication(s.authentication()?);
