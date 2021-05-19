@@ -1,12 +1,13 @@
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
 use crate::{tds::codec::ColumnData, Result};
 use bytes::{BufMut, BytesMut};
-use enumflags2::BitFlags;
+use enumflags2::{bitflags, BitFlags};
 use std::borrow::BorrowMut;
 use std::borrow::Cow;
 
-#[derive(BitFlags, Copy, Clone, Debug, PartialEq)]
+#[bitflags]
 #[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RpcStatus {
     ParamByRefValue = 1 << 0,
     ParamDefaultValue = 1 << 1,
@@ -14,8 +15,9 @@ pub enum RpcStatus {
     ParamEncrypted = 1 << 3,
 }
 
-#[derive(BitFlags, Copy, Clone, Debug, PartialEq)]
+#[bitflags]
 #[repr(u16)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RpcOption {
     WithRecomp = 1 << 0,
     NoMeta = 1 << 1,

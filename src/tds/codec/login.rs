@@ -1,7 +1,7 @@
 use super::Encode;
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::BytesMut;
-use enumflags2::BitFlags;
+use enumflags2::{bitflags, BitFlags};
 use io::{Cursor, Write};
 use std::{borrow::Cow, io};
 
@@ -36,8 +36,9 @@ impl FeatureLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[bitflags]
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OptionFlag1 {
     /// The byte order used by client for numeric and datetime data types.
     /// (default: little-endian)
@@ -64,8 +65,9 @@ pub enum OptionFlag1 {
     LangChangeWarn = 1 << 7,
 }
 
-#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[bitflags]
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OptionFlag2 {
     /// Set if the change to initial language needs to succeed if the connect is
     /// to succeed.
@@ -89,8 +91,9 @@ pub enum OptionFlag2 {
     IntegratedSecurity = 1 << 7,
 }
 
-#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[bitflags]
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OptionFlag3 {
     /// Request to change login's password.
     RequestChangePassword = 1 << 0,
@@ -107,8 +110,9 @@ pub enum OptionFlag3 {
     ExtensionUsed = 1 << 4,
 }
 
-#[derive(Debug, Clone, Copy, BitFlags, PartialEq)]
+#[bitflags]
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LoginTypeFlag {
     /// Use T-SQL syntax.
     UseTSQL = 1 << 0,
