@@ -20,10 +20,10 @@ impl ConfigString for AdoNetConfig {
     }
 
     fn server(&self) -> crate::Result<ServerDefinition> {
-        fn parse_port(parts: &[&str], def: u16) -> crate::Result<u16> {
+        fn parse_port(parts: &[&str]) -> crate::Result<Option<u16>> {
             Ok(match parts.get(0) {
-                Some(s) => s.parse()?,
-                None => def,
+                Some(s) => Some(s.parse()?),
+                None => None,
             })
         }
 
@@ -33,19 +33,19 @@ impl ConfigString for AdoNetConfig {
             }
 
             let definition = if parts[0].contains('\\') {
-                let port = parse_port(&parts[1..], 1434)?;
+                let port = parse_port(&parts[1..])?;
                 let parts: Vec<&str> = parts[0].split('\\').collect();
 
                 ServerDefinition {
                     host: Some(parts[0].into()),
-                    port: Some(port),
+                    port: port,
                     instance: Some(parts[1].into()),
                 }
             } else {
                 // Connect using a TCP target
                 ServerDefinition {
                     host: Some(parts[0].into()),
-                    port: Some(parse_port(&parts[1..], 1433)?),
+                    port: parse_port(&parts[1..])?,
                     instance: None,
                 }
             };
@@ -126,7 +126,7 @@ mod tests {
         let server = ado.server()?;
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
-        assert_eq!(Some(1433), server.port);
+        assert_eq!(None, server.port);
         assert_eq!(None, server.instance);
 
         let test_str = "server=my-server.com";
@@ -134,7 +134,7 @@ mod tests {
         let server = ado.server()?;
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
-        assert_eq!(Some(1433), server.port);
+        assert_eq!(None, server.port);
         assert_eq!(None, server.instance);
 
         Ok(())
@@ -147,7 +147,7 @@ mod tests {
         let server = ado.server()?;
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
-        assert_eq!(Some(1434), server.port);
+        assert_eq!(None, server.port);
         assert_eq!(Some("TIBERIUS".to_string()), server.instance);
 
         let test_str = "data source=tcp:my-server.com\\TIBERIUS";
@@ -155,7 +155,7 @@ mod tests {
         let server = ado.server()?;
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
-        assert_eq!(Some(1434), server.port);
+        assert_eq!(None, server.port);
         assert_eq!(Some("TIBERIUS".to_string()), server.instance);
 
         Ok(())
