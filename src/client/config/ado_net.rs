@@ -20,29 +20,32 @@ impl ConfigString for AdoNetConfig {
     }
 
     fn server(&self) -> crate::Result<ServerDefinition> {
+        fn parse_port(parts: &[&str]) -> crate::Result<Option<u16>> {
+            Ok(match parts.get(0) {
+                Some(s) => Some(s.parse()?),
+                None => None,
+            })
+        }
+
         fn parse_server(parts: Vec<&str>) -> crate::Result<ServerDefinition> {
             if parts.is_empty() || parts.len() >= 3 {
                 return Err(crate::Error::Conversion("Server value faulty.".into()));
             }
 
-            let port = if parts.len() == 1 {
-                None
-            } else {
-                Some(parts[1].parse::<u16>()?)
-            };
-
             let definition = if parts[0].contains('\\') {
+                let port = parse_port(&parts[1..])?;
                 let parts: Vec<&str> = parts[0].split('\\').collect();
 
                 ServerDefinition {
                     host: Some(parts[0].into()),
-                    port,
+                    port: port,
                     instance: Some(parts[1].into()),
                 }
             } else {
+                // Connect using a TCP target
                 ServerDefinition {
                     host: Some(parts[0].into()),
-                    port,
+                    port: parse_port(&parts[1..])?,
                     instance: None,
                 }
             };
@@ -50,7 +53,11 @@ impl ConfigString for AdoNetConfig {
             Ok(definition)
         }
 
-        match self.dict.get("server") {
+        match self
+            .dict
+            .get("server")
+            .or_else(|| self.dict.get("data source"))
+        {
             Some(value) if value.starts_with("tcp:") => {
                 parse_server(value[4..].split(',').collect())
             }
@@ -80,6 +87,14 @@ mod tests {
         assert_eq!(Some(4200), server.port);
         assert_eq!(None, server.instance);
 
+        let test_str = "data source=tcp:my-server.com,4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
         Ok(())
     }
 
@@ -91,6 +106,35 @@ mod tests {
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
         assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
+        let test_str = "data source=my-server.com,4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
+        Ok(())
+    }
+
+    #[test]
+    fn server_parsing_no_port() -> crate::Result<()> {
+        let test_str = "server=tcp:my-server.com";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(None, server.port);
+        assert_eq!(None, server.instance);
+
+        let test_str = "server=my-server.com";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(None, server.port);
         assert_eq!(None, server.instance);
 
         Ok(())
@@ -106,12 +150,28 @@ mod tests {
         assert_eq!(None, server.port);
         assert_eq!(Some("TIBERIUS".to_string()), server.instance);
 
+        let test_str = "data source=tcp:my-server.com\\TIBERIUS";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(None, server.port);
+        assert_eq!(Some("TIBERIUS".to_string()), server.instance);
+
         Ok(())
     }
 
     #[test]
     fn server_parsing_with_browser_and_port() -> crate::Result<()> {
         let test_str = "server=tcp:my-server.com\\TIBERIUS,666";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(666), server.port);
+        assert_eq!(Some("TIBERIUS".to_string()), server.instance);
+
+        let test_str = "data source=tcp:my-server.com\\TIBERIUS,666";
         let ado: AdoNetConfig = test_str.parse()?;
         let server = ado.server()?;
 
