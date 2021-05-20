@@ -8,6 +8,7 @@ use tokio::{
     net,
     time::{self, error::Elapsed, Duration},
 };
+use tracing::Level;
 
 #[async_trait]
 impl SqlBrowser for TcpStream {
@@ -29,6 +30,13 @@ impl SqlBrowser for TcpStream {
                     "[::]:0".parse().unwrap()
                 };
 
+                tracing::event!(
+                    Level::TRACE,
+                    "Connecting to instance `{}` using SQL Browser in port `{}`",
+                    instance_name,
+                    builder.get_port()
+                );
+
                 let msg = [&[4u8], instance_name.as_bytes()].concat();
                 let mut buf = vec![0u8; 4096];
 
@@ -41,8 +49,9 @@ impl SqlBrowser for TcpStream {
                     .map_err(|_: Elapsed| {
                         crate::error::Error::Conversion(
                             format!(
-                                "SQL browser timeout during resolving instance {}",
-                                instance_name
+                                "SQL browser timeout during resolving instance {}. Please check if browser is running in port {} and does the instance exist.",
+                                instance_name,
+                                builder.get_port(),
                             )
                             .into(),
                         )
@@ -50,6 +59,7 @@ impl SqlBrowser for TcpStream {
                     .await??;
 
                 let port = super::get_port_from_sql_browser_reply(buf, len, instance_name)?;
+                tracing::event!(Level::TRACE, "Found port `{}` from SQL Browser", port);
                 addr.set_port(port);
             };
 
@@ -59,6 +69,6 @@ impl SqlBrowser for TcpStream {
             }
         }
 
-        Err(io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host.").into())
+        Err(io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host").into())
     }
 }

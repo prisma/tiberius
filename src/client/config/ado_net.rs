@@ -43,11 +43,9 @@ impl ConfigString for AdoNetConfig {
                 }
             } else {
                 // Connect using a TCP target
-                let (host, port) = (parts[0], parse_port(&parts[1..], 1433)?);
-
                 ServerDefinition {
-                    host: Some(host.into()),
-                    port: Some(port),
+                    host: Some(parts[0].into()),
+                    port: Some(parse_port(&parts[1..], 1433)?),
                     instance: None,
                 }
             };

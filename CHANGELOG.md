@@ -1,5 +1,12 @@
 # Changes
 
+## Version 0.5.13
+
+- Add Config parsing for "Integrated Security" (two words)
+- Unified bitflag setup
+- Correct default ports
+- Update to enumflags2 0.7
+
 ## Version 0.5.12
 
 - Warnings should not affect metadata fetching (#139)

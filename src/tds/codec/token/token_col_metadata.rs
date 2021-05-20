@@ -3,7 +3,7 @@ use crate::{
     tds::codec::{FixedLenType, TypeInfo, VarLenType},
     ColumnData, SqlReadBytes,
 };
-use enumflags2::BitFlags;
+use enumflags2::{bitflags, BitFlags};
 
 #[derive(Debug)]
 pub struct TokenColMetaData {
@@ -104,8 +104,9 @@ impl BaseMetaDataColumn {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, BitFlags)]
+#[bitflags]
 #[repr(u16)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ColumnFlag {
     /// The column can be null.
     Nullable = 1 << 0,

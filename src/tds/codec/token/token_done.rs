@@ -1,5 +1,5 @@
 use crate::{Error, SqlReadBytes};
-use enumflags2::BitFlags;
+use enumflags2::{bitflags, BitFlags};
 use std::fmt;
 
 #[derive(Debug)]
@@ -9,8 +9,9 @@ pub struct TokenDone {
     done_rows: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, BitFlags)]
+#[bitflags]
 #[repr(u16)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DoneStatus {
     More = 1 << 0,
     Error = 1 << 1,
