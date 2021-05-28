@@ -31,6 +31,10 @@ impl Decoder for PacketCodec {
         event!(Level::TRACE, "Reading a {:?} ({} bytes)", header.ty, length,);
 
         let header = PacketHeader::decode(src)?;
+        if length < HEADER_BYTES {
+            return Err(Error::Protocol("Invalid packet length".into()));
+        }
+
         let payload = src.split_to(length - HEADER_BYTES);
 
         Ok(Some(Packet::new(header, payload)))
