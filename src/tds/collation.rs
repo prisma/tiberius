@@ -7,6 +7,8 @@
 ///! [2] https://github.com/lifthrasiir/rust-encoding/blob/496823171f15d9b9446b2ec3fb7765f22346256b/src/label.rs#L282
 use encoding::{self, Encoding};
 
+use crate::error::Error;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Collation {
     /// LCID ColFlags Version
@@ -30,12 +32,23 @@ impl Collation {
     }
 
     /// return an encoding for a given collation
-    pub fn encoding(&self) -> Option<&'static (dyn Encoding + Send + Sync)> {
-        if self.sort_id == 0 {
+    pub fn encoding(&self) -> crate::Result<&'static (dyn Encoding + Send + Sync)> {
+        let res = if self.sort_id == 0 {
             lcid_to_encoding(self.lcid())
         } else {
             sortid_to_encoding(self.sort_id)
-        }
+        };
+
+        res.ok_or_else(|| {
+            Error::Encoding(
+                format!(
+                    "encoding: unspported encoding (LCID: {:#02x}, sort ID: {})",
+                    self.lcid(),
+                    self.sort_id(),
+                )
+                .into(),
+            )
+        })
     }
 }
 

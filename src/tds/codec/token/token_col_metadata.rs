@@ -176,10 +176,6 @@ impl BaseMetaDataColumn {
 
         match ty {
             TypeInfo::VarLenSized(VarLenType::Text, _, _) => {
-                src.read_u16_le().await?;
-                src.read_u16_le().await?;
-                src.read_u8().await?;
-
                 let num_of_parts = src.read_u8().await?;
 
                 // table name

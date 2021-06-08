@@ -176,6 +176,7 @@ impl TypeInfo {
 
                 let collation = match ty {
                     VarLenType::NText
+                    | VarLenType::Text
                     | VarLenType::BigChar
                     | VarLenType::NChar
                     | VarLenType::NVarchar
