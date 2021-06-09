@@ -227,7 +227,7 @@ impl<'a> ColumnData<'a> {
             VarLenType::Floatn => Self::decode_float(src).await?,
             VarLenType::Guid => Self::decode_guid(src).await?,
             VarLenType::BigChar | VarLenType::NChar | VarLenType::NVarchar => {
-                let decoded = Self::decode_variable_string(src, ty, len)
+                let decoded = Self::decode_variable_string(src, ty, len, collation)
                     .await?
                     .map(Cow::from);
 
@@ -287,7 +287,7 @@ impl<'a> ColumnData<'a> {
             }
 
             VarLenType::BigBinary | VarLenType::BigVarBin => Self::decode_binary(src, len).await?,
-            VarLenType::Text => Self::decode_text(src).await?,
+            VarLenType::Text => Self::decode_text(src, collation).await?,
             VarLenType::NText => Self::decode_ntext(src).await?,
             VarLenType::Image => Self::decode_image(src).await?,
             t => unimplemented!("{:?}", t),
@@ -304,7 +304,7 @@ impl<'a> ColumnData<'a> {
     where
         R: SqlReadBytes + Unpin,
     {
-        let xml = Self::decode_variable_string(src, VarLenType::Xml, len)
+        let xml = Self::decode_variable_string(src, VarLenType::Xml, len, None)
             .await?
             .map(|data| {
                 let mut data = XmlData::new(data);
@@ -442,7 +442,10 @@ impl<'a> ColumnData<'a> {
         Ok(res)
     }
 
-    async fn decode_text<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
+    async fn decode_text<R>(
+        src: &mut R,
+        collation: Option<Collation>,
+    ) -> crate::Result<ColumnData<'static>>
     where
         R: SqlReadBytes + Unpin,
     {
@@ -460,7 +463,13 @@ impl<'a> ColumnData<'a> {
             let mut buf = vec![0; text_len];
 
             src.read_exact(&mut buf[0..text_len]).await?;
-            let text = String::from_utf8(buf)?;
+
+            let collation = collation.as_ref().unwrap();
+            let encoder = collation.encoding()?;
+
+            let text: String = encoder
+                .decode(buf.as_ref(), DecoderTrap::Strict)
+                .map_err(Error::Encoding)?;
 
             Ok(ColumnData::String(Some(text.into())))
         }
@@ -519,6 +528,7 @@ impl<'a> ColumnData<'a> {
         src: &mut R,
         ty: VarLenType,
         len: usize,
+        collation: Option<Collation>,
     ) -> crate::Result<Option<String>>
     where
         R: SqlReadBytes + Unpin,
@@ -533,7 +543,14 @@ impl<'a> ColumnData<'a> {
 
         let res = if let Some(buf) = data {
             if ty == VarLenType::BigChar {
-                Some(String::from_utf8(buf)?)
+                let collation = collation.as_ref().unwrap();
+                let encoder = collation.encoding()?;
+
+                let s: String = encoder
+                    .decode(buf.as_ref(), DecoderTrap::Strict)
+                    .map_err(Error::Encoding)?;
+
+                Some(s)
             } else {
                 if buf.len() % 2 != 0 {
                     return Err(Error::Protocol("nvarchar: invalid plp length".into()));
@@ -562,16 +579,7 @@ impl<'a> ColumnData<'a> {
 
         let res = if let Some(bytes) = data {
             let collation = collation.as_ref().unwrap();
-            let encoder = collation.encoding().ok_or_else(|| {
-                Error::Encoding(
-                    format!(
-                        "encoding: unspported encoding (LCID: {:#02x}, sort ID: {})",
-                        collation.lcid(),
-                        collation.sort_id(),
-                    )
-                    .into(),
-                )
-            })?;
+            let encoder = collation.encoding()?;
 
             let s: String = encoder
                 .decode(bytes.as_ref(), DecoderTrap::Strict)

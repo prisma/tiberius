@@ -1869,3 +1869,64 @@ where
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "sql-browser-async-std")]
+fn cyrillic_collations_should_work() -> Result<()> {
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+
+    async_std::task::block_on(async {
+        let mut admin = {
+            let config = tiberius::Config::from_ado_string(&CONN_STR)?;
+
+            let tcp = async_std::net::TcpStream::connect(config.get_addr()).await?;
+            tcp.set_nodelay(true)?;
+
+            tiberius::Client::connect(config, tcp).await?
+        };
+
+        admin
+            .simple_query("CREATE DATABASE ru_test COLLATE Cyrillic_General_CI_AS")
+            .await?;
+
+        {
+            let mut client = {
+                let mut config = tiberius::Config::from_ado_string(&CONN_STR)?;
+                config.database("ru_test");
+
+                let tcp = async_std::net::TcpStream::connect(config.get_addr()).await?;
+                tcp.set_nodelay(true)?;
+
+                tiberius::Client::connect(config, tcp).await?
+            };
+
+            client
+                .simple_query(
+                    "CREATE TABLE test (id INT IDENTITY PRIMARY KEY, single CHAR(1), multi VARCHAR(255), huge TEXT)",
+                )
+                .await?;
+
+            client.execute(
+                "INSERT INTO test (single, multi, huge) VALUES (@P1, @P2, @P3)",
+                &[&"Ж", &"В Советском Союзе попытки борьбы с пьянством предпринимались не единожды. Первая антиалкогольная", &"Первая антиалкогольная"]
+            ).await?;
+
+            let row = client
+                .query("SELECT single, multi, huge FROM test", &[])
+                .await?
+                .into_row()
+                .await?
+                .unwrap();
+
+            assert_eq!(Some("Ж"), row.get(0));
+            assert_eq!(Some("В Советском Союзе попытки борьбы с пьянством предпринимались не единожды. Первая антиалкогольная"), row.get(1));
+            assert_eq!(Some("Первая антиалкогольная"), row.get(2));
+        }
+
+        admin.simple_query("DROP DATABASE ru_test").await?;
+
+        Ok(())
+    })
+}
