@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.14
+
+- Handle collations for CHAR and TEXT values (#153)
+
 ## Version 0.5.13
 
 - Add Config parsing for "Integrated Security" (two words)
