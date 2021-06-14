@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.15
+
+- Split column decoding into modules (speeding up TEXT/NTEXT/IMAGE decoding a lot) (#153)
+
 ## Version 0.5.14
 
 - Handle collations for CHAR and TEXT values (#153)
