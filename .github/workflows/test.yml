@@ -136,13 +136,14 @@ jobs:
         shell: powershell
         run: |
             Set-PSRepository PSGallery -InstallationPolicy Trusted
-            Install-Module SqlServer -ErrorAction Stop
+            Install-Module SqlServer
 
       - name: Install SQL Server 2019
         shell: powershell
         run: |
-          choco feature disable -name=exitOnRebootDetected
-          choco install sql-server-2019
+          choco feature disable --name="'exitOnRebootDetected'"
+          $ErrorActionPreference = 'SilentlyContinue'
+          choco install sql-server-2019 --params="'/IgnorePendingReboot'"
 
       - name: Setup SQL Server 2019
         shell: powershell
