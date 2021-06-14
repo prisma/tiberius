@@ -4,7 +4,7 @@ use std::{convert::TryFrom, sync::Arc};
 #[derive(Debug)]
 pub enum TypeInfo {
     FixedLen(FixedLenType),
-    VarLenSized(VarLenType, usize, Option<Collation>),
+    VarLenSized(VarLenContext),
     VarLenSizedPrecision {
         ty: VarLenType,
         size: usize,
@@ -15,6 +15,38 @@ pub enum TypeInfo {
         schema: Option<Arc<XmlSchema>>,
         size: usize,
     },
+}
+
+#[derive(Clone, Debug, Copy)]
+pub struct VarLenContext {
+    r#type: VarLenType,
+    len: usize,
+    collation: Option<Collation>,
+}
+
+impl VarLenContext {
+    pub fn new(r#type: VarLenType, len: usize, collation: Option<Collation>) -> Self {
+        Self {
+            r#type,
+            len,
+            collation,
+        }
+    }
+
+    /// Get the var len context's r#type.
+    pub fn r#type(&self) -> VarLenType {
+        self.r#type
+    }
+
+    /// Get the var len context's len.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Get the var len context's collation.
+    pub fn collation(&self) -> Option<Collation> {
+        self.collation
+    }
 }
 
 uint_enum! {
@@ -201,7 +233,10 @@ impl TypeInfo {
                             scale,
                         }
                     }
-                    _ => TypeInfo::VarLenSized(ty, len, collation),
+                    _ => {
+                        let cx = VarLenContext::new(ty, len, collation);
+                        TypeInfo::VarLenSized(cx)
+                    }
                 };
 
                 Ok(vty)

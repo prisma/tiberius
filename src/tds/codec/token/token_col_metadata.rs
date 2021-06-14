@@ -39,7 +39,7 @@ impl BaseMetaDataColumn {
                 FixedLenType::Money4 => ColumnData::F32(None),
                 FixedLenType::Int8 => ColumnData::I64(None),
             },
-            TypeInfo::VarLenSized(ty, _, _) => match ty {
+            TypeInfo::VarLenSized(cx) => match cx.r#type() {
                 VarLenType::Guid => ColumnData::Guid(None),
                 VarLenType::Intn => ColumnData::I32(None),
                 VarLenType::Bitn => ColumnData::Bit(None),
@@ -167,6 +167,8 @@ impl BaseMetaDataColumn {
     where
         R: SqlReadBytes + Unpin,
     {
+        use VarLenType::*;
+
         let _user_ty = src.read_u32_le().await?;
 
         let flags = BitFlags::from_bits(src.read_u16_le().await?)
@@ -174,33 +176,16 @@ impl BaseMetaDataColumn {
 
         let ty = TypeInfo::decode(src).await?;
 
-        match ty {
-            TypeInfo::VarLenSized(VarLenType::Text, _, _) => {
+        if let TypeInfo::VarLenSized(cx) = ty {
+            if let Text | NText | Image = cx.r#type() {
                 let num_of_parts = src.read_u8().await?;
 
                 // table name
                 for _ in 0..num_of_parts {
                     src.read_us_varchar().await?;
                 }
-            }
-            TypeInfo::VarLenSized(VarLenType::NText, _, _) => {
-                let num_of_parts = src.read_u8().await?;
-
-                // table name
-                for _ in 0..num_of_parts {
-                    src.read_us_varchar().await?;
-                }
-            }
-            TypeInfo::VarLenSized(VarLenType::Image, _, _) => {
-                let num_of_parts = src.read_u8().await?;
-
-                // table name
-                for _ in 0..num_of_parts {
-                    src.read_us_varchar().await?;
-                }
-            }
-            _ => (),
-        }
+            };
+        };
 
         Ok(BaseMetaDataColumn { flags, ty })
     }

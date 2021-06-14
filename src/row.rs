@@ -116,7 +116,7 @@ impl From<&TypeInfo> for ColumnType {
                 FixedLenType::Int8 => Self::Int8,
                 FixedLenType::Null => Self::Null,
             },
-            TypeInfo::VarLenSized(vlt, _, _) => match vlt {
+            TypeInfo::VarLenSized(cx) => match cx.r#type() {
                 VarLenType::Guid => Self::Guid,
                 VarLenType::Intn => Self::Intn,
                 VarLenType::Bitn => Self::Bitn,
