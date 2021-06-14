@@ -179,6 +179,7 @@ pub(crate) extern crate bigdecimal_ as bigdecimal;
 mod macros;
 
 mod client;
+pub mod client_split;
 mod from_sql;
 mod sql_read_bytes;
 mod to_sql;

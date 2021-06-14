@@ -245,6 +245,23 @@ impl<'a> ExecuteResult {
         Ok(Self { rows_affected })
     }
 
+    pub(crate) async fn from_tokenstream(token_stream: BoxStream<'a, crate::Result<ReceivedToken>>    ) -> crate::Result<Self> {
+
+        let rows_affected = token_stream
+            .try_fold(Vec::new(), |mut acc, token| async move {
+                match token {
+                    ReceivedToken::DoneProc(done) if done.is_final() => (),
+                    ReceivedToken::DoneProc(done) => acc.push(done.rows()),
+                    ReceivedToken::DoneInProc(done) => acc.push(done.rows()),
+                    _ => (),
+                }
+                Ok(acc)
+            })
+            .await?;
+
+        Ok(Self { rows_affected })
+    }
+
     /// A slice of numbers of rows affected in the same order as the given
     /// queries.
     pub fn rows_affected(&self) -> &[u64] {
