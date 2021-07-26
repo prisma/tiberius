@@ -109,7 +109,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
-        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
+        self.rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, params)
             .await?;
 
         Ok(ExecuteResult::new(&mut self.connection).await?)
@@ -165,7 +165,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
-        self.rpc_perform_query(RpcProcId::SpExecuteSQL, rpc_params, params)
+        self.rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, params)
             .await?;
 
         let ts = TokenStream::new(&mut self.connection);

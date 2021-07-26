@@ -38,7 +38,7 @@ impl ConfigString for AdoNetConfig {
 
                 ServerDefinition {
                     host: Some(parts[0].into()),
-                    port: port,
+                    port,
                     instance: Some(parts[1].into()),
                 }
             } else {

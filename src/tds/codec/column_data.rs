@@ -125,8 +125,8 @@ impl<'a> ColumnData<'a> {
         R: SqlReadBytes + Unpin,
     {
         let res = match ctx {
-            TypeInfo::FixedLen(fixed_ty) => fixed_len::decode(src, &fixed_ty).await?,
-            TypeInfo::VarLenSized(cx) => var_len::decode(src, &cx).await?,
+            TypeInfo::FixedLen(fixed_ty) => fixed_len::decode(src, fixed_ty).await?,
+            TypeInfo::VarLenSized(cx) => var_len::decode(src, cx).await?,
             TypeInfo::VarLenSizedPrecision { ty, scale, .. } => match ty {
                 VarLenType::Decimaln | VarLenType::Numericn => {
                     ColumnData::Numeric(Numeric::decode(src, *scale).await?)
