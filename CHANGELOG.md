@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.5.16
+
+- Allow setting application name per connection (#161)
+
 ## Version 0.5.15
 
 - Split column decoding into modules (speeding up TEXT/NTEXT/IMAGE decoding a lot) (#153)
