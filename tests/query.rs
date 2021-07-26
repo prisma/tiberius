@@ -1930,3 +1930,32 @@ fn cyrillic_collations_should_work() -> Result<()> {
         Ok(())
     })
 }
+
+#[test]
+#[cfg(feature = "sql-browser-async-std")]
+fn application_name_should_be_set_correctly() -> Result<()> {
+    LOGGER_SETUP.call_once(|| {
+        env_logger::init();
+    });
+
+    async_std::task::block_on(async {
+        let mut config = tiberius::Config::from_ado_string(&CONN_STR)?;
+        config.application_name("meow");
+
+        let tcp = async_std::net::TcpStream::connect(config.get_addr()).await?;
+        tcp.set_nodelay(true)?;
+
+        let mut client = tiberius::Client::connect(config, tcp).await?;
+
+        let row = client
+            .query("SELECT APP_NAME()", &[])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some("meow"), row.get(0));
+
+        Ok(())
+    })
+}

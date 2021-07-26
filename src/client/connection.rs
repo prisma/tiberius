@@ -94,7 +94,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             .await?;
 
         let mut connection = connection
-            .login(config.auth, encryption, config.database, config.host)
+            .login(
+                config.auth,
+                encryption,
+                config.database,
+                config.host,
+                config.application_name,
+            )
             .await?;
 
         connection.flush_done().await?;
@@ -233,6 +239,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         encryption: EncryptionLevel,
         db: Option<String>,
         server_name: Option<String>,
+        application_name: Option<String>,
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
 
@@ -242,6 +249,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         if let Some(server_name) = server_name {
             login_message.server_name(server_name);
+        }
+
+        if let Some(app_name) = application_name {
+            login_message.app_name(app_name);
         }
 
         match auth {

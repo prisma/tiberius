@@ -182,6 +182,10 @@ impl<'a> LoginMessage<'a> {
         self.integrated_security = bytes;
     }
 
+    pub fn app_name(&mut self, name: impl Into<Cow<'a, str>>) {
+        self.app_name = name.into();
+    }
+
     pub fn db_name(&mut self, db_name: impl Into<Cow<'a, str>>) {
         self.db_name = db_name.into();
     }

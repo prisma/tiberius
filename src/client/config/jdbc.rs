@@ -282,4 +282,19 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn application_name_parsing() -> crate::Result<()> {
+        let test_str = "jdbc:sqlserver://my-server.com:4200;Application Name=meow";
+        let jdbc: JdbcConfig = test_str.parse()?;
+
+        assert_eq!(Some("meow".into()), jdbc.application_name());
+
+        let test_str = "jdbc:sqlserver://my-server.com:4200;ApplicationName=meow";
+        let jdbc: JdbcConfig = test_str.parse()?;
+
+        assert_eq!(Some("meow".into()), jdbc.application_name());
+
+        Ok(())
+    }
 }

@@ -391,4 +391,19 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn application_name_parsing() -> crate::Result<()> {
+        let test_str = "Application Name=meow";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(Some("meow".into()), ado.application_name());
+
+        let test_str = "ApplicationName=meow";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(Some("meow".into()), ado.application_name());
+
+        Ok(())
+    }
 }

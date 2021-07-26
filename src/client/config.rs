@@ -26,6 +26,7 @@ pub struct Config {
     pub(crate) port: Option<u16>,
     pub(crate) database: Option<String>,
     pub(crate) instance_name: Option<String>,
+    pub(crate) application_name: Option<String>,
     pub(crate) encryption: EncryptionLevel,
     pub(crate) trust_cert: bool,
     pub(crate) auth: AuthMethod,
@@ -38,6 +39,7 @@ impl Default for Config {
             port: None,
             database: None,
             instance_name: None,
+            application_name: None,
             encryption: EncryptionLevel::Required,
             trust_cert: false,
             auth: AuthMethod::None,
@@ -81,6 +83,14 @@ impl Config {
     /// - Defaults to no name specified.
     pub fn instance_name(&mut self, name: impl ToString) {
         self.instance_name = Some(name.to_string());
+    }
+
+    /// Sets the application name to the connection, queryable with the
+    /// `APP_NAME()` command.
+    ///
+    /// - Defaults to no name specified.
+    pub fn application_name(&mut self, name: impl ToString) {
+        self.application_name = Some(name.to_string());
     }
 
     /// Set the preferred encryption level.
@@ -148,6 +158,7 @@ impl Config {
     /// |`database`|`<string>`|The name of the database.|
     /// |`TrustServerCertificate`|`true`,`false`,`yes`,`no`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
     /// |`encrypt`|`true`,`false`,`yes`,`no`,`DANGER_PLAINTEXT`|Specifies whether the driver uses TLS to encrypt communication.|
+    /// |`Application Name`, `ApplicationName`|`<string>`|Sets the application name for the connection.|
     ///
     /// [ADO.NET connection string]: https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings
     pub fn from_ado_string(s: &str) -> crate::Result<Self> {
@@ -187,6 +198,10 @@ impl Config {
 
         if let Some(database) = s.database() {
             builder.database(database);
+        }
+
+        if let Some(name) = s.application_name() {
+            builder.application_name(name);
         }
 
         if s.trust_cert()? {
@@ -250,6 +265,13 @@ pub(crate) trait ConfigString {
             .or_else(|| self.dict().get("initial catalog"))
             .or_else(|| self.dict().get("databasename"))
             .map(|db| db.to_string())
+    }
+
+    fn application_name(&self) -> Option<String> {
+        self.dict()
+            .get("application name")
+            .or_else(|| self.dict().get("applicationname"))
+            .map(|name| name.to_string())
     }
 
     fn trust_cert(&self) -> crate::Result<bool> {
