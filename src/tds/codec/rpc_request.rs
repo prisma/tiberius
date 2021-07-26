@@ -9,10 +9,10 @@ use std::borrow::Cow;
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum RpcStatus {
-    ParamByRefValue = 1 << 0,
-    ParamDefaultValue = 1 << 1,
+    ByRefValue = 1 << 0,
+    DefaultValue = 1 << 1,
     // reserved
-    ParamEncrypted = 1 << 3,
+    Encrypted = 1 << 3,
 }
 
 #[bitflags]
@@ -58,14 +58,14 @@ pub struct RpcParam<'a> {
 #[repr(u8)]
 #[derive(Clone, Copy, Debug)]
 pub enum RpcProcId {
-    SpCursorOpen = 2,
-    SpCursorFetch = 7,
-    SpCursorClose = 9,
-    SpExecuteSQL = 10,
-    SpPrepare = 11,
-    SpExecute = 12,
-    SpPrepExec = 13,
-    SpUnprepare = 15,
+    CursorOpen = 2,
+    CursorFetch = 7,
+    CursorClose = 9,
+    ExecuteSQL = 10,
+    Prepare = 11,
+    Execute = 12,
+    PrepExec = 13,
+    Unprepare = 15,
 }
 
 #[derive(Debug)]
