@@ -13,7 +13,7 @@ impl Packet {
     }
 
     pub(crate) fn is_last(&self) -> bool {
-        self.header.status == PacketStatus::EndOfMessage
+        self.header.status() == PacketStatus::EndOfMessage
     }
 
     pub(crate) fn into_parts(self) -> (PacketHeader, BytesMut) {

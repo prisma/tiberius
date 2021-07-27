@@ -1,6 +1,6 @@
 use crate::{
     error::Error,
-    tds::codec::{ColumnData, FixedLenType, TokenRow, TypeInfo, VarLenType},
+    tds::codec::{ColumnData, FixedLenType, TokenRow, TypeInfo, TypeInfoInner, VarLenType},
     FromSql,
 };
 use std::{fmt::Display, sync::Arc};
@@ -101,8 +101,8 @@ pub enum ColumnType {
 
 impl From<&TypeInfo> for ColumnType {
     fn from(ti: &TypeInfo) -> Self {
-        match ti {
-            TypeInfo::FixedLen(flt) => match flt {
+        match &ti.inner {
+            TypeInfoInner::FixedLen(flt) => match flt {
                 FixedLenType::Int1 => Self::Int1,
                 FixedLenType::Bit => Self::Bit,
                 FixedLenType::Int2 => Self::Int2,
@@ -116,7 +116,7 @@ impl From<&TypeInfo> for ColumnType {
                 FixedLenType::Int8 => Self::Int8,
                 FixedLenType::Null => Self::Null,
             },
-            TypeInfo::VarLenSized(cx) => match cx.r#type() {
+            TypeInfoInner::VarLenSized(cx) => match cx.r#type() {
                 VarLenType::Guid => Self::Guid,
                 VarLenType::Intn => Self::Intn,
                 VarLenType::Bitn => Self::Bitn,
@@ -146,7 +146,7 @@ impl From<&TypeInfo> for ColumnType {
                 VarLenType::NText => Self::NText,
                 VarLenType::SSVariant => Self::SSVariant,
             },
-            TypeInfo::VarLenSizedPrecision { ty, .. } => match ty {
+            TypeInfoInner::VarLenSizedPrecision { ty, .. } => match ty {
                 VarLenType::Guid => Self::Guid,
                 VarLenType::Intn => Self::Intn,
                 VarLenType::Bitn => Self::Bitn,
@@ -176,7 +176,7 @@ impl From<&TypeInfo> for ColumnType {
                 VarLenType::NText => Self::NText,
                 VarLenType::SSVariant => Self::SSVariant,
             },
-            TypeInfo::Xml { .. } => Self::Xml,
+            TypeInfoInner::Xml { .. } => Self::Xml,
         }
     }
 }
@@ -233,7 +233,7 @@ impl From<&TypeInfo> for ColumnType {
 #[derive(Debug)]
 pub struct Row {
     pub(crate) columns: Arc<Vec<Column>>,
-    pub(crate) data: TokenRow,
+    pub(crate) data: TokenRow<'static>,
     pub(crate) result_index: usize,
 }
 

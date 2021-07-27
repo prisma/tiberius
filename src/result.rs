@@ -58,6 +58,7 @@ impl<'a> ExecuteResult {
                     ReceivedToken::DoneProc(done) if done.is_final() => (),
                     ReceivedToken::DoneProc(done) => acc.push(done.rows()),
                     ReceivedToken::DoneInProc(done) => acc.push(done.rows()),
+                    ReceivedToken::Done(done) => acc.push(done.rows()),
                     _ => (),
                 }
                 Ok(acc)

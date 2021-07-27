@@ -14,7 +14,7 @@ use tracing::{event, Level};
 #[derive(Debug)]
 pub enum ReceivedToken {
     NewResultset(Arc<TokenColMetaData>),
-    Row(TokenRow),
+    Row(TokenRow<'static>),
     Done(TokenDone),
     DoneInProc(TokenDone),
     DoneProc(TokenDone),

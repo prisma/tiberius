@@ -1,13 +1,19 @@
-use crate::{tds::codec::ColumnData, SqlReadBytes};
+use crate::{
+    tds::codec::{BufColumnData, ColumnData, Encode},
+    SqlReadBytes, TokenType,
+};
+use asynchronous_codec::BytesMut;
+use bytes::BufMut;
 use futures::io::AsyncReadExt;
 
-#[derive(Debug)]
-pub struct TokenRow {
-    data: Vec<ColumnData<'static>>,
+/// A row of data.
+#[derive(Debug, Default, Clone)]
+pub struct TokenRow<'a> {
+    data: Vec<ColumnData<'a>>,
 }
 
-impl IntoIterator for TokenRow {
-    type Item = ColumnData<'static>;
+impl<'a> IntoIterator for TokenRow<'a> {
+    type Item = ColumnData<'a>;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -15,7 +21,56 @@ impl IntoIterator for TokenRow {
     }
 }
 
-impl TokenRow {
+impl<'a> Encode<BytesMut> for TokenRow<'a> {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u8(TokenType::Row as u8);
+
+        let mut col_buf = BufColumnData::without_headers(dst);
+
+        for value in self.data.into_iter() {
+            value.encode(&mut col_buf)?
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> TokenRow<'a> {
+    /// Creates a new empty row.
+    pub const fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+
+    /// Creates a new empty row with allocated capacity.
+    pub fn with_capacity(&self, capacity: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// The number of columns.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// True if row has no columns.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Gets the columnar data with the given index. `None` if index out of
+    /// bounds.
+    pub fn get(&self, index: usize) -> Option<&ColumnData<'a>> {
+        self.data.get(index)
+    }
+
+    /// Adds a new value to the row.
+    pub fn push(&mut self, value: ColumnData<'a>) {
+        self.data.push(value);
+    }
+}
+
+impl TokenRow<'static> {
     /// Normal row. We'll read the metadata what we've cached and parse columns
     /// based on that.
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
@@ -60,17 +115,6 @@ impl TokenRow {
         }
 
         Ok(row)
-    }
-
-    /// The number of columns.
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    /// Gives the columnar data with the given index. `None` if index out of
-    /// bounds.
-    pub fn get(&self, index: usize) -> Option<&ColumnData<'static>> {
-        self.data.get(index)
     }
 }
 

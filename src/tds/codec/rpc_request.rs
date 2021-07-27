@@ -1,3 +1,4 @@
+use super::BufColumnData;
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
 use crate::{tds::codec::ColumnData, Result};
 use bytes::{BufMut, BytesMut};
@@ -133,7 +134,7 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
         }
 
         dst.put_u8(self.flags.bits());
-        self.value.encode(dst)?;
+        self.value.encode(&mut BufColumnData::with_headers(dst))?;
 
         let dst: &mut [u8] = dst.borrow_mut();
         dst[len_pos] = length;

@@ -74,6 +74,14 @@ into_sql!(self_,
           String: (ColumnData::String, Cow::from(self_));
           Vec<u8>: (ColumnData::Binary, Cow::from(self_));
           XmlData: (ColumnData::Xml, Cow::Owned(self_));
+          bool: (ColumnData::Bit, self_);
+          u8: (ColumnData::U8, self_);
+          i16: (ColumnData::I16, self_);
+          i32: (ColumnData::I32, self_);
+          i64: (ColumnData::I64, self_);
+          f32: (ColumnData::F32, self_);
+          f64: (ColumnData::F64, self_);
+          Uuid: (ColumnData::Guid, self_);
 );
 
 to_sql!(self_,

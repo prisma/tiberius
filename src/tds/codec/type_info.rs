@@ -1,8 +1,28 @@
-use crate::{tds::Collation, xml::XmlSchema, Error, SqlReadBytes};
-use std::{convert::TryFrom, sync::Arc};
+use asynchronous_codec::BytesMut;
+use bytes::BufMut;
 
-#[derive(Debug)]
-pub enum TypeInfo {
+use crate::{tds::Collation, xml::XmlSchema, Error, SqlReadBytes};
+use std::{convert::TryFrom, sync::Arc, usize};
+
+use super::Encode;
+
+/// Describes a type of a column.
+#[derive(Debug, Clone)]
+pub struct TypeInfo {
+    pub(crate) inner: TypeInfoInner,
+}
+
+/// A length of a column in bytes or characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeLength {
+    /// The number of bytes (or characters) reserved in the column.
+    Limited(u16),
+    /// Unlimited, stored in the heap outside of the row.
+    Max,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TypeInfoInner {
     FixedLen(FixedLenType),
     VarLenSized(VarLenContext),
     VarLenSizedPrecision {
@@ -46,6 +66,53 @@ impl VarLenContext {
     /// Get the var len context's collation.
     pub fn collation(&self) -> Option<Collation> {
         self.collation
+    }
+}
+
+impl Encode<BytesMut> for VarLenContext {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u8(self.r#type() as u8);
+
+        // length
+        match self.r#type {
+            #[cfg(feature = "tds73")]
+            VarLenType::Daten
+            | VarLenType::Timen
+            | VarLenType::DatetimeOffsetn
+            | VarLenType::Datetime2 => {
+                dst.put_u8(self.len() as u8);
+            }
+            VarLenType::Bitn
+            | VarLenType::Intn
+            | VarLenType::Floatn
+            | VarLenType::Decimaln
+            | VarLenType::Numericn
+            | VarLenType::Guid
+            | VarLenType::Money
+            | VarLenType::Datetimen => {
+                dst.put_u8(self.len() as u8);
+            }
+            VarLenType::NChar
+            | VarLenType::BigChar
+            | VarLenType::NVarchar
+            | VarLenType::BigVarChar
+            | VarLenType::BigBinary
+            | VarLenType::BigVarBin => {
+                dst.put_u16_le(self.len() as u16);
+            }
+            VarLenType::Image | VarLenType::Text | VarLenType::NText => {
+                dst.put_u32_le(self.len() as u32);
+            }
+            VarLenType::Xml => (),
+            typ => todo!("encoding {:?} is not supported yet", typ),
+        }
+
+        if let Some(collation) = self.collation() {
+            dst.put_u32_le(collation.info);
+            dst.put_u8(collation.sort_id);
+        }
+
+        Ok(())
     }
 }
 
@@ -143,7 +210,241 @@ uint_enum! {
     }
 }
 
+impl Encode<BytesMut> for TypeInfo {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        match self.inner {
+            TypeInfoInner::FixedLen(ty) => {
+                dst.put_u8(ty as u8);
+            }
+            TypeInfoInner::VarLenSized(ctx) => ctx.encode(dst)?,
+            TypeInfoInner::VarLenSizedPrecision {
+                ty,
+                size,
+                precision,
+                scale,
+            } => {
+                dst.put_u8(ty as u8);
+                dst.put_u8(size as u8);
+                dst.put_u8(precision as u8);
+                dst.put_u8(scale as u8);
+            }
+            TypeInfoInner::Xml { .. } => {
+                unreachable!()
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl TypeInfo {
+    /// A bit, either zero or one.
+    pub fn bit() -> Self {
+        Self::fixed(FixedLenType::Bit)
+    }
+
+    /// 8-bit integer, unsigned.
+    pub fn tinyint() -> Self {
+        Self::fixed(FixedLenType::Int1)
+    }
+
+    /// 16-bit integer, signed.
+    pub fn smallint() -> Self {
+        Self::fixed(FixedLenType::Int2)
+    }
+
+    /// 32-bit integer, signed.
+    pub fn int() -> Self {
+        Self::fixed(FixedLenType::Int4)
+    }
+
+    /// 64-bit integer, signed.
+    pub fn bigint() -> Self {
+        Self::fixed(FixedLenType::Int8)
+    }
+
+    /// 32-bit floating point number.
+    pub fn real() -> Self {
+        Self::fixed(FixedLenType::Float4)
+    }
+
+    /// 64-bit floating point number.
+    pub fn float() -> Self {
+        Self::fixed(FixedLenType::Float8)
+    }
+
+    /// 32-bit money type.
+    pub fn smallmoney() -> Self {
+        Self::fixed(FixedLenType::Money4)
+    }
+
+    /// 64-bit money type.
+    pub fn money() -> Self {
+        Self::fixed(FixedLenType::Money)
+    }
+
+    /// A small DateTime value.
+    pub fn smalldatetime() -> Self {
+        Self::fixed(FixedLenType::Datetime4)
+    }
+
+    /// A datetime value.
+    pub fn datetime() -> Self {
+        Self::fixed(FixedLenType::Datetime)
+    }
+
+    /// A datetime2 value.
+    #[cfg(feature = "tds73")]
+    pub fn datetime2() -> Self {
+        Self::varlen(VarLenType::Datetime2, 8, None)
+    }
+
+    /// A uniqueidentifier value.
+    pub fn guid() -> Self {
+        Self::varlen(VarLenType::Guid, 16, None)
+    }
+
+    /// A date value.
+    #[cfg(feature = "tds73")]
+    pub fn date() -> Self {
+        Self::varlen(VarLenType::Daten, 3, None)
+    }
+
+    /// A time value.
+    #[cfg(feature = "tds73")]
+    pub fn time() -> Self {
+        Self::varlen(VarLenType::Timen, 5, None)
+    }
+
+    /// A time value.
+    #[cfg(feature = "tds73")]
+    pub fn datetimeoffset() -> Self {
+        Self::varlen(VarLenType::DatetimeOffsetn, 10, None)
+    }
+
+    /// A variable binary value. If length is limited and larger than 8000
+    /// bytes, the `MAX` variant is used instead.
+    pub fn varbinary(length: TypeLength) -> Self {
+        let length = match length {
+            TypeLength::Limited(n) if n <= 8000 => n,
+            _ => u16::MAX,
+        };
+
+        Self::varlen(VarLenType::BigVarBin, length as usize, None)
+    }
+
+    /// A binary value.
+    ///
+    /// # Panics
+    ///
+    /// - If length is more than 8000 bytes.
+    pub fn binary(length: u16) -> Self {
+        assert!(length <= 8000);
+        Self::varlen(VarLenType::BigBinary, length as usize, None)
+    }
+
+    /// A variable string value. If length is limited and larger than 8000
+    /// characters, the `MAX` variant is used instead.
+    pub fn varchar(length: TypeLength) -> Self {
+        let length = match length {
+            TypeLength::Limited(n) if n <= 8000 => n,
+            _ => u16::MAX,
+        };
+
+        Self::varlen(VarLenType::BigVarChar, length as usize, None)
+    }
+
+    /// A variable UTF-16 string value. If length is limited and larger than
+    /// 4000 characters, the `MAX` variant is used instead.
+    pub fn nvarchar(length: TypeLength) -> Self {
+        let length = match length {
+            TypeLength::Limited(n) if n <= 4000 => n,
+            _ => u16::MAX,
+        };
+
+        Self::varlen(VarLenType::BigVarChar, length as usize, None)
+    }
+
+    /// A constant-size string value.
+    ///
+    /// # Panics
+    ///
+    /// - If length is more than 8000 characters.
+    pub fn char(length: u16) -> Self {
+        assert!(length <= 8000);
+        Self::varlen(VarLenType::BigChar, length as usize, None)
+    }
+
+    /// A constant-size UTF-16 string value.
+    ///
+    /// # Panics
+    ///
+    /// - If length is more than 4000 characters.
+    pub fn nchar(length: u16) -> Self {
+        assert!(length <= 4000);
+        Self::varlen(VarLenType::NChar, length as usize, None)
+    }
+
+    /// A (deprecated) heap-allocated text storage.
+    pub fn text() -> Self {
+        Self::varlen(VarLenType::Text, u32::MAX as usize, None)
+    }
+
+    /// A (deprecated) heap-allocated UTF-16 text storage.
+    pub fn ntext() -> Self {
+        Self::varlen(VarLenType::NText, u32::MAX as usize, None)
+    }
+
+    /// A (deprecated) heap-allocated binary storage.
+    pub fn image() -> Self {
+        Self::varlen(VarLenType::Image, u32::MAX as usize, None)
+    }
+
+    /// Numeric data types that have fixed precision and scale. Decimal and
+    /// numeric are synonyms and can be used interchangeably.
+    pub fn decimal(precision: u8, scale: u8) -> Self {
+        Self::varlen_precision(VarLenType::Decimaln, precision, scale)
+    }
+
+    /// Numeric data types that have fixed precision and scale. Decimal and
+    /// numeric are synonyms and can be used interchangeably.
+    pub fn numeric(precision: u8, scale: u8) -> Self {
+        Self::varlen_precision(VarLenType::Numericn, precision, scale)
+    }
+
+    fn varlen_precision(ty: VarLenType, precision: u8, scale: u8) -> Self {
+        let size = if precision <= 9 {
+            5
+        } else if precision <= 19 {
+            9
+        } else if precision <= 28 {
+            13
+        } else {
+            17
+        };
+
+        let inner = TypeInfoInner::VarLenSizedPrecision {
+            ty,
+            size,
+            precision,
+            scale,
+        };
+
+        Self { inner }
+    }
+
+    fn varlen(ty: VarLenType, len: usize, collation: Option<Collation>) -> Self {
+        let cx = VarLenContext::new(ty, len, collation);
+        let inner = TypeInfoInner::VarLenSized(cx);
+
+        Self { inner }
+    }
+
+    fn fixed(ty: FixedLenType) -> Self {
+        let inner = TypeInfoInner::FixedLen(ty);
+        Self { inner }
+    }
+
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
         R: SqlReadBytes + Unpin,
@@ -151,7 +452,8 @@ impl TypeInfo {
         let ty = src.read_u8().await?;
 
         if let Ok(ty) = FixedLenType::try_from(ty) {
-            return Ok(TypeInfo::FixedLen(ty));
+            let inner = TypeInfoInner::FixedLen(ty);
+            return Ok(TypeInfo { inner });
         }
 
         match VarLenType::try_from(ty) {
@@ -173,10 +475,12 @@ impl TypeInfo {
                     None
                 };
 
-                Ok(TypeInfo::Xml {
+                let inner = TypeInfoInner::Xml {
                     schema,
                     size: 0xfffffffffffffffe_usize,
-                })
+                };
+
+                Ok(TypeInfo { inner })
             }
             Ok(ty) => {
                 let len = match ty {
@@ -226,16 +530,20 @@ impl TypeInfo {
                         let precision = src.read_u8().await?;
                         let scale = src.read_u8().await?;
 
-                        TypeInfo::VarLenSizedPrecision {
+                        let inner = TypeInfoInner::VarLenSizedPrecision {
                             size: len,
                             ty,
                             precision,
                             scale,
-                        }
+                        };
+
+                        TypeInfo { inner }
                     }
                     _ => {
                         let cx = VarLenContext::new(ty, len, collation);
-                        TypeInfo::VarLenSized(cx)
+                        let inner = TypeInfoInner::VarLenSized(cx);
+
+                        TypeInfo { inner }
                     }
                 };
 

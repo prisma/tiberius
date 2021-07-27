@@ -12,9 +12,9 @@ use crate::error::Error;
 #[derive(Debug, Clone, Copy)]
 pub struct Collation {
     /// LCID ColFlags Version
-    info: u32,
+    pub(crate) info: u32,
     /// Sortid
-    sort_id: u8,
+    pub(crate) sort_id: u8,
 }
 
 impl Collation {
