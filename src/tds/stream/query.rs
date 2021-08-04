@@ -1,6 +1,10 @@
 use crate::tds::stream::ReceivedToken;
 use crate::{row::ColumnType, Column, Row};
-use futures::{ready, stream::BoxStream, Stream, StreamExt, TryStreamExt};
+use futures::{
+    ready,
+    stream::{BoxStream, Peekable},
+    Stream, StreamExt, TryStreamExt,
+};
 use std::{
     fmt::Debug,
     pin::Pin,
@@ -8,21 +12,11 @@ use std::{
     task::{self, Poll},
 };
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) enum QueryStreamState {
-    Initial,
-    HasPotentiallyNext,
-    HasNext,
-    GotRowsAffected,
-    Done,
-}
-
 /// A stream of rows, needed for queries returning data.
 pub struct QueryStream<'a> {
-    token_stream: BoxStream<'a, crate::Result<ReceivedToken>>,
-    current_columns: Option<Arc<Vec<Column>>>,
-    previous_columns: Option<Arc<Vec<Column>>>,
-    pub(crate) state: QueryStreamState,
+    token_stream: Peekable<BoxStream<'a, crate::Result<ReceivedToken>>>,
+    columns: Option<Arc<Vec<Column>>>,
+    result_set_index: Option<usize>,
 }
 
 impl<'a> Debug for QueryStream<'a> {
@@ -32,9 +26,6 @@ impl<'a> Debug for QueryStream<'a> {
                 "token_stream",
                 &"BoxStream<'a, crate::Result<ReceivedToken>>",
             )
-            .field("current_columns", &self.current_columns)
-            .field("previous_columns", &self.previous_columns)
-            .field("state", &self.state)
             .finish()
     }
 }
@@ -42,83 +33,106 @@ impl<'a> Debug for QueryStream<'a> {
 impl<'a> QueryStream<'a> {
     pub(crate) fn new(token_stream: BoxStream<'a, crate::Result<ReceivedToken>>) -> Self {
         Self {
-            token_stream,
-            current_columns: None,
-            previous_columns: None,
-            state: QueryStreamState::Initial,
+            token_stream: token_stream.peekable(),
+            columns: None,
+            result_set_index: None,
         }
     }
 
-    pub(crate) async fn fetch_metadata(&mut self) -> crate::Result<()> {
+    /// Moves the stream forward until having result metadata, stream end or an
+    /// error.
+    pub(crate) async fn forward_to_metadata(&mut self) -> crate::Result<()> {
         loop {
-            match self.token_stream.try_next().await? {
-                Some(ReceivedToken::NewResultset(meta)) => {
-                    let columns = meta
-                        .columns
-                        .iter()
-                        .map(|x| Column {
-                            name: x.col_name.clone(),
-                            column_type: ColumnType::from(&x.base.ty),
-                        })
-                        .collect::<Vec<_>>();
-
-                    self.store_columns(columns);
-
-                    return Ok(());
+            match Pin::new(&mut self.token_stream).peek().await {
+                Some(Ok(ReceivedToken::NewResultset(_))) => break,
+                Some(Ok(_)) => {
+                    self.token_stream.try_next().await?;
                 }
-                Some(ReceivedToken::DoneInProc(done))
-                | Some(ReceivedToken::DoneProc(done))
-                | Some(ReceivedToken::Done(done)) => {
-                    if !done.has_more() {
-                        self.state = QueryStreamState::Done;
-                    }
-
-                    return Ok(());
-                }
-                Some(ReceivedToken::Info(_)) => {
-                    continue;
-                }
-                _ => return Ok(()),
+                _ => break,
             }
         }
+
+        Ok(())
+    }
+}
+
+/// Info about the following stream of rows.
+#[derive(Debug, Clone)]
+pub struct ResultMetadata {
+    columns: Arc<Vec<Column>>,
+    result_index: usize,
+}
+
+impl ResultMetadata {
+    /// Column info. The order is the same as in the following rows.
+    pub fn columns(&self) -> &[Column] {
+        &self.columns
     }
 
-    pub(crate) fn columns(&self) -> Option<&[Column]> {
-        let cols = match self.state {
-            QueryStreamState::HasNext => self.previous_columns.as_ref(),
-            _ => self.current_columns.as_ref(),
-        };
+    /// The number of reult set, an incrementing value starting from zero, which
+    /// gives an indication of the position of the result set in the stream.
+    pub fn result_index(&self) -> usize {
+        self.result_index
+    }
+}
 
-        cols.map(|cols| cols.as_slice())
+/// Resulting data from a query.
+#[derive(Debug)]
+pub enum QueryItem {
+    /// A single row of data.
+    Row(Row),
+    /// Information of the rows that arrive afterwards.
+    Metadata(ResultMetadata),
+}
+
+impl QueryItem {
+    pub(crate) fn metadata(columns: Arc<Vec<Column>>, result_index: usize) -> Self {
+        Self::Metadata(ResultMetadata {
+            columns,
+            result_index,
+        })
     }
 
-    fn store_columns(&mut self, columns: Vec<Column>) {
-        if let Some(columns) = self.current_columns.take() {
-            self.previous_columns = Some(columns);
+    /// Returns a reference to the metadata, if the item is of a correct variant.
+    pub fn as_metadata(&self) -> Option<&ResultMetadata> {
+        match self {
+            QueryItem::Row(_) => None,
+            QueryItem::Metadata(ref metadata) => Some(metadata),
         }
+    }
 
-        self.current_columns = Some(Arc::new(columns));
+    /// Returns a reference to the row, if the item is of a correct variant.
+    pub fn as_row(&self) -> Option<&Row> {
+        match self {
+            QueryItem::Row(ref row) => Some(row),
+            QueryItem::Metadata(_) => None,
+        }
+    }
 
-        if let QueryStreamState::HasPotentiallyNext = self.state {
-            self.state = QueryStreamState::HasNext;
-        };
+    /// Returns the metadata, if the item is of a correct variant.
+    pub fn into_metadata(self) -> Option<ResultMetadata> {
+        match self {
+            QueryItem::Row(_) => None,
+            QueryItem::Metadata(metadata) => Some(metadata),
+        }
+    }
+
+    /// Returns the row, if the item is of a correct variant.
+    pub fn into_row(self) -> Option<Row> {
+        match self {
+            QueryItem::Row(row) => Some(row),
+            QueryItem::Metadata(_) => None,
+        }
     }
 }
 
 impl<'a> Stream for QueryStream<'a> {
-    type Item = crate::Result<Row>;
+    type Item = crate::Result<QueryItem>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
         loop {
-            match this.state {
-                QueryStreamState::Initial
-                | QueryStreamState::HasPotentiallyNext
-                | QueryStreamState::GotRowsAffected => (),
-                _ => return Poll::Ready(None),
-            }
-
             let token = match ready!(this.token_stream.poll_next_unpin(cx)) {
                 Some(res) => res?,
                 None => return Poll::Ready(None),
@@ -135,37 +149,27 @@ impl<'a> Stream for QueryStream<'a> {
                         })
                         .collect::<Vec<_>>();
 
-                    this.store_columns(column_meta);
+                    let column_meta = Arc::new(column_meta);
+                    this.columns = Some(column_meta.clone());
 
-                    continue;
+                    this.result_set_index = this.result_set_index.map(|i| i + 1);
+
+                    let query_item =
+                        QueryItem::metadata(column_meta, *this.result_set_index.get_or_insert(0));
+
+                    return Poll::Ready(Some(Ok(query_item)));
                 }
                 ReceivedToken::Row(data) => {
-                    let columns = this.current_columns.as_ref().unwrap().clone();
-                    Poll::Ready(Some(Ok(Row { columns, data })))
-                }
-                ReceivedToken::Done(ref done)
-                | ReceivedToken::DoneProc(ref done)
-                | ReceivedToken::DoneInProc(ref done) => {
-                    if !done.has_more() {
-                        this.state = QueryStreamState::Done;
-                    } else {
-                        // Justification here: if there are no columns set this is because
-                        // we haven't yet recieved any tabular resultsets from the server.
-                        // and therefore we can just skip to ensure that we don't cause the
-                        // QueryResult implementation to start a new resultset.
-                        //
-                        // Otherwise, any received DoneInProc etc tokens will just add 0 more rows
-                        // into the end of the resultset, so they wont' affect it and this means
-                        // we don't need to handle those cases.
-                        // Later if we decide to include the rows affected amounts we woud need
-                        // to create a new resultset each time.
-                        if this.current_columns.is_none() {
-                            this.state = QueryStreamState::GotRowsAffected;
-                        } else {
-                            this.state = QueryStreamState::HasPotentiallyNext;
-                        }
-                    }
-                    continue;
+                    let columns = this.columns.as_ref().unwrap().clone();
+                    let result_index = this.result_set_index.unwrap();
+
+                    let row = Row {
+                        columns,
+                        data,
+                        result_index,
+                    };
+
+                    Poll::Ready(Some(Ok(QueryItem::Row(row))))
                 }
                 _ => continue,
             };

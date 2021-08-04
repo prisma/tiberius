@@ -19,7 +19,10 @@
 //!     config.port(1433);
 //!
 //!     // Using SQL Server authentication.
-//!     config.authentication(AuthMethod::sql_server("SA", "<password>"));
+//!     config.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
+//!     
+//!     // on production, it is not a good idea to do this
+//!     config.trust_cert();
 //!
 //!     // Taking the address from the configuration, using async-std's
 //!     // TcpStream to connect to the server.
@@ -35,15 +38,8 @@
 //!     // A response to a query is a stream of data, that must be
 //!     // polled to the end before querying again. Using streams allows
 //!     // fetching data in an asynchronous manner, if needed.
-//!     let mut stream = client.query("SELECT @P1", &[&-4i32]).await?;
+//!     let stream = client.query("SELECT @P1", &[&-4i32]).await?;
 //!
-//!     // As long as the `next_resultset` returns true, the stream has
-//!     // more results and can be polled. For each result set, the stream
-//!     // returns rows until the end of that result. In a case where
-//!     // `next_resultset` is true, polling again will return rows from
-//!     // the next query.
-//!     assert!(stream.next_resultset());
-//!     
 //!     // In this case, we know we have only one query, returning one row
 //!     // and one column, so calling `into_row` will consume the stream
 //!     // and return us the first row of the first result.
@@ -72,8 +68,9 @@
 //!     
 //!     config.host("localhost");
 //!     config.port(1433);
-//!     config.authentication(AuthMethod::sql_server("SA", "<password>"));
-//!
+//!     config.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
+//!     config.trust_cert(); // on production, it is not a good idea to do this
+//!     
 //!     let tcp = TcpStream::connect(config.get_addr()).await?;
 //!     tcp.set_nodelay(true)?;
 //!
@@ -136,7 +133,10 @@
 //!     
 //!     // The name of the database server instance.
 //!     config.instance_name("INSTANCE");
-//!
+//!     
+//!     // on production, it is not a good idea to do this
+//!     config.trust_cert();
+//!     
 //!     // This will create a new `TcpStream` from `async-std`, connected to the
 //!     // right port of the named instance.
 //!     let tcp = TcpStream::connect_named(&config).await?;

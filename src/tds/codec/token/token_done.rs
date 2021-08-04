@@ -48,10 +48,6 @@ impl TokenDone {
         })
     }
 
-    pub(crate) fn has_more(&self) -> bool {
-        self.status.contains(DoneStatus::More)
-    }
-
     pub(crate) fn is_final(&self) -> bool {
         self.status.is_empty()
     }

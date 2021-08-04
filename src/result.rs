@@ -1,9 +1,10 @@
+pub use crate::tds::stream::{QueryItem, ResultMetadata};
 use crate::{
     client::Connection,
-    tds::stream::{QueryStream, QueryStreamState, ReceivedToken, TokenStream},
-    Column, Row,
+    tds::stream::{QueryStream, ReceivedToken, TokenStream},
+    Row,
 };
-use futures::{stream::BoxStream, AsyncRead, AsyncWrite, Stream, StreamExt, TryStreamExt};
+use futures::{stream::BoxStream, AsyncRead, AsyncWrite, Stream, TryStreamExt};
 use std::{fmt::Debug, pin::Pin, task};
 use task::Poll;
 
@@ -12,18 +13,22 @@ use task::Poll;
 /// [`Client`], failing to do so causes a flush before the next query, slowing it
 /// down in an undeterministic way.
 ///
-/// If executing multiple queries, the resulting streams will be split. Before
-/// polling the next results, a call to [`next_resultset`] with a response of
-/// `true` is needed. When the [`next_resultset`] returns `false` the results
-/// should not be polled anymore.
+/// A stream consists of [`QueryItem`] values, which can be either result
+/// metadata or a row. Every stream starts with metadata, describing the
+/// structure of the incoming rows, e.g. the columns in the order they are
+/// presented in every row.
+///
+/// If after consuming rows from the stream, another metadata result arrives, it
+/// means the stream has multiple results from different queries. This new
+/// metadata item will describe the next rows from here forwards.
 ///
 /// # Example
 ///
 /// ```
-/// # use tiberius::Config;
+/// # use tiberius::{Config, QueryItem};
 /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # use std::env;
-/// # use futures::{StreamExt, TryStreamExt};
+/// # use futures::TryStreamExt;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
@@ -40,30 +45,31 @@ use task::Poll;
 ///     )
 ///     .await?;
 ///
-/// // Result of `SELECT 1`. Taking the `Stream` by reference, allowing us to
-/// // poll it later again. We fetch the value with column index.
-/// let first_result: Vec<Option<i32>> = stream
-///     .by_ref()
-///     .map_ok(|x| x.get::<i32, _>(0))
-///     .try_collect()
-///     .await?;
-///
-/// assert_eq!(Some(1), first_result[0]);
-///
-/// // Allows us to poll more results.
-/// assert!(stream.next_resultset());
-///
-/// // Result of `SELECT 2`, this time fetching with the column name.
-/// let second_result: Vec<Option<i32>> = stream
-///     .by_ref()
-///     .map_ok(|x| x.get::<i32, _>("second"))
-///     .try_collect()
-///     .await?;
-///
-/// assert_eq!(Some(2), second_result[0]);
-///
-/// // No more results left. We should not poll again.
-/// assert!(!stream.next_resultset());
+/// // The stream consists of four items, in the following order:
+/// // - Metadata from `SELECT 1`
+/// // - The only resulting row from `SELECT 1`
+/// // - Metadata from `SELECT 2`
+/// // - The only resulting row from `SELECT 2`
+/// while let Some(item) = stream.try_next().await? {
+///     match item {
+///         // our first item is the column data always
+///         QueryItem::Metadata(meta) if meta.result_index() == 0 => {
+///             // the first result column info can be handled here
+///         }
+///         // ... and from there on from 0..N rows
+///         QueryItem::Row(row) if row.result_index() == 0 => {
+///             assert_eq!(Some(1), row.get(0));
+///         }
+///         // the second result set returns first another metadata item
+///         QueryItem::Metadata(meta) => {
+///             // .. handling
+///         }
+///         // ...and, again, we get rows from the second resultset
+///         QueryItem::Row(row) => {
+///             assert_eq!(Some(2), row.get(0));
+///         }
+///     }
+/// }
 /// # Ok(())
 /// # }
 /// ```
@@ -83,79 +89,41 @@ impl<'a> QueryResult<'a> {
         Self { stream }
     }
 
-    pub(crate) async fn fetch_metadata(&mut self) -> crate::Result<()> {
-        self.stream.fetch_metadata().await
-    }
-
-    /// Names of the columns of the current resultset. Order is the same as the
-    /// order of columns in the rows. Needs to be called separately for every
-    /// result set. None if query could not result anything.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use tiberius::Config;
-    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
-    /// # use std::env;
-    /// # #[tokio::main]
-    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
-    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
-    /// # );
-    /// # let config = Config::from_ado_string(&c_str)?;
-    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
-    /// # tcp.set_nodelay(true)?;
-    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
-    /// let mut result_set = client
-    ///     .query(
-    ///         "SELECT 1 AS foo; SELECT 2 AS bar",
-    ///         &[&1i32, &2i32, &3i32],
-    ///     )
-    ///     .await?;
-    ///
-    /// let columns = result_set.columns().unwrap();
-    /// assert_eq!("foo", columns[0].name());
-    ///
-    /// result_set.next_resultset();
-    ///
-    /// let columns = result_set.columns().unwrap();
-    /// assert_eq!("bar", columns[0].name());
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn columns(&'a self) -> Option<&[Column]> {
-        self.stream.columns()
-    }
-
-    /// Returns `true` if stream has more result sets available. Must be called
-    /// before polling again to get results from the next query.
-    pub fn next_resultset(&mut self) -> bool {
-        if self.stream.state == QueryStreamState::Initial {
-            true
-        } else if self.stream.state == QueryStreamState::HasNext {
-            self.stream.state = QueryStreamState::Initial;
-
-            true
-        } else {
-            false
-        }
+    pub(crate) async fn forward_to_metadata(&mut self) -> crate::Result<()> {
+        self.stream.forward_to_metadata().await
     }
 
     /// Collects results from all queries in the stream into memory in the order
     /// of querying.
     pub async fn into_results(mut self) -> crate::Result<Vec<Vec<Row>>> {
-        if self.stream.state == QueryStreamState::Done {
-            Ok(Vec::new())
-        } else {
-            let first: Vec<Row> = self.by_ref().try_collect().await?;
-            let mut results = vec![first];
+        let mut results: Vec<Vec<Row>> = Vec::new();
+        let mut result: Option<Vec<Row>> = None;
 
-            while self.next_resultset() {
-                results.push(self.by_ref().try_collect().await?);
+        while let Some(item) = self.stream.try_next().await? {
+            match (item, &mut result) {
+                (QueryItem::Row(row), None) => {
+                    result.insert({
+                        let mut result = Vec::new();
+                        result.push(row);
+                        result
+                    });
+                }
+                (QueryItem::Row(row), Some(ref mut result)) => result.push(row),
+                (QueryItem::Metadata(_), None) => {
+                    result.insert(Vec::new());
+                }
+                (QueryItem::Metadata(_), ref mut previous_result) => {
+                    results.push(previous_result.take().unwrap());
+                    result = None;
+                }
             }
-
-            Ok(results)
         }
+
+        if let Some(result) = result {
+            results.push(result);
+        }
+
+        Ok(results)
     }
 
     /// Collects the output of the first query, dropping any further
@@ -177,7 +145,7 @@ impl<'a> QueryResult<'a> {
 }
 
 impl<'a> Stream for QueryResult<'a> {
-    type Item = crate::Result<Row>;
+    type Item = crate::Result<QueryItem>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.get_mut().stream).poll_next(cx)

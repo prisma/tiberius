@@ -170,8 +170,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
 
         let ts = TokenStream::new(&mut self.connection);
         let mut result = QueryResult::new(ts.try_unfold());
-
-        result.fetch_metadata().await?;
+        result.forward_to_metadata().await?;
 
         Ok(result)
     }
@@ -221,9 +220,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         self.connection.send(PacketHeader::batch(id), req).await?;
 
         let ts = TokenStream::new(&mut self.connection);
-        let mut result = QueryResult::new(ts.try_unfold());
 
-        result.fetch_metadata().await?;
+        let mut result = QueryResult::new(ts.try_unfold());
+        result.forward_to_metadata().await?;
 
         Ok(result)
     }

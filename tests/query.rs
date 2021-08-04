@@ -1,10 +1,10 @@
 use futures::{lock::Mutex, AsyncRead, AsyncWrite};
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::TryStreamExt;
 use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{numeric::Numeric, xml::XmlData, ColumnType, Result};
+use tiberius::{numeric::Numeric, xml::XmlData, ColumnType, QueryItem, Result};
 use uuid::Uuid;
 
 use runtimes_macro::test_on_runtimes;
@@ -486,14 +486,18 @@ where
         )
         .await?;
 
-    while let Some(x) = stream.by_ref().try_next().await? {
-        assert_eq!(Some("a".repeat(4001).as_str()), x.get(0));
-    }
-
-    stream.next_resultset();
-
-    while let Some(x) = stream.by_ref().try_next().await? {
-        assert_eq!(Some("b".repeat(2095).as_str()), x.get(0))
+    while let Some(item) = stream.try_next().await? {
+        match item {
+            QueryItem::Metadata(_) => {
+                continue;
+            }
+            QueryItem::Row(row) if row.result_index() == 0 => {
+                assert_eq!(Some("a".repeat(4001).as_str()), row.get(0));
+            }
+            QueryItem::Row(row) => {
+                assert_eq!(Some("b".repeat(2095).as_str()), row.get(0));
+            }
+        }
     }
 
     Ok(())
@@ -504,23 +508,15 @@ async fn multiple_stored_procedure_functions<S>(mut conn: tiberius::Client<S>) -
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
-    let mut stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'; EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1'", &[]).await?;
+    let stream = conn.query("EXECUTE sp_executesql N'SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1'; EXECUTE sp_executesql N'SELECT 2 UNION ALL SELECT 2'", &[]).await?;
 
     let rows: Result<Vec<i32>> = stream
-        .by_ref()
-        .map_ok(|x| x.get::<i32, _>(0).unwrap())
+        .try_filter_map(|item| async move { Ok(item.into_row()) })
+        .map_ok(|row| row.get::<i32, _>(0).unwrap())
         .try_collect()
         .await;
 
-    assert_eq!(rows?, vec![1; 3]);
-    assert!(stream.next_resultset());
-
-    let rows: Result<Vec<i32>> = stream
-        .map_ok(|x| x.get::<i32, _>(0).unwrap())
-        .try_collect()
-        .await;
-
-    assert_eq!(rows?, vec![1; 2]);
+    assert_eq!(rows?, vec![1, 1, 1, 2, 2]);
 
     Ok(())
 }
@@ -534,22 +530,22 @@ where
         .query("SELECT 'a' AS first; SELECT 'b' AS second;", &[])
         .await?;
 
-    assert_eq!("first", stream.columns().unwrap()[0].name());
-
-    while let Some(x) = stream.by_ref().try_next().await? {
-        assert_eq!(Some("a"), x.get(0))
+    while let Some(item) = stream.try_next().await? {
+        match item {
+            QueryItem::Metadata(meta) if meta.result_index() == 0 => {
+                assert_eq!("first", meta.columns()[0].name());
+            }
+            QueryItem::Row(row) if row.result_index() == 0 => {
+                assert_eq!(Some("a"), row.get(0))
+            }
+            QueryItem::Metadata(meta) => {
+                assert_eq!("second", meta.columns()[0].name());
+            }
+            QueryItem::Row(row) => {
+                assert_eq!(Some("b"), row.get(0))
+            }
+        }
     }
-
-    assert_eq!("first", stream.columns().unwrap()[0].name());
-
-    assert!(stream.next_resultset());
-    assert_eq!("second", stream.columns().unwrap()[0].name());
-
-    while let Some(x) = stream.by_ref().try_next().await? {
-        assert_eq!(Some("b"), x.get(0))
-    }
-
-    assert_eq!("second", stream.columns().unwrap()[0].name());
 
     Ok(())
 }
@@ -825,8 +821,11 @@ where
             )
             .await?;
 
-        while let Some(x) = stream.try_next().await? {
-            assert_eq!(Some("a".repeat(8000).as_str()), x.get(0))
+        while let Some(item) = stream.try_next().await? {
+            if let QueryItem::Row(row) = item {
+                assert_eq!(Some("a".repeat(8000).as_str()), row.get(0));
+                break;
+            }
         }
     }
 
@@ -874,9 +873,11 @@ where
 
     let mut res: Vec<Option<i32>> = Vec::new();
 
-    while let Some(row) = stream.try_next().await? {
-        for i in 0..expected_results.len() {
-            res.push(row.get(i))
+    while let Some(item) = stream.try_next().await? {
+        if let QueryItem::Row(row) = item {
+            for i in 0..expected_results.len() {
+                res.push(row.get(i))
+            }
         }
     }
 
@@ -1861,11 +1862,16 @@ where
 
     conn.simple_query(&q).await?;
 
-    let rs = conn.simple_query(format!("EXEC {}", proc)).await?;
-    let col = rs.columns().and_then(|c| c.first());
+    let mut rs = conn.simple_query(format!("EXEC {}", proc)).await?;
 
-    assert_eq!(Some("col"), col.map(|c| c.name()));
-    assert_eq!(Some(ColumnType::Intn), col.map(|c| c.column_type()));
+    while let Some(item) = rs.try_next().await? {
+        if let QueryItem::Metadata(meta) = item {
+            let col = meta.columns().first();
+
+            assert_eq!(Some("col"), col.map(|c| c.name()));
+            assert_eq!(Some(ColumnType::Intn), col.map(|c| c.column_type()));
+        }
+    }
 
     Ok(())
 }
