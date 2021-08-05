@@ -1977,22 +1977,42 @@ where
         .await?;
 
     // Nothing is fetched, the first result set starts.
-    let cols = stream.columns().await?;
+    let cols = stream.columns().await?.unwrap();
     assert_eq!("first", cols[0].name());
 
     // Move over the metadata.
     stream.try_next().await?;
 
     // We're in the first row, seeing the metadata for that set.
-    let cols = stream.columns().await?;
+    let cols = stream.columns().await?.unwrap();
     assert_eq!("first", cols[0].name());
 
     // Move over the only row in the first set.
     stream.try_next().await?;
 
     // End of the first set, getting the metadata by peaking the next item.
-    let cols = stream.columns().await?;
+    let cols = stream.columns().await?.unwrap();
     assert_eq!("second", cols[0].name());
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn into_row_stream_should_work<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let stream = conn
+        .query("SELECT @P1 AS first; SELECT @P2 AS second", &[&1i32, &2i32])
+        .await?;
+
+    let mut stream = stream.into_row_stream();
+
+    let row = stream.try_next().await?.unwrap();
+    assert_eq!(Some(1), row.get(0));
+
+    let row = stream.try_next().await?.unwrap();
+    assert_eq!(Some(2), row.get(0));
 
     Ok(())
 }

@@ -61,7 +61,7 @@ impl<'a> QueryStream<'a> {
         Ok(())
     }
 
-    pub(crate) async fn metadata(&mut self) -> crate::Result<&[Column]> {
+    pub(crate) async fn metadata(&mut self) -> crate::Result<Option<&[Column]>> {
         use ReceivedToken::*;
 
         loop {
@@ -91,7 +91,7 @@ impl<'a> QueryStream<'a> {
             }
         }
 
-        Ok(self.columns.as_ref().unwrap())
+        Ok(self.columns.as_ref().map(|c| c.as_slice()))
     }
 }
 

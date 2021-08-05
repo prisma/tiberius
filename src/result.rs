@@ -123,26 +123,26 @@ impl<'a> QueryResult<'a> {
     ///     .await?;
     ///
     /// // Nothing is fetched, the first result set starts.
-    /// let cols = stream.columns().await?;
+    /// let cols = stream.columns().await?.unwrap();
     /// assert_eq!("first", cols[0].name());
     ///
     /// // Move over the metadata.
     /// stream.try_next().await?;
     ///
     /// // We're in the first row, seeing the metadata for that set.
-    /// let cols = stream.columns().await?;
+    /// let cols = stream.columns().await?.unwrap();
     /// assert_eq!("first", cols[0].name());
     ///
     /// // Move over the only row in the first set.
     /// stream.try_next().await?;
     ///
     /// // End of the first set, getting the metadata by peaking the next item.
-    /// let cols = stream.columns().await?;
+    /// let cols = stream.columns().await?.unwrap();
     /// assert_eq!("second", cols[0].name());
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn columns(&mut self) -> crate::Result<&[Column]> {
+    pub async fn columns(&mut self) -> crate::Result<Option<&[Column]>> {
         self.stream.metadata().await
     }
 
@@ -194,6 +194,18 @@ impl<'a> QueryResult<'a> {
         let mut results = self.into_first_result().await?.into_iter();
 
         Ok(results.next())
+    }
+
+    /// Convert the stream into a stream of rows, skipping metadata items.
+    pub fn into_row_stream(self) -> BoxStream<'a, crate::Result<Row>> {
+        let s = self.stream.try_filter_map(|item| async {
+            match item {
+                QueryItem::Row(row) => Ok(Some(row)),
+                QueryItem::Metadata(_) => Ok(None),
+            }
+        });
+
+        Box::pin(s)
     }
 }
 
