@@ -6,7 +6,7 @@ use crate::{
 use std::{fmt::Display, sync::Arc};
 
 /// A column of data from a query.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Column {
     pub(crate) name: String,
     pub(crate) column_type: ColumnType,

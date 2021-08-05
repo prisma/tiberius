@@ -2,7 +2,7 @@ pub use crate::tds::stream::{QueryItem, ResultMetadata};
 use crate::{
     client::Connection,
     tds::stream::{QueryStream, ReceivedToken, TokenStream},
-    Row,
+    Column, Row,
 };
 use futures::{stream::BoxStream, AsyncRead, AsyncWrite, Stream, TryStreamExt};
 use std::{fmt::Debug, pin::Pin, task};
@@ -91,6 +91,59 @@ impl<'a> QueryResult<'a> {
 
     pub(crate) async fn forward_to_metadata(&mut self) -> crate::Result<()> {
         self.stream.forward_to_metadata().await
+    }
+
+    /// The list of columns either for the current result set, or for the next
+    /// one. If the stream is just created, or if the next item in the stream
+    /// contains metadata, the metadata will be taken from the stream. Otherwise
+    /// the columns will be returned from the cache and reflect on the current
+    /// result set.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tiberius::Config;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
+    /// # use std::env;
+    /// # use futures::TryStreamExt;
+    /// # #[tokio::main]
+    /// # async fn main() -> anyhow::Result<()> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let config = Config::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let mut stream = client
+    ///     .query(
+    ///         "SELECT @P1 AS first; SELECT @P2 AS second",
+    ///         &[&1i32, &2i32],
+    ///     )
+    ///     .await?;
+    ///
+    /// // Nothing is fetched, the first result set starts.
+    /// let cols = stream.columns().await?;
+    /// assert_eq!("first", cols[0].name());
+    ///
+    /// // Move over the metadata.
+    /// stream.try_next().await?;
+    ///
+    /// // We're in the first row, seeing the metadata for that set.
+    /// let cols = stream.columns().await?;
+    /// assert_eq!("first", cols[0].name());
+    ///
+    /// // Move over the only row in the first set.
+    /// stream.try_next().await?;
+    ///
+    /// // End of the first set, getting the metadata by peaking the next item.
+    /// let cols = stream.columns().await?;
+    /// assert_eq!("second", cols[0].name());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn columns(&mut self) -> crate::Result<&[Column]> {
+        self.stream.metadata().await
     }
 
     /// Collects results from all queries in the stream into memory in the order

@@ -1832,7 +1832,8 @@ where
         EXEC sp_execute @SQL
     "#;
 
-    let res = conn.simple_query(q).await?.into_results().await;
+    let res = conn.simple_query(q).await;
+
     assert!(res.is_err());
 
     Ok(())
@@ -1964,4 +1965,34 @@ fn application_name_should_be_set_correctly() -> Result<()> {
 
         Ok(())
     })
+}
+
+#[test_on_runtimes]
+async fn columns_fetch_should_work<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let mut stream = conn
+        .query("SELECT @P1 AS first; SELECT @P2 AS second", &[&1i32, &2i32])
+        .await?;
+
+    // Nothing is fetched, the first result set starts.
+    let cols = stream.columns().await?;
+    assert_eq!("first", cols[0].name());
+
+    // Move over the metadata.
+    stream.try_next().await?;
+
+    // We're in the first row, seeing the metadata for that set.
+    let cols = stream.columns().await?;
+    assert_eq!("first", cols[0].name());
+
+    // Move over the only row in the first set.
+    stream.try_next().await?;
+
+    // End of the first set, getting the metadata by peaking the next item.
+    let cols = stream.columns().await?;
+    assert_eq!("second", cols[0].name());
+
+    Ok(())
 }

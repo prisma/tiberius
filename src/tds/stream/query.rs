@@ -43,16 +43,55 @@ impl<'a> QueryStream<'a> {
     /// error.
     pub(crate) async fn forward_to_metadata(&mut self) -> crate::Result<()> {
         loop {
-            match Pin::new(&mut self.token_stream).peek().await {
-                Some(Ok(ReceivedToken::NewResultset(_))) => break,
-                Some(Ok(_)) => {
+            let item = Pin::new(&mut self.token_stream)
+                .peek()
+                .await
+                .map(|r| r.as_ref().map_err(|e| e.clone()))
+                .transpose()?;
+
+            match item {
+                Some(ReceivedToken::NewResultset(_)) => break,
+                Some(_) => {
                     self.token_stream.try_next().await?;
                 }
-                _ => break,
+                None => break,
             }
         }
 
         Ok(())
+    }
+
+    pub(crate) async fn metadata(&mut self) -> crate::Result<&[Column]> {
+        use ReceivedToken::*;
+
+        loop {
+            let item = Pin::new(&mut self.token_stream)
+                .peek()
+                .await
+                .map(|r| r.as_ref().map_err(|e| e.clone()))
+                .transpose()?;
+
+            match item {
+                Some(token) => match token {
+                    NewResultset(metadata) => {
+                        self.columns = Some(Arc::new(metadata.columns().collect()));
+                        break;
+                    }
+                    Row(_) => {
+                        break;
+                    }
+                    _ => {
+                        self.token_stream.try_next().await?;
+                        continue;
+                    }
+                },
+                None => {
+                    break;
+                }
+            }
+        }
+
+        Ok(self.columns.as_ref().unwrap())
     }
 }
 
