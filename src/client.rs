@@ -9,7 +9,10 @@ pub(crate) use connection::*;
 
 use crate::{
     result::ExecuteResult,
-    tds::{codec, stream::{TokenStream, QueryStream}},
+    tds::{
+        codec,
+        stream::{QueryStream, TokenStream},
+    },
     SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
