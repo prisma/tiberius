@@ -1,5 +1,11 @@
 # Changes
 
+## Version 0.6.0
+
+- Refactor stream handling to something more rusty (#166). This is a breaking
+  change, if relying on the asynchronous stream handling of QueryResult. Please
+  refer to the updated documentation.
+
 ## Version 0.5.16
 
 - Allow setting application name per connection (#161)
