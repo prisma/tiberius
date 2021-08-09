@@ -13,10 +13,11 @@ use std::{
 };
 
 /// A set of `Streams` of [`QueryItem`] values, which can be either result
-/// metadata or a row, resulting from a `SELECT` query. The `QueryStream` needs
-/// to be polled empty before sending another query to the [`Client`], failing
-/// to do so causes a flush before the next query, slowing it down in an
-/// undeterministic way.
+/// metadata or a row.
+///
+/// The `QueryStream` needs to be polled empty before sending another query to
+/// the [`Client`], failing to do so causes a flush before the next query,
+/// slowing it down in an undeterministic way.
 ///
 /// Every stream starts with metadata, describing the structure of the incoming
 /// rows, e.g. the columns in the order they are presented in every row.
@@ -294,8 +295,9 @@ impl ResultMetadata {
         &self.columns
     }
 
-    /// The number of reult set, an incrementing value starting from zero, which
-    /// gives an indication of the position of the result set in the stream.
+    /// The number of the result set, an incrementing value starting from zero,
+    /// which gives an indication of the position of the result set in the
+    /// stream.
     pub fn result_index(&self) -> usize {
         self.result_index
     }
@@ -306,7 +308,7 @@ impl ResultMetadata {
 pub enum QueryItem {
     /// A single row of data.
     Row(Row),
-    /// Information of the rows that arrive afterwards.
+    /// Information of the upcoming row data.
     Metadata(ResultMetadata),
 }
 

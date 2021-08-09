@@ -291,7 +291,8 @@ impl Row {
         &self.columns
     }
 
-    /// The result set number, starting from zero and increasing if the stream has more than one result.
+    /// The result set number, starting from zero and increasing if the stream
+    /// has results from more than one query.
     pub fn result_index(&self) -> usize {
         self.result_index
     }
