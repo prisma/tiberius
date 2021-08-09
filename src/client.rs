@@ -8,8 +8,11 @@ pub use config::*;
 pub(crate) use connection::*;
 
 use crate::{
-    result::{ExecuteResult, QueryResult},
-    tds::{codec, stream::TokenStream},
+    result::ExecuteResult,
+    tds::{
+        codec,
+        stream::{QueryStream, TokenStream},
+    },
     SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
@@ -119,7 +122,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// Useful for `SELECT` statements. The `query` can define the parameter
     /// placement by annotating them with `@PN`, where N is the index of the
     /// parameter, starting from `1`. If executing multiple queries at a time,
-    /// delimit them with `;` and refer to [`QueryResult`] on proper stream
+    /// delimit them with `;` and refer to [`QueryStream`] on proper stream
     /// handling.
     ///
     /// For mapping of Rust types when writing, see the documentation for
@@ -151,14 +154,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # }
     /// ```
     ///
-    /// [`QueryResult`]: struct.QueryResult.html
+    /// [`QueryStream`]: struct.QueryStream.html
     /// [`ToSql`]: trait.ToSql.html
     /// [`FromSql`]: trait.FromSql.html
     pub async fn query<'a, 'b>(
         &'a mut self,
         query: impl Into<Cow<'b, str>>,
         params: &'b [&'b dyn ToSql],
-    ) -> crate::Result<QueryResult<'a>>
+    ) -> crate::Result<QueryStream<'a>>
     where
         'a: 'b,
     {
@@ -169,9 +172,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             .await?;
 
         let ts = TokenStream::new(&mut self.connection);
-        let mut result = QueryResult::new(ts.try_unfold());
-
-        result.fetch_metadata().await?;
+        let mut result = QueryStream::new(ts.try_unfold());
+        result.forward_to_metadata().await?;
 
         Ok(result)
     }
@@ -209,7 +211,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     pub async fn simple_query<'a, 'b>(
         &'a mut self,
         query: impl Into<Cow<'b, str>>,
-    ) -> crate::Result<QueryResult<'a>>
+    ) -> crate::Result<QueryStream<'a>>
     where
         'a: 'b,
     {
@@ -221,9 +223,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         self.connection.send(PacketHeader::batch(id), req).await?;
 
         let ts = TokenStream::new(&mut self.connection);
-        let mut result = QueryResult::new(ts.try_unfold());
 
-        result.fetch_metadata().await?;
+        let mut result = QueryStream::new(ts.try_unfold());
+        result.forward_to_metadata().await?;
 
         Ok(result)
     }

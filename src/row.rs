@@ -6,7 +6,7 @@ use crate::{
 use std::{fmt::Display, sync::Arc};
 
 /// A column of data from a query.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Column {
     pub(crate) name: String,
     pub(crate) column_type: ColumnType,
@@ -234,6 +234,7 @@ impl From<&TypeInfo> for ColumnType {
 pub struct Row {
     pub(crate) columns: Arc<Vec<Column>>,
     pub(crate) data: TokenRow,
+    pub(crate) result_index: usize,
 }
 
 pub trait QueryIdx
@@ -288,6 +289,12 @@ impl Row {
     /// ```
     pub fn columns(&self) -> &[Column] {
         &self.columns
+    }
+
+    /// The result set number, starting from zero and increasing if the stream
+    /// has results from more than one query.
+    pub fn result_index(&self) -> usize {
+        self.result_index
     }
 
     /// Returns the number of columns in the row.

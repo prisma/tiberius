@@ -1,7 +1,7 @@
 use crate::{
     error::Error,
     tds::codec::{FixedLenType, TypeInfo, VarLenType},
-    ColumnData, SqlReadBytes,
+    Column, ColumnData, ColumnType, SqlReadBytes,
 };
 use enumflags2::{bitflags, BitFlags};
 
@@ -159,6 +159,13 @@ impl TokenColMetaData {
         }
 
         Ok(TokenColMetaData { columns })
+    }
+
+    pub(crate) fn columns<'a>(&'a self) -> impl Iterator<Item = Column> + 'a {
+        self.columns.iter().map(|x| Column {
+            name: x.col_name.clone(),
+            column_type: ColumnType::from(&x.base.ty),
+        })
     }
 }
 
