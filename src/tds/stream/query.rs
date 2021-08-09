@@ -12,7 +12,82 @@ use std::{
     task::{self, Poll},
 };
 
-/// A stream of rows, needed for queries returning data.
+/// A set of `Streams` of [`QueryItem`] values, which can be either result
+/// metadata or a row, resulting from a `SELECT` query. The `QueryStream` needs
+/// to be polled empty before sending another query to the [`Client`], failing
+/// to do so causes a flush before the next query, slowing it down in an
+/// undeterministic way.
+///
+/// Every stream starts with metadata, describing the structure of the incoming
+/// rows, e.g. the columns in the order they are presented in every row.
+///
+/// If after consuming rows from the stream, another metadata result arrives, it
+/// means the stream has multiple results from different queries. This new
+/// metadata item will describe the next rows from here forwards.
+///
+/// If having one set of results in the response, using [`into_row_stream`]
+/// might be more convenient to use.
+///
+/// The struct provides non-streaming APIs with [`into_results`],
+/// [`into_first_result`] and [`into_row`].
+///
+/// # Example
+///
+/// ```
+/// # use tiberius::{Config, QueryItem};
+/// # use tokio_util::compat::TokioAsyncWriteCompatExt;
+/// # use std::env;
+/// # use futures::TryStreamExt;
+/// # #[tokio::main]
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+/// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+/// # );
+/// # let config = Config::from_ado_string(&c_str)?;
+/// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+/// # tcp.set_nodelay(true)?;
+/// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+/// let mut stream = client
+///     .query(
+///         "SELECT @P1 AS first; SELECT @P2 AS second",
+///         &[&1i32, &2i32],
+///     )
+///     .await?;
+///
+/// // The stream consists of four items, in the following order:
+/// // - Metadata from `SELECT 1`
+/// // - The only resulting row from `SELECT 1`
+/// // - Metadata from `SELECT 2`
+/// // - The only resulting row from `SELECT 2`
+/// while let Some(item) = stream.try_next().await? {
+///     match item {
+///         // our first item is the column data always
+///         QueryItem::Metadata(meta) if meta.result_index() == 0 => {
+///             // the first result column info can be handled here
+///         }
+///         // ... and from there on from 0..N rows
+///         QueryItem::Row(row) if row.result_index() == 0 => {
+///             assert_eq!(Some(1), row.get(0));
+///         }
+///         // the second result set returns first another metadata item
+///         QueryItem::Metadata(meta) => {
+///             // .. handling
+///         }
+///         // ...and, again, we get rows from the second resultset
+///         QueryItem::Row(row) => {
+///             assert_eq!(Some(2), row.get(0));
+///         }
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+/// [`Client`]: struct.Client.html
+/// [`into_row_stream`]: struct.QueryStream.html#method.into_row_stream
+/// [`into_results`]: struct.QueryStream.html#method.into_results
+/// [`into_first_result`]: struct.QueryStream.html#method.into_first_result
+/// [`into_row`]: struct.QueryStream.html#method.into_row
 pub struct QueryStream<'a> {
     token_stream: Peekable<BoxStream<'a, crate::Result<ReceivedToken>>>,
     columns: Option<Arc<Vec<Column>>>,
@@ -21,7 +96,7 @@ pub struct QueryStream<'a> {
 
 impl<'a> Debug for QueryStream<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Querystream")
+        f.debug_struct("QueryStream")
             .field(
                 "token_stream",
                 &"BoxStream<'a, crate::Result<ReceivedToken>>",
@@ -61,7 +136,56 @@ impl<'a> QueryStream<'a> {
         Ok(())
     }
 
-    pub(crate) async fn metadata(&mut self) -> crate::Result<Option<&[Column]>> {
+    /// The list of columns either for the current result set, or for the next
+    /// one. If the stream is just created, or if the next item in the stream
+    /// contains metadata, the metadata will be taken from the stream. Otherwise
+    /// the columns will be returned from the cache and reflect on the current
+    /// result set.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tiberius::Config;
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
+    /// # use std::env;
+    /// # use futures::TryStreamExt;
+    /// # #[tokio::main]
+    /// # async fn main() -> anyhow::Result<()> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let config = Config::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let mut stream = client
+    ///     .query(
+    ///         "SELECT @P1 AS first; SELECT @P2 AS second",
+    ///         &[&1i32, &2i32],
+    ///     )
+    ///     .await?;
+    ///
+    /// // Nothing is fetched, the first result set starts.
+    /// let cols = stream.columns().await?.unwrap();
+    /// assert_eq!("first", cols[0].name());
+    ///
+    /// // Move over the metadata.
+    /// stream.try_next().await?;
+    ///
+    /// // We're in the first row, seeing the metadata for that set.
+    /// let cols = stream.columns().await?.unwrap();
+    /// assert_eq!("first", cols[0].name());
+    ///
+    /// // Move over the only row in the first set.
+    /// stream.try_next().await?;
+    ///
+    /// // End of the first set, getting the metadata by peaking the next item.
+    /// let cols = stream.columns().await?.unwrap();
+    /// assert_eq!("second", cols[0].name());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn columns(&mut self) -> crate::Result<Option<&[Column]>> {
         use ReceivedToken::*;
 
         loop {
@@ -92,6 +216,68 @@ impl<'a> QueryStream<'a> {
         }
 
         Ok(self.columns.as_ref().map(|c| c.as_slice()))
+    }
+
+    /// Collects results from all queries in the stream into memory in the order
+    /// of querying.
+    pub async fn into_results(mut self) -> crate::Result<Vec<Vec<Row>>> {
+        let mut results: Vec<Vec<Row>> = Vec::new();
+        let mut result: Option<Vec<Row>> = None;
+
+        while let Some(item) = self.try_next().await? {
+            match (item, &mut result) {
+                (QueryItem::Row(row), None) => {
+                    result.insert({
+                        let mut result = Vec::new();
+                        result.push(row);
+                        result
+                    });
+                }
+                (QueryItem::Row(row), Some(ref mut result)) => result.push(row),
+                (QueryItem::Metadata(_), None) => {
+                    result.insert(Vec::new());
+                }
+                (QueryItem::Metadata(_), ref mut previous_result) => {
+                    results.push(previous_result.take().unwrap());
+                    result = None;
+                }
+            }
+        }
+
+        if let Some(result) = result {
+            results.push(result);
+        }
+
+        Ok(results)
+    }
+
+    /// Collects the output of the first query, dropping any further
+    /// results.
+    pub async fn into_first_result(self) -> crate::Result<Vec<Row>> {
+        let mut results = self.into_results().await?.into_iter();
+        let rows = results.next().unwrap_or_else(Vec::new);
+
+        Ok(rows)
+    }
+
+    /// Collects the first row from the output of the first query, dropping any
+    /// further rows.
+    pub async fn into_row(self) -> crate::Result<Option<Row>> {
+        let mut results = self.into_first_result().await?.into_iter();
+
+        Ok(results.next())
+    }
+
+    /// Convert the stream into a stream of rows, skipping metadata items.
+    pub fn into_row_stream(self) -> BoxStream<'a, crate::Result<Row>> {
+        let s = self.try_filter_map(|item| async {
+            match item {
+                QueryItem::Row(row) => Ok(Some(row)),
+                QueryItem::Metadata(_) => Ok(None),
+            }
+        });
+
+        Box::pin(s)
     }
 }
 
