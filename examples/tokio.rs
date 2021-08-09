@@ -20,8 +20,11 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = Client::connect(config, tcp.compat_write()).await?;
 
-    let mut rs = client.simple_query("").await?;
-    println!("{:?}", rs.columns().await?); //None
+    let stream = client.query("SELECT @P1", &[&1i32]).await?;
+    let row = stream.into_row().await?.unwrap();
+
+    println!("{:?}", row);
+    assert_eq!(Some(1), row.get(0));
 
     Ok(())
 }
