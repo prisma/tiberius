@@ -54,7 +54,7 @@ Tiberius does not rely on any protocol when connecting to an SQL Server instance
 
 Currently there are good async implementations for TCP in the [async-std](https://crates.io/crates/async-std), [Tokio](https://crates.io/crates/tokio) and [Smol](https://crates.io/crates/smol) projects. To be able to use them together with Tiberius on Windows platforms with SQL Server, the TCP should be enabled in the [server settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx) (disabled by default). In the offficial [Docker image](https://hub.docker.com/_/microsoft-mssql-server) TCP is is enabled by default.
 
-Named pipes are coming to Tokio in the near future. The code in the [pull request](https://github.com/tokio-rs/tokio/pull/3388) is already tested and should work. Examples will be added when the feature lands to a stable Tokio release.
+Named pipes should work by using the [NamedPipeClient](https://docs.rs/tokio/1.9.0/tokio/net/windows/named_pipe/struct.NamedPipeClient.html) from the latest Tokio versions.
 
 The shared memory protocol is not documented and seems there are no Rust crates implementing it.
 
