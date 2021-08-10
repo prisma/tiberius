@@ -72,6 +72,7 @@ where
         meta: BulkLoadMetadata<'a>,
     ) -> crate::Result<Self> {
         let packet_id = connection.context_mut().next_packet_id();
+        let collation = connection.context().collation();
         let mut buf = BytesMut::new();
 
         meta.encode(&mut buf)?;

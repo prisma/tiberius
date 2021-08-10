@@ -212,7 +212,7 @@ uint_enum! {
 
 impl Encode<BytesMut> for TypeInfo {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        match dbg!(self.inner) {
+        match self.inner {
             TypeInfoInner::FixedLen(ty) => {
                 dst.put_u8(ty as u8);
             }
@@ -296,30 +296,30 @@ impl TypeInfo {
     /// A datetime2 value.
     #[cfg(feature = "tds73")]
     pub fn datetime2() -> Self {
-        Self::varlen(VarLenType::Datetime2, 8, None)
+        Self::varlen(VarLenType::Datetime2, 8)
     }
 
     /// A uniqueidentifier value.
     pub fn guid() -> Self {
-        Self::varlen(VarLenType::Guid, 16, None)
+        Self::varlen(VarLenType::Guid, 16)
     }
 
     /// A date value.
     #[cfg(feature = "tds73")]
     pub fn date() -> Self {
-        Self::varlen(VarLenType::Daten, 3, None)
+        Self::varlen(VarLenType::Daten, 3)
     }
 
     /// A time value.
     #[cfg(feature = "tds73")]
     pub fn time() -> Self {
-        Self::varlen(VarLenType::Timen, 5, None)
+        Self::varlen(VarLenType::Timen, 5)
     }
 
     /// A time value.
     #[cfg(feature = "tds73")]
     pub fn datetimeoffset() -> Self {
-        Self::varlen(VarLenType::DatetimeOffsetn, 10, None)
+        Self::varlen(VarLenType::DatetimeOffsetn, 10)
     }
 
     /// A variable binary value. If length is limited and larger than 8000
@@ -330,7 +330,7 @@ impl TypeInfo {
             _ => u16::MAX,
         };
 
-        Self::varlen(VarLenType::BigVarBin, length as usize, None)
+        Self::varlen(VarLenType::BigVarBin, length as usize)
     }
 
     /// A binary value.
@@ -340,7 +340,7 @@ impl TypeInfo {
     /// - If length is more than 8000 bytes.
     pub fn binary(length: u16) -> Self {
         assert!(length <= 8000);
-        Self::varlen(VarLenType::BigBinary, length as usize, None)
+        Self::varlen(VarLenType::BigBinary, length as usize)
     }
 
     /// A variable string value. If length is limited and larger than 8000
@@ -351,7 +351,7 @@ impl TypeInfo {
             _ => u16::MAX,
         };
 
-        Self::varlen(VarLenType::BigVarChar, length as usize, None)
+        Self::varlen(VarLenType::BigVarChar, length as usize)
     }
 
     /// A variable UTF-16 string value. If length is limited and larger than
@@ -362,7 +362,7 @@ impl TypeInfo {
             _ => u16::MAX,
         };
 
-        Self::varlen(VarLenType::BigVarChar, length as usize, None)
+        Self::varlen(VarLenType::BigVarChar, length as usize)
     }
 
     /// A constant-size string value.
@@ -372,7 +372,7 @@ impl TypeInfo {
     /// - If length is more than 8000 characters.
     pub fn char(length: u16) -> Self {
         assert!(length <= 8000);
-        Self::varlen(VarLenType::BigChar, length as usize, None)
+        Self::varlen(VarLenType::BigChar, length as usize)
     }
 
     /// A constant-size UTF-16 string value.
@@ -382,22 +382,22 @@ impl TypeInfo {
     /// - If length is more than 4000 characters.
     pub fn nchar(length: u16) -> Self {
         assert!(length <= 4000);
-        Self::varlen(VarLenType::NChar, length as usize, None)
+        Self::varlen(VarLenType::NChar, length as usize)
     }
 
     /// A (deprecated) heap-allocated text storage.
     pub fn text() -> Self {
-        Self::varlen(VarLenType::Text, u32::MAX as usize, None)
+        Self::varlen(VarLenType::Text, u32::MAX as usize)
     }
 
     /// A (deprecated) heap-allocated UTF-16 text storage.
     pub fn ntext() -> Self {
-        Self::varlen(VarLenType::NText, u32::MAX as usize, None)
+        Self::varlen(VarLenType::NText, u32::MAX as usize)
     }
 
     /// A (deprecated) heap-allocated binary storage.
     pub fn image() -> Self {
-        Self::varlen(VarLenType::Image, u32::MAX as usize, None)
+        Self::varlen(VarLenType::Image, u32::MAX as usize)
     }
 
     /// Numeric data types that have fixed precision and scale. Decimal and
@@ -433,8 +433,8 @@ impl TypeInfo {
         Self { inner }
     }
 
-    fn varlen(ty: VarLenType, len: usize, collation: Option<Collation>) -> Self {
-        let cx = VarLenContext::new(ty, len, collation);
+    fn varlen(ty: VarLenType, len: usize) -> Self {
+        let cx = VarLenContext::new(ty, len, None);
         let inner = TypeInfoInner::VarLenSized(cx);
 
         Self { inner }

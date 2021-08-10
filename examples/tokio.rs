@@ -10,9 +10,9 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
     })
 });
 
-#[cfg(not(all(windows, feature = "sql-browser-tokio")))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let config = Config::from_ado_string(&CONN_STR)?;
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
@@ -20,32 +20,10 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = Client::connect(config, tcp.compat_write()).await?;
 
-    let stream = client.query("SELECT @P1", &[&1i32]).await?;
-    let row = stream.into_row().await?.unwrap();
+    let stream = client.query("SELECT * from test", &[]).await?;
+    let row = stream.into_row().await?;
 
     println!("{:?}", row);
-    assert_eq!(Some(1), row.get(0));
-
-    Ok(())
-}
-
-#[cfg(all(windows, feature = "sql-browser-tokio"))]
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    use tiberius::SqlBrowser;
-
-    let config = Config::from_ado_string(&CONN_STR)?;
-
-    let tcp = TcpStream::connect_named(&config).await?;
-    tcp.set_nodelay(true)?;
-
-    let mut client = Client::connect(config, tcp.compat_write()).await?;
-
-    let stream = client.query("SELECT @P1", &[&1i32]).await?;
-    let row = stream.into_row().await?.unwrap();
-
-    println!("{:?}", row);
-    assert_eq!(Some(1), row.get(0));
 
     Ok(())
 }

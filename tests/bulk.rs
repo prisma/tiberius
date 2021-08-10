@@ -4,7 +4,7 @@ use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{BulkLoadMetadata, ColumnFlag, IntoSql, Result, TokenRow, TypeInfo};
+use tiberius::{BulkLoadMetadata, ColumnFlag, IntoSql, Result, TokenRow, TypeInfo, TypeLength};
 
 use runtimes_macro::test_on_runtimes;
 
@@ -122,7 +122,7 @@ test_bulk_type!(float(
 
 test_bulk_type!(varchar_limited(
     "VARCHAR(255)",
-    TypeInfo::float(),
+    TypeInfo::varchar(TypeLength::Limited(255)),
     1000,
     vec!["aaaaaaaaaaaaaaaaaaaaaaa"; 1000].into_iter()
 ));

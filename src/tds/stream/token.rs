@@ -146,6 +146,11 @@ where
             TokenEnvChange::BeginTransaction(desc) => {
                 self.conn.context_mut().set_transaction_descriptor(desc);
             }
+            TokenEnvChange::SqlCollation { new, .. } => {
+                if let Some(collation) = new {
+                    self.conn.context_mut().set_collation(collation);
+                }
+            }
             TokenEnvChange::CommitTransaction
             | TokenEnvChange::RollbackTransaction
             | TokenEnvChange::DefectTransaction => {

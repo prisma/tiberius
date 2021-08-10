@@ -126,7 +126,7 @@ impl<'a> ColumnData<'a> {
     where
         R: SqlReadBytes + Unpin,
     {
-        let res = match &ctx.inner {
+        let res = match dbg!(&ctx.inner) {
             TypeInfoInner::FixedLen(fixed_ty) => fixed_len::decode(src, fixed_ty).await?,
             TypeInfoInner::VarLenSized(cx) => var_len::decode(src, cx).await?,
             TypeInfoInner::VarLenSizedPrecision { ty, scale, .. } => match ty {

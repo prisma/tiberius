@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
 
     client
         .execute(
-            "CREATE TABLE ##bulk_test1 (id INT IDENTITY PRIMARY KEY, content INT)",
+            "CREATE TABLE ##bulk_test1 (id INT IDENTITY PRIMARY KEY, content VARCHAR(255))",
             &[],
         )
         .await?;
@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     let pb = ProgressBar::new(count as u64);
 
-    for i in 0..count {
+    for i in vec!["aaaaaaaaaaaaaaaaaaaa"; 1000].into_iter() {
         let mut row = TokenRow::new();
         row.push(i.into_sql());
         req.send(row).await?;
