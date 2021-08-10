@@ -6,17 +6,17 @@ use tracing::{event, Level};
 use crate::{client::Connection, sql_read_bytes::SqlReadBytes, ExecuteResult};
 
 use super::{
-    BaseMetaDataColumn, Encode, MetaDataColumn, PacketHeader, PacketStatus, TokenColMetaData,
-    TokenDone, TokenRow, TypeInfo, HEADER_BYTES,
+    BaseMetaDataColumn, ColumnFlag, Encode, MetaDataColumn, PacketHeader, PacketStatus,
+    TokenColMetaData, TokenDone, TokenRow, TypeInfo, HEADER_BYTES,
 };
 
 /// Column metadata for a bulk load request.
 #[derive(Debug, Default, Clone)]
-pub struct BulkLoadMetadata {
-    columns: Vec<MetaDataColumn>,
+pub struct BulkLoadMetadata<'a> {
+    columns: Vec<MetaDataColumn<'a>>,
 }
 
-impl BulkLoadMetadata {
+impl<'a> BulkLoadMetadata<'a> {
     /// Creates a metadata with no columns specified.
     pub fn new() -> Self {
         Self::default()
@@ -24,10 +24,13 @@ impl BulkLoadMetadata {
 
     /// Add a column to the request. Order should be same as the order of data
     /// in the rows.
-    pub fn add_column(&mut self, name: &str, ty: TypeInfo) {
+    pub fn add_column<C>(&mut self, name: &'a str, ty: TypeInfo, flags: C)
+    where
+        C: Into<BitFlags<ColumnFlag>>,
+    {
         self.columns.push(MetaDataColumn {
             base: BaseMetaDataColumn {
-                flags: BitFlags::empty(),
+                flags: flags.into(),
                 ty,
             },
             col_name: name.into(),
@@ -39,7 +42,7 @@ impl BulkLoadMetadata {
     }
 }
 
-impl Encode<BytesMut> for BulkLoadMetadata {
+impl<'a> Encode<BytesMut> for BulkLoadMetadata<'a> {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         let cmd = TokenColMetaData {
             columns: self.columns,
@@ -66,7 +69,7 @@ where
 {
     pub(crate) fn new(
         connection: &'a mut Connection<S>,
-        meta: BulkLoadMetadata,
+        meta: BulkLoadMetadata<'a>,
     ) -> crate::Result<Self> {
         let packet_id = connection.context_mut().next_packet_id();
         let mut buf = BytesMut::new();

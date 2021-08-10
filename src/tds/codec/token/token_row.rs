@@ -1,3 +1,4 @@
+mod into_row;
 use crate::{
     tds::codec::{BufColumnData, ColumnData, Encode},
     SqlReadBytes, TokenType,
@@ -5,6 +6,7 @@ use crate::{
 use asynchronous_codec::BytesMut;
 use bytes::BufMut;
 use futures::io::AsyncReadExt;
+pub use into_row::IntoRow;
 
 /// A row of data.
 #[derive(Debug, Default, Clone)]

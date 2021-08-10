@@ -72,6 +72,7 @@ pub trait IntoSql: Send + Sync {
 
 into_sql!(self_,
           String: (ColumnData::String, Cow::from(self_));
+          &'static str: (ColumnData::String, Cow::from(self_));
           Vec<u8>: (ColumnData::Binary, Cow::from(self_));
           XmlData: (ColumnData::Xml, Cow::Owned(self_));
           bool: (ColumnData::Bit, self_);

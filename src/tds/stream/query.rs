@@ -371,7 +371,7 @@ impl<'a> Stream for QueryStream<'a> {
                         .columns
                         .iter()
                         .map(|x| Column {
-                            name: x.col_name.clone(),
+                            name: x.col_name.to_string(),
                             column_type: ColumnType::from(&x.base.ty),
                         })
                         .collect::<Vec<_>>();

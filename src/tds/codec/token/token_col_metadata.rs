@@ -1,4 +1,7 @@
-use std::{borrow::BorrowMut, fmt::Display};
+use std::{
+    borrow::{BorrowMut, Cow},
+    fmt::Display,
+};
 
 use crate::{
     error::Error,
@@ -10,17 +13,17 @@ use bytes::BufMut;
 use enumflags2::{bitflags, BitFlags};
 
 #[derive(Debug, Clone)]
-pub struct TokenColMetaData {
-    pub columns: Vec<MetaDataColumn>,
+pub struct TokenColMetaData<'a> {
+    pub columns: Vec<MetaDataColumn<'a>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct MetaDataColumn {
+pub struct MetaDataColumn<'a> {
     pub base: BaseMetaDataColumn,
-    pub col_name: String,
+    pub col_name: Cow<'a, str>,
 }
 
-impl Display for MetaDataColumn {
+impl<'a> Display for MetaDataColumn<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ", self.col_name)?;
 
@@ -76,6 +79,13 @@ impl Display for MetaDataColumn {
                 VarLenType::Text => write!(f, "text")?,
                 VarLenType::Image => write!(f, "image")?,
                 VarLenType::NText => write!(f, "ntext")?,
+                VarLenType::Intn => match ctx.len() {
+                    1 => write!(f, "tinyint")?,
+                    2 => write!(f, "smallint")?,
+                    4 => write!(f, "int")?,
+                    8 => write!(f, "bigint")?,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
             TypeInfoInner::VarLenSizedPrecision {
@@ -183,7 +193,7 @@ impl BaseMetaDataColumn {
     }
 }
 
-impl Encode<BytesMut> for TokenColMetaData {
+impl<'a> Encode<BytesMut> for TokenColMetaData<'a> {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         dst.put_u8(TokenType::ColMetaData as u8);
         dst.put_u16_le(self.columns.len() as u16);
@@ -196,7 +206,7 @@ impl Encode<BytesMut> for TokenColMetaData {
     }
 }
 
-impl Encode<BytesMut> for MetaDataColumn {
+impl<'a> Encode<BytesMut> for MetaDataColumn<'a> {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         dst.put_u32_le(0);
         self.base.encode(dst)?;
@@ -227,6 +237,7 @@ impl Encode<BytesMut> for BaseMetaDataColumn {
     }
 }
 
+/// A setting a column can hold.
 #[bitflags]
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -263,8 +274,7 @@ pub enum ColumnFlag {
     NullableUnknown = 1 << 15,
 }
 
-#[allow(dead_code)]
-impl TokenColMetaData {
+impl TokenColMetaData<'static> {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
         R: SqlReadBytes + Unpin,
@@ -275,7 +285,7 @@ impl TokenColMetaData {
         if column_count > 0 && column_count < 0xffff {
             for _ in 0..column_count {
                 let base = BaseMetaDataColumn::decode(src).await?;
-                let col_name = src.read_b_varchar().await?;
+                let col_name = Cow::from(src.read_b_varchar().await?);
 
                 columns.push(MetaDataColumn { base, col_name });
             }
@@ -283,10 +293,12 @@ impl TokenColMetaData {
 
         Ok(TokenColMetaData { columns })
     }
+}
 
-    pub(crate) fn columns<'a>(&'a self) -> impl Iterator<Item = Column> + 'a {
+impl<'a> TokenColMetaData<'a> {
+    pub(crate) fn columns(&'a self) -> impl Iterator<Item = Column> + 'a {
         self.columns.iter().map(|x| Column {
-            name: x.col_name.clone(),
+            name: x.col_name.to_string(),
             column_type: ColumnType::from(&x.base.ty),
         })
     }

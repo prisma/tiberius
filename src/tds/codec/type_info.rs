@@ -212,7 +212,7 @@ uint_enum! {
 
 impl Encode<BytesMut> for TypeInfo {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        match self.inner {
+        match dbg!(self.inner) {
             TypeInfoInner::FixedLen(ty) => {
                 dst.put_u8(ty as u8);
             }

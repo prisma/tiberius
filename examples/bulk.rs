@@ -1,6 +1,7 @@
+use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
 use std::env;
-use tiberius::{BulkLoadMetadata, Client, Config, IntoSql, TokenRow, TypeInfo};
+use tiberius::{BulkLoadMetadata, Client, ColumnFlag, Config, IntoSql, TokenRow, TypeInfo};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
@@ -21,17 +22,29 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = Client::connect(config, tcp.compat_write()).await?;
 
+    client
+        .execute(
+            "CREATE TABLE ##bulk_test1 (id INT IDENTITY PRIMARY KEY, content INT)",
+            &[],
+        )
+        .await?;
+
     let mut meta = BulkLoadMetadata::new();
-    meta.add_column("val", TypeInfo::int());
+    meta.add_column("content", TypeInfo::int(), ColumnFlag::Nullable.into());
 
-    let mut req = client.bulk_insert("bulk_test1", meta).await?;
+    let mut req = client.bulk_insert("##bulk_test1", meta).await?;
+    let count = 2000i32;
 
-    for i in [0, 1, 2, 3, 4, 5] {
+    let pb = ProgressBar::new(count as u64);
+
+    for i in 0..count {
         let mut row = TokenRow::new();
         row.push(i.into_sql());
-
         req.send(row).await?;
+        pb.inc(1);
     }
+
+    pb.finish_with_message("waiting...");
 
     let res = req.finalize().await?;
 

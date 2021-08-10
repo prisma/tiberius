@@ -279,11 +279,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn bulk_insert(
-        &mut self,
+    pub async fn bulk_insert<'a>(
+        &'a mut self,
         table: &str,
-        meta: BulkLoadMetadata,
-    ) -> crate::Result<BulkLoadRequest<'_, S>> {
+        meta: BulkLoadMetadata<'a>,
+    ) -> crate::Result<BulkLoadRequest<'a, S>> {
         // Start the bulk request
         self.connection.flush_stream().await?;
 
