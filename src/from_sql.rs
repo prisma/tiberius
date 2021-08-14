@@ -111,17 +111,6 @@ impl<'a> FromSql<'a> for &'a str {
     }
 }
 
-impl<'a> FromSql<'a> for String {
-    fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
-        match value {
-            ColumnData::String(s) => Ok(s.as_ref().map(|s| s.to_string())),
-            v => Err(crate::Error::Conversion(
-                format!("cannot interpret {:?} as a String value", v).into(),
-            )),
-        }
-    }
-}
-
 impl FromSqlOwned for Vec<u8> {
     fn from_sql_owned(value: ColumnData<'static>) -> crate::Result<Option<Self>> {
         match value {
@@ -137,17 +126,6 @@ impl<'a> FromSql<'a> for &'a [u8] {
     fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
         match value {
             ColumnData::Binary(b) => Ok(b.as_ref().map(|s| s.as_ref())),
-            v => Err(crate::Error::Conversion(
-                format!("cannot interpret {:?} as a &[u8] value", v).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> FromSql<'a> for Vec<u8> {
-    fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
-        match value {
-            ColumnData::Binary(b) => Ok(b.as_ref().map(|s| s.to_vec())),
             v => Err(crate::Error::Conversion(
                 format!("cannot interpret {:?} as a &[u8] value", v).into(),
             )),
