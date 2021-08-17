@@ -154,6 +154,7 @@ all = [
     "tds73",
     "sql-browser-async-std",
     "sql-browser-tokio",
+    "sql-browser-smol",
     "integrated-auth-gssapi",
     "rust_decimal",
     "bigdecimal"
