@@ -32,6 +32,11 @@ path = "tests/named-instance-tokio.rs"
 name = "named-instance-tokio"
 required-features = ["sql-browser-tokio"]
 
+[[test]]
+path = "tests/named-instance-smol.rs"
+name = "named-instance-smol"
+required-features = ["sql-browser-smol"]
+
 [dependencies]
 async-stream = "0.2"
 enumflags2 = "0.7"
@@ -108,6 +113,18 @@ default-features = false
 optional = true
 features = ["std"]
 
+[dependencies.async-io]
+version = "1.4.1"
+optional = true
+
+[dependencies.async-net]
+version = "1.4.1"
+optional = true
+
+[dependencies.futures-lite]
+version = "1.12.0"
+optional = true
+
 [dev-dependencies.tokio-util]
 version = "0.6"
 features = ["compat"]
@@ -147,5 +164,6 @@ tds73 = []
 docs = []
 sql-browser-async-std = ["async-std"]
 sql-browser-tokio = ["tokio", "tokio-util"]
+sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
 bigdecimal = [ "bigdecimal_", "num-bigint" ]
