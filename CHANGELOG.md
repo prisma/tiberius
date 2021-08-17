@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.6.1
+
+- SQL Browser for the smol runtime.
+
 ## Version 0.6.0
 
 - Refactor stream handling to something more rusty (#166). This is a breaking

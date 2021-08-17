@@ -45,6 +45,7 @@ things:
 | `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.          | `disabled` |
 | `sql-browser-async-std`  | SQL Browser implementation for the `TcpStream` of async-std.                          | `disabled` |
 | `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                              | `disabled` |
+| `sql-browser-smol`      | SQL Browser implementation for the `TcpStream` of smol.                              | `disabled` |
 | `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                          | `disabled` |
 | `vendored-openssl`       | On Linux and macOS platforms links statically against a vendored version of OpenSSL   | `disabled` |
 
