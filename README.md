@@ -32,8 +32,8 @@ A native Microsoft SQL Server (TDS) client for Rust.
 |    2005 | Should work   | With feature flag `tds73` disabled. |
 
 The system should work with the Docker and Azure versions of SQL Server without
-trouble. For installing with Windows systems, either TCP or named pipes protocols
-should be enabled for Tiberius to be able to connect.
+trouble. If using the Windows installer of SQL Server, either TCP or named pipes protocols
+should be enabled in the server settings for Tiberius to be able to connect.
 
 ### Feature flags
 
