@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.6.2
+
+- Improvement on waker calls. We used to wake the runtime too often, this should improve performance.
+
 ## Version 0.6.1
 
 - SQL Browser for the smol runtime.
