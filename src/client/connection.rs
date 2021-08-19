@@ -455,28 +455,31 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> futures::AsyncRead for Connection
         let size = buf.len();
 
         if this.buf.len() < size {
-            match ready!(Pin::new(&mut this).try_poll_next(cx)) {
-                Some(Ok(packet)) => {
-                    let (_, payload) = packet.into_parts();
-                    this.buf.extend(payload);
+            while let Some(item) = ready!(Pin::new(&mut this).try_poll_next(cx)) {
+                match item {
+                    Ok(packet) => {
+                        let (_, payload) = packet.into_parts();
+                        this.buf.extend(payload);
 
-                    if this.buf.len() < size {
-                        cx.waker().wake_by_ref();
-                        return Poll::Pending;
+                        if this.buf.len() >= size {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        return Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::BrokenPipe,
+                            e.to_string(),
+                        )))
                     }
                 }
-                Some(Err(e)) => {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::BrokenPipe,
-                        e.to_string(),
-                    )))
-                }
-                None => {
-                    return Poll::Ready(Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "No more packets in the wire",
-                    )))
-                }
+            }
+
+            // Got EOF before having all the data.
+            if this.buf.len() < size {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "No more packets in the wire",
+                )));
             }
         }
 
