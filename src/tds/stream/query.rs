@@ -228,11 +228,7 @@ impl<'a> QueryStream<'a> {
         while let Some(item) = self.try_next().await? {
             match (item, &mut result) {
                 (QueryItem::Row(row), None) => {
-                    result.insert({
-                        let mut result = Vec::new();
-                        result.push(row);
-                        result
-                    });
+                    result.insert(vec![row]);
                 }
                 (QueryItem::Row(row), Some(ref mut result)) => result.push(row),
                 (QueryItem::Metadata(_), None) => {

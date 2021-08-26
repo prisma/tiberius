@@ -161,7 +161,7 @@ impl TokenColMetaData {
         Ok(TokenColMetaData { columns })
     }
 
-    pub(crate) fn columns<'a>(&'a self) -> impl Iterator<Item = Column> + 'a {
+    pub(crate) fn columns(&self) -> impl Iterator<Item = Column> + '_ {
         self.columns.iter().map(|x| Column {
             name: x.col_name.clone(),
             column_type: ColumnType::from(&x.base.ty),
