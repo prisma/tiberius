@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.6.4
+
+- Use bundled bigint from bigdecimal
+
 ## Version 0.6.3
 
 - Bignum/bigint compilation problems fixed.
