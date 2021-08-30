@@ -4,12 +4,9 @@ use super::codec::Encode;
 use crate::{sql_read_bytes::SqlReadBytes, Error};
 #[cfg(feature = "bigdecimal")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "bigdecimal")))]
-pub use bigdecimal::BigDecimal;
+pub use bigdecimal::{num_bigint::BigInt, BigDecimal};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
-#[cfg(feature = "bigdecimal")]
-#[cfg_attr(feature = "docs", doc(cfg(feature = "bigdecimal")))]
-pub use num_bigint::{BigInt, Sign};
 #[cfg(feature = "rust_decimal")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "rust_decimal")))]
 pub use rust_decimal::Decimal;
