@@ -1461,7 +1461,7 @@ mod bigdecimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use num_bigint::BigInt;
+        use bigdecimal_::num_bigint::BigInt;
         use num_traits::FromPrimitive;
         use tiberius::numeric::BigDecimal;
 
@@ -1485,7 +1485,7 @@ mod bigdecimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use num_bigint::BigInt;
+        use bigdecimal_::num_bigint::BigInt;
         use num_traits::FromPrimitive;
         use tiberius::numeric::BigDecimal;
 
@@ -1509,7 +1509,7 @@ mod bigdecimal {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
-        use num_bigint::BigInt;
+        use bigdecimal_::num_bigint::BigInt;
         use num_traits::FromPrimitive;
         use tiberius::numeric::BigDecimal;
 

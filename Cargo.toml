@@ -107,12 +107,6 @@ version = "0.2.0"
 optional = true
 package = "bigdecimal"
 
-[dependencies.num-bigint]
-version = "0.4.0"
-default-features = false
-optional = true
-features = ["std"]
-
 [dependencies.async-io]
 version = "1.4.1"
 optional = true
@@ -167,4 +161,4 @@ sql-browser-async-std = ["async-std"]
 sql-browser-tokio = ["tokio", "tokio-util"]
 sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
-bigdecimal = [ "bigdecimal_", "num-bigint" ]
+bigdecimal = [ "bigdecimal_"]
