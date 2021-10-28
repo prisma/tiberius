@@ -52,6 +52,7 @@ futures-sink = "0.3"
 async-trait = "0.1"
 connection-string = "0.1.4"
 num-traits = "0.2"
+uuid = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 winauth = "0.0.4"
@@ -84,10 +85,6 @@ features = ["attributes"]
 version = "0.4"
 optional = true
 
-[dependencies.uuid]
-version = "0.8"
-features = ["v1", "v3", "v4"]
-
 [dependencies.futures]
 version = "0.3"
 
@@ -118,6 +115,10 @@ optional = true
 [dependencies.futures-lite]
 version = "1.12.0"
 optional = true
+
+[dev-dependencies.uuid]
+version = "0.8"
+features = ["v4"]
 
 [dev-dependencies.tokio-util]
 version = "0.6"
