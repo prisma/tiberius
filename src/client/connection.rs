@@ -35,7 +35,7 @@ use std::ops::Deref;
 use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
 use tracing::{event, Level};
-#[cfg(windows)]
+#[cfg(all(windows, feature = "winauth"))]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
@@ -325,7 +325,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
                 self.send(header, next_token).await?;
             }
-            #[cfg(windows)]
+            #[cfg(all(windows, feature = "winauth"))]
             AuthMethod::Windows(auth) => {
                 let spn = self.context.spn().to_string();
                 let builder = winauth::NtlmV2ClientBuilder::new().target_spn(spn);

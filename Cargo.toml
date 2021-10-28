@@ -55,7 +55,7 @@ num-traits = "0.2"
 uuid = "0.8"
 
 [target.'cfg(windows)'.dependencies]
-winauth = "0.0.4"
+winauth = { version = "0.0.4", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libgssapi = { version = "0.4.5", optional = true, default-features = false }
@@ -154,7 +154,7 @@ all = [
     "rust_decimal",
     "bigdecimal"
 ]
-default = ["tds73"]
+default = ["tds73", "winauth"]
 vendored-openssl = ["opentls/vendored", "async-native-tls/vendored"]
 tds73 = []
 docs = []

@@ -26,16 +26,16 @@ impl Debug for SqlServerAuth {
 }
 
 #[derive(Clone, PartialEq)]
-#[cfg(any(windows, doc))]
-#[cfg_attr(feature = "docs", doc(windows))]
+#[cfg(any(all(windows, feature = "winauth"), doc))]
+#[cfg_attr(feature = "docs", doc(all(windows, feature = "winauth")))]
 pub struct WindowsAuth {
     pub(crate) user: String,
     pub(crate) password: String,
     pub(crate) domain: Option<String>,
 }
 
-#[cfg(any(windows, doc))]
-#[cfg_attr(feature = "docs", doc(windows))]
+#[cfg(any(all(windows, feature = "winauth"), doc))]
+#[cfg_attr(feature = "docs", doc(all(windows, feature = "winauth")))]
 impl Debug for WindowsAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WindowsAuth")
@@ -52,8 +52,8 @@ pub enum AuthMethod {
     /// Authenticate directly with SQL Server.
     SqlServer(SqlServerAuth),
     /// Authenticate with Windows credentials.
-    #[cfg(any(windows, doc))]
-    #[cfg_attr(feature = "docs", doc(cfg(windows)))]
+    #[cfg(any(all(windows, feature = "winauth"), doc))]
+    #[cfg_attr(feature = "docs", doc(cfg(all(windows, feature = "winauth"))))]
     Windows(WindowsAuth),
     /// Authenticate as the currently logged in user. On Windows uses SSPI and
     /// Kerberos on Unix platforms.
@@ -77,8 +77,8 @@ impl AuthMethod {
     }
 
     /// Construct a new Windows authentication configuration.
-    #[cfg(any(windows, doc))]
-    #[cfg_attr(feature = "docs", doc(cfg(windows)))]
+    #[cfg(any(all(windows, feature = "winauth"), doc))]
+    #[cfg_attr(feature = "docs", doc(cfg(all(windows, feature = "winauth"))))]
     pub fn windows(user: impl AsRef<str>, password: impl ToString) -> Self {
         let (domain, user) = match user.as_ref().find('\\') {
             Some(idx) => (Some(&user.as_ref()[..idx]), &user.as_ref()[idx + 1..]),
