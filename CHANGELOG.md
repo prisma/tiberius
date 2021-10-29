@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.6.5
+
+- Constrain UUID features and optionalize winauth dependency (smaller binaries)
+
 ## Version 0.6.4
 
 - Use bundled bigint from bigdecimal
