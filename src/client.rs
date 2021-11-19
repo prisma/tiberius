@@ -30,7 +30,8 @@ use std::{borrow::Cow, fmt::Debug};
 ///
 /// ```no_run
 /// # use tiberius::{Config, AuthMethod};
-/// # use tokio_util::compat::TokioAsyncWriteCompatExt;
+/// use tokio_util::compat::TokioAsyncWriteCompatExt;
+///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut config = Config::new();
