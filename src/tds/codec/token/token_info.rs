@@ -1,5 +1,6 @@
 use crate::SqlReadBytes;
 
+#[allow(dead_code)] // we might want to debug the values
 #[derive(Debug)]
 pub struct TokenInfo {
     /// info number
