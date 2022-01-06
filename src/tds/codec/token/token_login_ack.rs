@@ -1,6 +1,7 @@
 use crate::{Error, FeatureLevel, SqlReadBytes};
 use std::convert::TryFrom;
 
+#[allow(dead_code)] // we might want to debug the values
 #[derive(Debug)]
 pub struct TokenLoginAck {
     /// The type of interface with which the server will accept client requests

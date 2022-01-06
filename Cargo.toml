@@ -63,7 +63,7 @@ libgssapi = { version = "0.4.5", optional = true, default-features = false }
 opentls = { version = "0.2.1", features = ["io-async-std"]}
 
 [target.'cfg(not(any(target_os = "macos", target_os = "ios")))'.dependencies]
-async-native-tls = { version = "0.3", features = ["runtime-async-std"]}
+async-native-tls = { version = "0.4", features = ["runtime-async-std"] }
 
 [dependencies.tokio]
 version = "1.0"
