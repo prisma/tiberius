@@ -1,5 +1,11 @@
 # Changes
 
+## Version 0.7.0
+
+- Remove async-std from deps if using tokio
+- show TokioAsyncWriteCompatExt in Client docs (#183)
+- Upgrade to Rust edition 2021 (#180)
+
 ## Version 0.6.5
 
 - Constrain UUID features and optionalize winauth dependency (smaller binaries)
