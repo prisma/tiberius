@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.7.1
+
+- Support all pre-login tokens
+
 ## Version 0.7.0
 
 - Remove async-std from deps if using tokio
