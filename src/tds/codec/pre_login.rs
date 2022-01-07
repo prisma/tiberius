@@ -4,7 +4,7 @@ use crate::{tds, Error, Result};
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 use bytes::{BufMut, BytesMut};
 use std::convert::TryFrom;
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Read};
 use tds::EncryptionLevel;
 use uuid::Uuid;
 
@@ -153,8 +153,6 @@ impl Decode<BytesMut> for PreloginMessage {
                     while next_byte != 0x00 {
                         bytes.push(next_byte);
                         next_byte = cursor.read_u8()?;
-
-                        continue;
                     }
 
                     if !bytes.is_empty() {
@@ -169,13 +167,11 @@ impl Decode<BytesMut> for PreloginMessage {
                 }
                 // activity id
                 0x05 => {
+                    // Data is a Guid, 16 bytes and ordered the wrong way around
+                    // than Uuid.
                     let mut data = [0u8; 16];
 
-                    for item in data.iter_mut() {
-                        *item = cursor.read_u8()?;
-                    }
-
-                    // Microsoft UUID comes in a "wrong" order.
+                    cursor.read_exact(&mut data)?;
                     reorder_bytes(&mut data);
 
                     ret.activity_id = Some(ActivityId {
