@@ -245,7 +245,7 @@ pub(crate) trait ConfigString {
             .get("integratedsecurity")
             .or_else(|| self.dict().get("integrated security"))
         {
-            #[cfg(windows)]
+            #[cfg(all(windows, feature = "winauth"))]
             Some(val) if val.to_lowercase() == "sspi" || Self::parse_bool(val)? => match (user, pw)
             {
                 (None, None) => Ok(AuthMethod::Integrated),

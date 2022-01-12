@@ -256,7 +256,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         }
 
         match auth {
-            #[cfg(windows)]
+            #[cfg(all(windows, feature = "winauth"))]
             AuthMethod::Integrated => {
                 let mut client = NtlmSspiBuilder::new()
                     .target_spn(self.context.spn())

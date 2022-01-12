@@ -57,7 +57,11 @@ pub enum AuthMethod {
     Windows(WindowsAuth),
     /// Authenticate as the currently logged in user. On Windows uses SSPI and
     /// Kerberos on Unix platforms.
-    #[cfg(any(windows, all(unix, feature = "integrated-auth-gssapi"), doc))]
+    #[cfg(any(
+        all(windows, feature = "winauth"),
+        all(unix, feature = "integrated-auth-gssapi"),
+        doc
+    ))]
     #[cfg_attr(
         feature = "docs",
         doc(cfg(any(windows, all(unix, feature = "integrated-auth-gssapi"))))
