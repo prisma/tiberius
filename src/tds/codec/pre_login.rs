@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 /// Client application activity id token used for debugging purposes introduced
 /// in TDS 7.4.
+#[allow(unused)]
 #[derive(Debug)]
 pub struct ActivityId {
     id: Uuid,
