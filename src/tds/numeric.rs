@@ -289,6 +289,17 @@ mod bigdecimal_ {
                 Numeric::new_with_scale(value, scale)
             });
     );
+
+    #[cfg(feature = "tds73")]
+    into_sql!(self_,
+            BigDecimal: (ColumnData::Numeric, {
+                let (int, exp) = self_.as_bigint_and_exponent();
+                let value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
+                let scale = u8::try_from(exp).expect("Given exponent overflowing the maximum accepted scale (255).");
+
+                Numeric::new_with_scale(value, scale)
+            });
+    );
 }
 
 #[cfg(test)]

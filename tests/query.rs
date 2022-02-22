@@ -4,7 +4,7 @@ use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{numeric::Numeric, xml::XmlData, ColumnType, QueryItem, Result};
+use tiberius::{numeric::Numeric, xml::XmlData, ColumnType, Query, QueryItem, Result};
 use uuid::Uuid;
 
 use runtimes_macro::test_on_runtimes;
@@ -1527,6 +1527,30 @@ mod bigdecimal {
 
         Ok(())
     }
+
+    #[test_on_runtimes]
+    async fn dynamic_query_binding_bigdecimal<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use bigdecimal_::num_bigint::BigInt;
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
+
+        let int = BigInt::from_i128(i64::MAX as i128).unwrap();
+        let num = BigDecimal::new(int, 28);
+        let mut query = Query::new("SELECT @P1, @P2");
+
+        query.bind(num.clone());
+        query.bind(Option::<BigDecimal>::None);
+
+        let row = query.query(&mut conn).await?.into_row().await?.unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+        assert_eq!(Option::<BigDecimal>::None, row.get(1));
+
+        Ok(())
+    }
 }
 
 #[cfg(all(not(feature = "tds73"), feature = "chrono"))]
@@ -1662,6 +1686,17 @@ where
 
     assert_eq!(Some(time), row.get(0));
 
+    let mut query = Query::new("SELECT @P1, @P2");
+
+    query.bind(time);
+    query.bind(Option::<NaiveTime>::None);
+
+    let stream = query.query(&mut conn).await?;
+    let row = stream.into_row().await?.unwrap();
+
+    assert_eq!(Some(time), row.get(0));
+    assert_eq!(Option::<NaiveTime>::None, row.get(1));
+
     Ok(())
 }
 
@@ -1683,6 +1718,18 @@ where
         .unwrap();
 
     assert_eq!(Some(date), row.get(0));
+
+    let mut query = Query::new("SELECT @P1, @P2");
+
+    query.bind(date);
+    query.bind(Option::<NaiveDate>::None);
+
+    let stream = query.query(&mut conn).await?;
+    let row = stream.into_row().await?.unwrap();
+
+    assert_eq!(Some(date), row.get(0));
+    assert_eq!(Option::<NaiveDate>::None, row.get(1));
+
     Ok(())
 }
 
@@ -1705,6 +1752,17 @@ where
         .unwrap();
 
     assert_eq!(Some(dt), row.get(0));
+
+    let mut query = Query::new("SELECT @P1, @P2");
+
+    query.bind(dt);
+    query.bind(Option::<DateTime<Utc>>::None);
+
+    let stream = query.query(&mut conn).await?;
+    let row = stream.into_row().await?.unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+    assert_eq!(Option::<DateTime<Utc>>::None, row.get(1));
 
     Ok(())
 }
@@ -1729,6 +1787,17 @@ where
         .unwrap();
 
     assert_eq!(Some(dt), row.get(0));
+
+    let mut query = Query::new("SELECT @P1, @P2");
+
+    query.bind(dt);
+    query.bind(Option::<DateTime<FixedOffset>>::None);
+
+    let stream = query.query(&mut conn).await?;
+    let row = stream.into_row().await?.unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+    assert_eq!(Option::<DateTime<FixedOffset>>::None, row.get(1));
 
     Ok(())
 }
@@ -2013,6 +2082,219 @@ where
 
     let row = stream.try_next().await?.unwrap();
     assert_eq!(Some(2), row.get(0));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn dynamic_query_binding_strings<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let data = String::from("foo");
+    let mut query =
+        Query::new("SELECT @P1, @P2, @P3, @P4, @P5, @P6, @P7, @P8, @P9, @P10, @P11, @P12");
+
+    query.bind(&data);
+    query.bind(Some(&data));
+    query.bind(Option::<&String>::None);
+
+    query.bind(data.as_str());
+    query.bind(Some(data.as_str()));
+    query.bind(Option::<&str>::None);
+
+    query.bind("foo");
+    query.bind(Some("foo"));
+    query.bind(Option::<&'static str>::None);
+
+    query.bind(String::from("foo"));
+    query.bind(Some(String::from("foo")));
+    query.bind(Option::<String>::None);
+
+    let mut stream = query.query(&mut conn).await?.into_row_stream();
+
+    let row = stream.try_next().await?.unwrap();
+
+    assert_eq!(Some("foo"), row.get(0));
+    assert_eq!(Some("foo"), row.get(1));
+    assert_eq!(Option::<&str>::None, row.get(2));
+
+    assert_eq!(Some("foo"), row.get(3));
+    assert_eq!(Some("foo"), row.get(4));
+    assert_eq!(Option::<&str>::None, row.get(5));
+
+    assert_eq!(Some("foo"), row.get(6));
+    assert_eq!(Some("foo"), row.get(7));
+    assert_eq!(Option::<&str>::None, row.get(8));
+
+    assert_eq!(Some("foo"), row.get(9));
+    assert_eq!(Some("foo"), row.get(10));
+    assert_eq!(Option::<&str>::None, row.get(11));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn dynamic_query_binding_bytes<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let data = vec![1u8, 6u8, 2u8, 0u8];
+    let mut query = Query::new("SELECT @P1, @P2, @P3, @P4, @P5, @P6");
+
+    query.bind(&data);
+    query.bind(Option::<&Vec<u8>>::None);
+    query.bind(data.as_slice());
+    query.bind(Option::<&[u8]>::None);
+    query.bind(data.clone());
+    query.bind(Option::<Vec<u8>>::None);
+
+    let mut stream = query.query(&mut conn).await?.into_row_stream();
+
+    let row = stream.try_next().await?.unwrap();
+
+    assert_eq!(Some(data.as_slice()), row.get(0));
+    assert_eq!(Option::<&[u8]>::None, row.get(1));
+    assert_eq!(Some(data.as_slice()), row.get(2));
+    assert_eq!(Option::<&[u8]>::None, row.get(3));
+    assert_eq!(Some(data.as_slice()), row.get(4));
+    assert_eq!(Option::<&[u8]>::None, row.get(5));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn dynamic_query_binding_xml<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let data = XmlData::new("<foo>lol</foo>");
+    let mut query = Query::new("SELECT @P1, @P2, @P3, @P4");
+
+    query.bind(&data);
+    query.bind(data.clone());
+    query.bind(Option::<&XmlData>::None);
+    query.bind(Option::<XmlData>::None);
+
+    let mut stream = query.query(&mut conn).await?.into_row_stream();
+
+    let row = stream.try_next().await?.unwrap();
+
+    assert_eq!(Some(&data), row.get(0));
+    assert_eq!(Some(&data), row.get(1));
+    assert_eq!(Option::<&XmlData>::None, row.get(2));
+    assert_eq!(Option::<&XmlData>::None, row.get(3));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn dynamic_query_binding_guid<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let data = Uuid::new_v4();
+    let mut query = Query::new("SELECT @P1, @P2, @P3, @P4");
+
+    query.bind(&data);
+    query.bind(data);
+    query.bind(Option::<&Uuid>::None);
+    query.bind(Option::<Uuid>::None);
+
+    let mut stream = query.query(&mut conn).await?.into_row_stream();
+
+    let row = stream.try_next().await?.unwrap();
+
+    assert_eq!(Some(data), row.get(0));
+    assert_eq!(Some(data), row.get(1));
+    assert_eq!(Option::<Uuid>::None, row.get(2));
+    assert_eq!(Option::<Uuid>::None, row.get(3));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn dynamic_query_binding_numbers<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let mut query =
+        Query::new("SELECT @P1, @P2, @P3, @P4, @P5, @P6, @P7, @P8, @P9, @P10, @P11, @P12");
+
+    query.bind(1u8);
+    query.bind(1i16);
+    query.bind(1i32);
+    query.bind(1i64);
+    query.bind(std::f32::consts::PI);
+    query.bind(std::f64::consts::PI);
+
+    query.bind(Option::<u8>::None);
+    query.bind(Option::<i16>::None);
+    query.bind(Option::<i32>::None);
+    query.bind(Option::<i64>::None);
+    query.bind(Option::<f32>::None);
+    query.bind(Option::<f64>::None);
+
+    let mut stream = query.query(&mut conn).await?.into_row_stream();
+
+    let row = stream.try_next().await?.unwrap();
+
+    assert_eq!(Some(1u8), row.get(0));
+    assert_eq!(Some(1i16), row.get(1));
+    assert_eq!(Some(1i32), row.get(2));
+    assert_eq!(Some(1i64), row.get(3));
+    assert_eq!(Some(std::f32::consts::PI), row.get(4));
+    assert_eq!(Some(std::f64::consts::PI), row.get(5));
+
+    assert_eq!(Option::<u8>::None, row.get(6));
+    assert_eq!(Option::<i16>::None, row.get(7));
+    assert_eq!(Option::<i32>::None, row.get(8));
+    assert_eq!(Option::<i64>::None, row.get(9));
+    assert_eq!(Option::<f32>::None, row.get(10));
+    assert_eq!(Option::<f32>::None, row.get(11));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn dynamic_query_binding_boolean<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let mut query = Query::new("SELECT @P1, @P2");
+
+    query.bind(true);
+    query.bind(Option::<bool>::None);
+
+    let mut stream = query.query(&mut conn).await?.into_row_stream();
+
+    let row = stream.try_next().await?.unwrap();
+
+    assert_eq!(Some(true), row.get(0));
+    assert_eq!(Option::<bool>::None, row.get(1));
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn new_execute_interface<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(
+        format!("CREATE TABLE ##{} (m1 NVARCHAR(255) NOT NULL)", table),
+        &[],
+    )
+    .await?;
+
+    let data = String::from("foo");
+    let mut query = Query::new(format!("INSERT INTO ##{} (m1) VALUES (@P1)", table));
+    query.bind(&data);
+
+    let res = query.execute(&mut conn).await?;
+    assert_eq!(1, res.total());
 
     Ok(())
 }

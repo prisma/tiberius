@@ -369,6 +369,7 @@ impl Row {
     /// Use [`try_get`] for a non-panicking version of the function.
     ///
     /// [`try_get`]: #method.try_get
+    #[track_caller]
     pub fn get<'a, R, I>(&'a self, idx: I) -> Option<R>
     where
         R: FromSql<'a>,
@@ -378,6 +379,7 @@ impl Row {
     }
 
     /// Retrieve a column's value for a given column index.
+    #[track_caller]
     pub fn try_get<'a, R, I>(&'a self, idx: I) -> crate::Result<Option<R>>
     where
         R: FromSql<'a>,
