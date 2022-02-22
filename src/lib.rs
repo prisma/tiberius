@@ -230,7 +230,6 @@
 //! [`Client#query`]: struct.Client.html#method.query
 //! [`Client#execute`]: struct.Client.html#method.execute
 //! [`Query`]: struct.Query.html
-//! [`Query#bind`]: struct.Query.html#method.bind
 //! [`Config`]: struct.Config.html
 //! [`from_ado_string`]: struct.Config.html#method.from_ado_string
 //! [`time`]: time/index.html
