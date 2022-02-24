@@ -7,7 +7,7 @@
 //! separately and injected to the [`Client`].
 //!
 //! ```no_run
-//! use tiberius::{Client, Config, AuthMethod};
+//! use tiberius::{Client, Config, Query, AuthMethod};
 //! use async_std::net::TcpStream;
 //!
 //! #[async_std::main]
@@ -20,14 +20,14 @@
 //!
 //!     // Using SQL Server authentication.
 //!     config.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
-//!     
+//!
 //!     // on production, it is not a good idea to do this
 //!     config.trust_cert();
 //!
 //!     // Taking the address from the configuration, using async-std's
 //!     // TcpStream to connect to the server.
 //!     let tcp = TcpStream::connect(config.get_addr()).await?;
-//!     
+//!
 //!     // We'll disable the Nagle algorithm. Buffering is handled
 //!     // internally with a `Sink`.
 //!     tcp.set_nodelay(true)?;
@@ -35,16 +35,22 @@
 //!     // Handling TLS, login and other details related to the SQL Server.
 //!     let mut client = Client::connect(config, tcp).await?;
 //!
+//!     // Constructing a query object with one parameter annotated with `@P1`.
+//!     // This requires us to bind a parameter that will then be used in
+//!     // the statement.
+//!     let mut select = Query::new("SELECT @P1");
+//!     select.bind(-4i32);
+//!
 //!     // A response to a query is a stream of data, that must be
 //!     // polled to the end before querying again. Using streams allows
 //!     // fetching data in an asynchronous manner, if needed.
-//!     let stream = client.query("SELECT @P1", &[&-4i32]).await?;
+//!     let stream = select.query(&mut client).await?;
 //!
 //!     // In this case, we know we have only one query, returning one row
 //!     // and one column, so calling `into_row` will consume the stream
 //!     // and return us the first row of the first result.
 //!     let row = stream.into_row().await?;
-//!    
+//!
 //!     assert_eq!(Some(-4i32), row.unwrap().get(0));
 //!
 //!     Ok(())
@@ -65,12 +71,12 @@
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let mut config = Config::new();
-//!     
+//!
 //!     config.host("localhost");
 //!     config.port(1433);
 //!     config.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
 //!     config.trust_cert(); // on production, it is not a good idea to do this
-//!     
+//!
 //!     let tcp = TcpStream::connect(config.get_addr()).await?;
 //!     tcp.set_nodelay(true)?;
 //!
@@ -82,6 +88,67 @@
 //!
 //!     Ok(())
 //! }
+//! ```
+//!
+//! # Ways of querying
+//!
+//! Tiberius offers two ways to query the database: directly from the [`Client`]
+//! with the [`Client#query`] and [`Client#execute`], or additionally through
+//! the [`Query`] object.
+//!
+//! ### With the client methods
+//!
+//! When the query parameters are known when writing the code, the client methods
+//! are easy to use.
+//!
+//! ```no_run
+//! # use tiberius::{Client, Config, AuthMethod};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::TokioAsyncWriteCompatExt;
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
+//! # let mut config = Config::new();
+//! # config.host("localhost");
+//! # config.port(1433);
+//! # config.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
+//! # config.trust_cert();
+//! # let tcp = TcpStream::connect(config.get_addr()).await?;
+//! # tcp.set_nodelay(true)?;
+//! # let mut client = Client::connect(config, tcp.compat_write()).await?;
+//! let _res = client.query("SELECT @P1", &[&-4i32]).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### With the Query object
+//!
+//! In case of needing to pass the parameters from a dynamic collection, or if
+//! wanting to pass them by-value, use the [`Query`] object.
+//!
+//! ```no_run
+//! # use tiberius::{Client, Query, Config, AuthMethod};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::TokioAsyncWriteCompatExt;
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
+//! # let mut config = Config::new();
+//! # config.host("localhost");
+//! # config.port(1433);
+//! # config.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
+//! # config.trust_cert();
+//! # let tcp = TcpStream::connect(config.get_addr()).await?;
+//! # tcp.set_nodelay(true)?;
+//! # let mut client = Client::connect(config, tcp.compat_write()).await?;
+//! let params = vec![String::from("foo"), String::from("bar")];
+//! let mut select = Query::new("SELECT @P1, @P2, @P3");
+//!
+//! for param in params.into_iter() {
+//!     select.bind(param);
+//! }
+//!
+//! let _res = select.query(&mut client).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Authentication
@@ -127,16 +194,16 @@
 //!
 //!     config.authentication(AuthMethod::sql_server("SA", "<password>"));
 //!     config.host("localhost");
-//!     
+//!
 //!     // The default port of SQL Browser
 //!     config.port(1434);
-//!     
+//!
 //!     // The name of the database server instance.
 //!     config.instance_name("INSTANCE");
-//!     
+//!
 //!     // on production, it is not a good idea to do this
 //!     config.trust_cert();
-//!     
+//!
 //!     // This will create a new `TcpStream` from `async-std`, connected to the
 //!     // right port of the named instance.
 //!     let tcp = TcpStream::connect_named(&config).await?;
@@ -160,6 +227,10 @@
 //!
 //! [`EncryptionLevel`]: enum.EncryptionLevel.html
 //! [`Client`]: struct.Client.html
+//! [`Client#query`]: struct.Client.html#method.query
+//! [`Client#execute`]: struct.Client.html#method.execute
+//! [`Query`]: struct.Query.html
+//! [`Query#bind`]: struct.Query.html#method.bind
 //! [`Config`]: struct.Config.html
 //! [`from_ado_string`]: struct.Config.html#method.from_ado_string
 //! [`time`]: time/index.html
@@ -180,6 +251,7 @@ mod macros;
 
 mod client;
 mod from_sql;
+mod query;
 mod sql_read_bytes;
 mod to_sql;
 
@@ -193,6 +265,7 @@ mod sql_browser;
 pub use client::{AuthMethod, Client, Config};
 pub(crate) use error::Error;
 pub use from_sql::{FromSql, FromSqlOwned};
+pub use query::Query;
 pub use result::*;
 pub use row::{Column, ColumnType, Row};
 pub use sql_browser::SqlBrowser;

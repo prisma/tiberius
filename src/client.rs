@@ -51,7 +51,7 @@ use std::{borrow::Cow, fmt::Debug};
 /// [`Config`]: struct.Config.html
 #[derive(Debug)]
 pub struct Client<S: AsyncRead + AsyncWrite + Unpin + Send> {
-    connection: Connection<S>,
+    pub(crate) connection: Connection<S>,
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
@@ -76,6 +76,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// For mapping of Rust types when writing, see the documentation for
     /// [`ToSql`]. For reading data from the database, see the documentation for
     /// [`FromSql`].
+    ///
+    /// This API is not quite suitable for dynamic query parameters. In these
+    /// cases using a [`Query`] object might be easier.
     ///
     /// # Example
     ///
@@ -105,6 +108,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// [`ExecuteResult`]: struct.ExecuteResult.html
     /// [`ToSql`]: trait.ToSql.html
     /// [`FromSql`]: trait.FromSql.html
+    /// [`Query`]: struct.Query.html
     pub async fn execute<'a>(
         &mut self,
         query: impl Into<Cow<'a, str>>,
@@ -113,10 +117,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
+        let params = params.iter().map(|s| s.to_sql());
         self.rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, params)
             .await?;
 
-        Ok(ExecuteResult::new(&mut self.connection).await?)
+        ExecuteResult::new(&mut self.connection).await
     }
 
     /// Executes SQL statements in the SQL Server, returning resulting rows.
@@ -129,6 +134,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// For mapping of Rust types when writing, see the documentation for
     /// [`ToSql`]. For reading data from the database, see the documentation for
     /// [`FromSql`].
+    ///
+    /// This API can be cumbersome for dynamic query parameters. In these cases,
+    /// if fighting too much with the compiler, using a [`Query`] object might be
+    /// easier.
     ///
     /// # Example
     ///
@@ -156,6 +165,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// ```
     ///
     /// [`QueryStream`]: struct.QueryStream.html
+    /// [`Query`]: struct.Query.html
     /// [`ToSql`]: trait.ToSql.html
     /// [`FromSql`]: trait.FromSql.html
     pub async fn query<'a, 'b>(
@@ -169,6 +179,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         self.connection.flush_stream().await?;
         let rpc_params = Self::rpc_params(query);
 
+        let params = params.iter().map(|p| p.to_sql());
         self.rpc_perform_query(RpcProcId::ExecuteSQL, rpc_params, params)
             .await?;
 
@@ -231,7 +242,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         Ok(result)
     }
 
-    fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
+    pub(crate) fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
         vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),
@@ -246,29 +257,28 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         ]
     }
 
-    async fn rpc_perform_query<'a, 'b>(
+    pub(crate) async fn rpc_perform_query<'a, 'b>(
         &'a mut self,
         proc_id: RpcProcId,
         mut rpc_params: Vec<RpcParam<'b>>,
-        params: &'b [&'b dyn ToSql],
+        params: impl Iterator<Item = ColumnData<'b>>,
     ) -> crate::Result<()>
     where
         'a: 'b,
     {
         let mut param_str = String::new();
 
-        for (i, param) in params.iter().enumerate() {
+        for (i, param) in params.enumerate() {
             if i > 0 {
                 param_str.push(',')
             }
             param_str.push_str(&format!("@P{} ", i + 1));
-            let param_data = param.to_sql();
-            param_str.push_str(&param_data.type_name());
+            param_str.push_str(&param.type_name());
 
             rpc_params.push(RpcParam {
                 name: Cow::Owned(format!("@P{}", i + 1)),
                 flags: BitFlags::empty(),
-                value: param_data,
+                value: param,
             });
         }
 

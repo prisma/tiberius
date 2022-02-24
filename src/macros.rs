@@ -77,15 +77,15 @@ macro_rules! to_sql {
 macro_rules! into_sql {
     ($target:ident, $( $ty:ty: ($variant:expr, $val:expr) ;)* ) => {
         $(
-            impl crate::IntoSql for $ty {
-                fn into_sql(self) -> crate::tds::codec::ColumnData<'static> {
+            impl<'a> crate::IntoSql<'a> for $ty {
+                fn into_sql(self) -> crate::tds::codec::ColumnData<'a> {
                     let $target = self;
                     $variant(Some($val))
                 }
             }
 
-            impl crate::IntoSql for Option<$ty> {
-                fn into_sql(self) -> crate::tds::codec::ColumnData<'static> {
+            impl<'a> crate::IntoSql<'a> for Option<$ty> {
+                fn into_sql(self) -> crate::tds::codec::ColumnData<'a> {
                     match self {
                         Some(val) => {
                             let $target = val;
