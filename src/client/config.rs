@@ -2,6 +2,8 @@ mod ado_net;
 mod jdbc;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
+use tracing::{event, Level};
 
 use super::AuthMethod;
 use crate::EncryptionLevel;
@@ -28,8 +30,15 @@ pub struct Config {
     pub(crate) instance_name: Option<String>,
     pub(crate) application_name: Option<String>,
     pub(crate) encryption: EncryptionLevel,
-    pub(crate) trust_cert: bool,
+    pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum TrustConfig {
+    CaCertificateLocation(PathBuf),
+    TrustAll,
+    Default,
 }
 
 impl Default for Config {
@@ -41,7 +50,7 @@ impl Default for Config {
             instance_name: None,
             application_name: None,
             encryption: EncryptionLevel::Required,
-            trust_cert: false,
+            trust: TrustConfig::Default,
             auth: AuthMethod::None,
         }
     }
@@ -107,9 +116,27 @@ impl Config {
     /// On production setting, the certificate should be added to the local key
     /// storage, using this setting is potentially dangerous.
     ///
-    /// - Defaults to `false`.
+    /// - Defaults to `default`.
     pub fn trust_cert(&mut self) {
-        self.trust_cert = true;
+        if let TrustConfig::CaCertificateLocation(_) = &self.trust {
+            event!(
+                Level::WARN,
+                "trust_ca() was called before. Certificate validation will be disabled.",
+            );
+        }
+        self.trust = TrustConfig::TrustAll;
+    }
+
+    /// If set, the server certificate will be validated against the given CA certificate.
+    /// Mutual exclusive with `trust_cert`
+    ///
+    /// - Defaults to `None`.
+    pub fn trust_cert_ca(&mut self, path: impl ToString) {
+        if let TrustConfig::TrustAll = &self.trust {
+            event!(Level::WARN, "trust_cert() was called before. Ignoring CA.");
+        } else {
+            self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()))
+        }
     }
 
     /// Sets the authentication method.
@@ -208,6 +235,10 @@ impl Config {
             builder.trust_cert();
         }
 
+        if let Some(ca) = s.trust_cert_ca() {
+            builder.trust_cert_ca(ca);
+        }
+
         builder.encryption(s.encrypt()?);
 
         Ok(builder)
@@ -279,6 +310,12 @@ pub(crate) trait ConfigString {
             .get("trustservercertificate")
             .map(Self::parse_bool)
             .unwrap_or(Ok(false))
+    }
+
+    fn trust_cert_ca(&self) -> Option<String> {
+        self.dict()
+            .get("trustservercertificateca")
+            .map(|ca| ca.to_string())
     }
 
     fn encrypt(&self) -> crate::Result<EncryptionLevel> {

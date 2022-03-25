@@ -1,7 +1,7 @@
 use crate::{
     client::{
         tls::{MaybeTlsStream, TlsPreloginWrapper},
-        AuthMethod, Config,
+        AuthMethod, Config, TrustConfig,
     },
     tds::{
         codec::{
@@ -13,6 +13,7 @@ use crate::{
     },
     EncryptionLevel, SqlReadBytes,
 };
+use async_native_tls::Certificate;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use async_native_tls::TlsConnector;
 use asynchronous_codec::Framed;
@@ -32,7 +33,7 @@ use opentls::async_io::TlsConnector;
 use pretty_hex::*;
 #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
 use std::ops::Deref;
-use std::{cmp, fmt::Debug, io, pin::Pin, task};
+use std::{cmp, fmt::Debug, fs, io, pin::Pin, task};
 use task::Poll;
 use tracing::{event, Level};
 #[cfg(all(windows, feature = "winauth"))]
@@ -89,9 +90,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let prelogin = connection.prelogin(config.encryption).await?;
         let encryption = prelogin.negotiated_encryption(config.encryption);
 
-        let connection = connection
-            .tls_handshake(&config, encryption, config.trust_cert)
-            .await?;
+        let connection = connection.tls_handshake(&config, encryption).await?;
 
         let mut connection = connection
             .login(
@@ -376,22 +375,50 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         self,
         config: &Config,
         encryption: EncryptionLevel,
-        trust_cert: bool,
     ) -> crate::Result<Self> {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
             let mut builder = TlsConnector::new();
 
-            if trust_cert {
-                event!(
-                    Level::WARN,
-                    "Trusting the server certificate without validation."
-                );
+            match &config.trust {
+                TrustConfig::CaCertificateLocation(path) => {
+                    if let Ok(buf) = fs::read(path) {
+                        let cert = match path.extension() {
+                            Some(ext)
+                                if ext.to_ascii_lowercase() == "pem"
+                                    || ext.to_ascii_lowercase() == "crt" =>
+                            {
+                                Some(Certificate::from_pem(&buf)?)
+                            }
+                            Some(ext) if ext.to_ascii_lowercase() == "der" => {
+                                Some(Certificate::from_der(&buf)?)
+                            }
+                            Some(_) | None => {
+                                event!(Level::ERROR, "Unknown CA certificate format. Only 'pem', 'crt' and 'der' supported. Certificate will not be added to trust-chain.");
+                                None
+                            }
+                        };
+                        if let Some(c) = cert {
+                            builder = builder.add_root_certificate(c);
+                        }
+                    } else {
+                        event!(Level::ERROR, "Could not read CA certificate.");
+                    }
+                }
+                TrustConfig::TrustAll => {
+                    event!(
+                        Level::WARN,
+                        "Trusting the server certificate without validation."
+                    );
 
-                builder = builder.danger_accept_invalid_certs(true);
-                builder = builder.danger_accept_invalid_hostnames(true);
-                builder = builder.use_sni(false);
+                    builder = builder.danger_accept_invalid_certs(true);
+                    builder = builder.danger_accept_invalid_hostnames(true);
+                    builder = builder.use_sni(false);
+                }
+                TrustConfig::Default => {
+                    event!(Level::INFO, "Using default trust configuration.");
+                }
             }
 
             let Self {
