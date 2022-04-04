@@ -171,8 +171,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             self.transport.send(packet).await?;
         }
 
-        // Rai rai says the turbofish goodbye
-        SinkExt::<Packet>::flush(&mut self.transport).await?;
+        self.transport.flush().await?;
 
         Ok(())
     }
