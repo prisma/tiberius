@@ -84,6 +84,10 @@ features = ["attributes"]
 version = "0.4"
 optional = true
 
+[dependencies.time]
+version = "0.3"
+optional = true
+
 [dependencies.futures]
 version = "0.3"
 
@@ -145,6 +149,7 @@ features = ["all", "docs"]
 [features]
 all = [
     "chrono",
+    "time",
     "tds73",
     "sql-browser-async-std",
     "sql-browser-tokio",

@@ -1,30 +1,33 @@
 //! Date and time handling.
 //!
 //! When using the `tds73` feature flag together with SQL Server 2008 or later,
-//! the following [`chrono`] mappings to and from the database are available:
+//! the following [`time`] mappings to and from the database are available:
 //!
-//! - `Time` -> [`NaiveTime`]
-//! - `Date` -> [`NaiveDate`]
-//! - `DateTime` -> [`NaiveDateTime`]
-//! - `DateTime2` -> [`NaiveDateTime`]
-//! - `SmallDateTime` -> [`NaiveDateTime`]
-//! - `DateTimeOffset` -> [`DateTime`]
+//! - `Time` -> [`Time`](time/struct.Time.html)
+//! - `Date` -> [`Date`]
+//! - `DateTime` -> [`PrimitiveDateTime`]
+//! - `DateTime2` -> [`PrimitiveDateTime`]
+//! - `SmallDateTime` -> [`PrimitiveDateTime`]
+//! - `DateTimeOffset` -> [`OffsetDateTime`]
 //!
 //! With SQL Server 2005 and the `tds73` feature flag disabled, the mapping is
 //! different:
 //!
-//! - `DateTime` -> [`NaiveDateTime`]
-//! - `SmallDateTime` -> [`NaiveDateTime`]
+//! - `DateTime` -> [`PrimitiveDateTime`]
+//! - `SmallDateTime` -> [`PrimitiveDateTime`]
 //!
-//! [`chrono`]: chrono/index.html
-//! [`NaiveTime`]: chrono/struct.NaiveTime.html
-//! [`NaiveDate`]: chrono/struct.NaiveDate.html
-//! [`NaiveDateTime`]: chrono/struct.NaiveDateTime.html
-//! [`DateTime`]: chrono/struct.DateTime.html
+//! [`time`]: time/index.html
+//! [`Date`]: time/struct.Date.html
+//! [`PrimitiveDateTime`]: time/struct.PrimitiveDateTime.html
+//! [`OffsetDateTime`]: time/struct.OffsetDateTime.html
 
 #[cfg(feature = "chrono")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "chrono")))]
 pub mod chrono;
+
+#[cfg(feature = "time")]
+#[cfg_attr(feature = "docs", doc(cfg(feature = "time")))]
+pub mod time;
 
 use crate::{tds::codec::Encode, SqlReadBytes};
 #[cfg(feature = "tds73")]
@@ -38,7 +41,7 @@ use futures::io::AsyncReadExt;
 /// # Warning
 ///
 /// It isn't recommended to use this type directly. For dealing with `datetime`,
-/// use the `chrono` feature of this crate and its `NaiveDateTime` type.
+/// use the `time` feature of this crate and its `PrimitiveDateTime` type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct DateTime {
     days: i32,
@@ -93,8 +96,8 @@ impl Encode<BytesMut> for DateTime {
 /// # Warning
 ///
 /// It isn't recommended to use this type directly. For dealing with
-/// `smalldatetime`, use the `chrono` feature of this crate and its
-/// `NaiveDateTime` type.
+/// `smalldatetime`, use the `time` feature of this crate and its
+/// `PrimitiveDateTime` type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct SmallDateTime {
     days: u16,
@@ -147,7 +150,7 @@ impl Encode<BytesMut> for SmallDateTime {
 /// # Warning
 ///
 /// It isn't recommended to use this type directly. If you want to deal with
-/// `date`, use the chrono feature of this crate and its `NaiveDate` type.
+/// `date`, use the `time` feature of this crate and its `Date` type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[cfg(feature = "tds73")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
@@ -200,7 +203,7 @@ impl Encode<BytesMut> for Date {
 /// # Warning
 ///
 /// It isn't recommended to use this type directly. If you want to deal with
-/// `time`, use the chrono feature of this crate and its `NaiveTime` type.
+/// `time`, use the `time` feature of this crate and its `Time` type.
 #[derive(Copy, Clone, Debug)]
 #[cfg(feature = "tds73")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
@@ -322,7 +325,7 @@ impl Encode<BytesMut> for Time {
 /// # Warning
 ///
 /// It isn't recommended to use this type directly. For dealing with
-/// `datetime2`, use the `chrono` feature of this crate and its `NaiveDateTime`
+/// `datetime2`, use the `time` feature of this crate and its `PrimitiveDateTime`
 /// type.
 pub struct DateTime2 {
     date: Date,
@@ -384,7 +387,7 @@ impl Encode<BytesMut> for DateTime2 {
 /// # Warning
 ///
 /// It isn't recommended to use this type directly. For dealing with
-/// `datetimeoffset`, use the `chrono` feature of this crate and its `DateTime`
+/// `datetimeoffset`, use the `time` feature of this crate and its `OffsetDateTime`
 /// type with the correct timezone.
 pub struct DateTimeOffset {
     datetime2: DateTime2,

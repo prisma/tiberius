@@ -45,6 +45,7 @@ jobs:
         features:
           - "--features=all"
           - "--no-default-features --features=chrono"
+          - "--no-default-features --features=time"
 
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
