@@ -3,7 +3,6 @@ mod jdbc;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tracing::{event, Level};
 
 use super::AuthMethod;
 use crate::EncryptionLevel;
@@ -114,26 +113,29 @@ impl Config {
     /// as-is.
     ///
     /// On production setting, the certificate should be added to the local key
-    /// storage, using this setting is potentially dangerous.
+    /// storage (or use `trust_cert_ca` instead), using this setting is potentially dangerous.
     ///
-    /// - Defaults to `default`.
+    /// Will panic in case `trust_cert_ca` was called before.
+    ///
+    /// - Defaults to `default`, meaning server certificate is validated against system-truststore.
     pub fn trust_cert(&mut self) {
         if let TrustConfig::CaCertificateLocation(_) = &self.trust {
-            event!(
-                Level::WARN,
-                "trust_ca() was called before. Certificate validation will be disabled.",
-            );
+            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
         }
         self.trust = TrustConfig::TrustAll;
     }
 
-    /// If set, the server certificate will be validated against the given CA certificate.
-    /// Mutual exclusive with `trust_cert`
+    /// If set, the server certificate will be validated against the given CA certificate in
+    /// in addition to the system-truststore.
+    /// Useful when using self-signed certificates on the server without having to disable the
+    /// trust-chain.
     ///
-    /// - Defaults to `None`.
+    /// Will panic in case `trust_cert` was called before.
+    ///
+    /// - Defaults to `default`, meaning server certificate is validated against system-truststore.
     pub fn trust_cert_ca(&mut self, path: impl ToString) {
         if let TrustConfig::TrustAll = &self.trust {
-            event!(Level::WARN, "trust_cert() was called before. Ignoring CA.");
+            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
         } else {
             self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()))
         }
