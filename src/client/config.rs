@@ -115,6 +115,7 @@ impl Config {
     /// On production setting, the certificate should be added to the local key
     /// storage (or use `trust_cert_ca` instead), using this setting is potentially dangerous.
     ///
+    /// # Panics
     /// Will panic in case `trust_cert_ca` was called before.
     ///
     /// - Defaults to `default`, meaning server certificate is validated against system-truststore.
@@ -130,9 +131,10 @@ impl Config {
     /// Useful when using self-signed certificates on the server without having to disable the
     /// trust-chain.
     ///
+    /// # Panics
     /// Will panic in case `trust_cert` was called before.
     ///
-    /// - Defaults to `default`, meaning server certificate is validated against system-truststore.
+    /// - Defaults to validating the server certificate is validated against system's certificate storage.
     pub fn trust_cert_ca(&mut self, path: impl ToString) {
         if let TrustConfig::TrustAll = &self.trust {
             panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
