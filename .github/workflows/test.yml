@@ -208,7 +208,7 @@ jobs:
       - uses: docker-practice/actions-setup-docker@master
 
       - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker -f docker.yml up -d mssql-${{matrix.database}}
+        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
 
       - name: Run tests
         run: cargo test ${{matrix.features}}
