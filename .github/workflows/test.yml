@@ -42,6 +42,7 @@ jobs:
         database:
           - 2017
           - 2019
+          - azure-sql-edge
         features:
           - "--features=all"
           - "--no-default-features --features=chrono"
@@ -65,7 +66,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ matrix.features }}
 
       - name: Start SQL Server ${{matrix.database}}
-        run: docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
 
       - name: Install dependencies
         run: sudo apt install -y openssl libkrb5-dev
@@ -203,7 +204,7 @@ jobs:
       - uses: docker-practice/actions-setup-docker@master
 
       - name: Start SQL Server ${{matrix.database}}
-        run: docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
 
       - name: Run tests
         run: cargo test ${{matrix.features}}
