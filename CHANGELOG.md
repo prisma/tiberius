@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.7.3
+
+- Fixing an additionally renamed time module, that would've been a breaking change.
+
 ## Version 0.7.2
 
 - Dynamic query interface (#196)
