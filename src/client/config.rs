@@ -2,6 +2,7 @@ mod ado_net;
 mod jdbc;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use super::AuthMethod;
 use crate::EncryptionLevel;
@@ -28,8 +29,15 @@ pub struct Config {
     pub(crate) instance_name: Option<String>,
     pub(crate) application_name: Option<String>,
     pub(crate) encryption: EncryptionLevel,
-    pub(crate) trust_cert: bool,
+    pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum TrustConfig {
+    CaCertificateLocation(PathBuf),
+    TrustAll,
+    Default,
 }
 
 impl Default for Config {
@@ -41,7 +49,7 @@ impl Default for Config {
             instance_name: None,
             application_name: None,
             encryption: EncryptionLevel::Required,
-            trust_cert: false,
+            trust: TrustConfig::Default,
             auth: AuthMethod::None,
         }
     }
@@ -105,11 +113,34 @@ impl Config {
     /// as-is.
     ///
     /// On production setting, the certificate should be added to the local key
-    /// storage, using this setting is potentially dangerous.
+    /// storage (or use `trust_cert_ca` instead), using this setting is potentially dangerous.
     ///
-    /// - Defaults to `false`.
+    /// # Panics
+    /// Will panic in case `trust_cert_ca` was called before.
+    ///
+    /// - Defaults to `default`, meaning server certificate is validated against system-truststore.
     pub fn trust_cert(&mut self) {
-        self.trust_cert = true;
+        if let TrustConfig::CaCertificateLocation(_) = &self.trust {
+            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
+        }
+        self.trust = TrustConfig::TrustAll;
+    }
+
+    /// If set, the server certificate will be validated against the given CA certificate in
+    /// in addition to the system-truststore.
+    /// Useful when using self-signed certificates on the server without having to disable the
+    /// trust-chain.
+    ///
+    /// # Panics
+    /// Will panic in case `trust_cert` was called before.
+    ///
+    /// - Defaults to validating the server certificate is validated against system's certificate storage.
+    pub fn trust_cert_ca(&mut self, path: impl ToString) {
+        if let TrustConfig::TrustAll = &self.trust {
+            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
+        } else {
+            self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()))
+        }
     }
 
     /// Sets the authentication method.
@@ -208,6 +239,10 @@ impl Config {
             builder.trust_cert();
         }
 
+        if let Some(ca) = s.trust_cert_ca() {
+            builder.trust_cert_ca(ca);
+        }
+
         builder.encryption(s.encrypt()?);
 
         Ok(builder)
@@ -279,6 +314,12 @@ pub(crate) trait ConfigString {
             .get("trustservercertificate")
             .map(Self::parse_bool)
             .unwrap_or(Ok(false))
+    }
+
+    fn trust_cert_ca(&self) -> Option<String> {
+        self.dict()
+            .get("trustservercertificateca")
+            .map(|ca| ca.to_string())
     }
 
     fn encrypt(&self) -> crate::Result<EncryptionLevel> {

@@ -1,7 +1,9 @@
 version: "3"
 services:
   mssql-2019:
-    image: mcr.microsoft.com/mssql/server:2019-latest
+    build:
+      context: docker/
+      dockerfile: docker-mssql-2019.dockerfile
     restart: always
     environment:
       ACCEPT_EULA: "Y"
@@ -10,7 +12,9 @@ services:
       - "1433:1433"
 
   mssql-2017:
-    image: mcr.microsoft.com/mssql/server:2017-latest
+    build:
+      context: docker/
+      dockerfile: docker-mssql-2017.dockerfile
     restart: always
     environment:
       ACCEPT_EULA: "Y"
