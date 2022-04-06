@@ -42,6 +42,7 @@ jobs:
         database:
           - 2017
           - 2019
+          - azure-sql-edge
         features:
           - "--features=all"
           - "--no-default-features --features=chrono"

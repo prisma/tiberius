@@ -21,3 +21,14 @@ services:
       SA_PASSWORD: "<YourStrong@Passw0rd>"
     ports:
       - "1433:1433"
+
+  mssql-azure-sql-edge:
+    build:
+      context: docker/
+      dockerfile: docker-azure-sql-edge.dockerfile
+    restart: always
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "<YourStrong@Passw0rd>"
+    ports:
+      - "1433:1433"
