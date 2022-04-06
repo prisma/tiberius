@@ -187,7 +187,8 @@ impl Config {
     /// |`uid`,`username`,`user`,`user id`|`<string>`|The SQL Server login account.|
     /// |`password`,`pwd`|`<string>`|The password for the SQL Server account logging on.|
     /// |`database`|`<string>`|The name of the database.|
-    /// |`TrustServerCertificate`|`true`,`false`,`yes`,`no`|Specifies whether the driver trusts the server certificate when connecting using TLS.|
+    /// |`TrustServerCertificate`|`true`,`false`,`yes`,`no`|Specifies whether the driver trusts the server certificate when connecting using TLS. Cannot be used toghether with `TrustServerCertificateCA`|
+    /// |`TrustServerCertificateCA`|`<path>`|Path to a `pem`, `crt` or `der` certificate file. Cannot be used together with `TrustServerCertificate`|
     /// |`encrypt`|`true`,`false`,`yes`,`no`,`DANGER_PLAINTEXT`|Specifies whether the driver uses TLS to encrypt communication.|
     /// |`Application Name`, `ApplicationName`|`<string>`|Sets the application name for the connection.|
     ///
