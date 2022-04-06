@@ -23,9 +23,9 @@ mod xml;
 
 use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 #[cfg(feature = "tds73")]
-use crate::tds::{Date, DateTime2, DateTimeOffset, Time};
+use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
-    tds::{xml::XmlData, DateTime, Numeric, SmallDateTime},
+    tds::{time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
     SqlReadBytes,
 };
 use bytes::{BufMut, BytesMut};

@@ -1,6 +1,6 @@
 use crate::Error;
 
-use crate::{sql_read_bytes::SqlReadBytes, sql_time::Date, ColumnData};
+use crate::{sql_read_bytes::SqlReadBytes, time::Date, ColumnData};
 
 pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<ColumnData<'static>>
 where
