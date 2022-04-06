@@ -1,7 +1,7 @@
 use crate::{
     error::Error,
     sql_read_bytes::SqlReadBytes,
-    sql_time::{DateTime, SmallDateTime},
+    time::{DateTime, SmallDateTime},
     ColumnData,
 };
 

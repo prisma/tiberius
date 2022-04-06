@@ -2,14 +2,13 @@ pub mod codec;
 mod collation;
 mod context;
 pub mod numeric;
-pub mod sql_time;
 pub mod stream;
+pub mod time;
 pub mod xml;
 
 pub(crate) use collation::*;
 pub(crate) use context::*;
 pub(crate) use numeric::*;
-pub(crate) use sql_time::*;
 
 /// The amount of bytes a packet header consists of
 pub(crate) const HEADER_BYTES: usize = 8;
