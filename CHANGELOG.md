@@ -1,5 +1,11 @@
 # Changes
 
+## Version 0.7.2
+
+- Dynamic query interface (#196)
+- Support for `time` 0.3.x (#201)
+- Additional option to add custom-ca to root certificates (#203, thx @lostiniceland)
+
 ## Version 0.7.1
 
 - Support all pre-login tokens
