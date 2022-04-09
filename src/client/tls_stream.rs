@@ -67,7 +67,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
         Ok(TlsStream(tls_stream.compat()))
     }
 
-    pub(super) fn get_inner_mut(&mut self) -> &mut S {
+    pub(super) fn get_mut(&mut self) -> &mut S {
         self.0.get_mut().get_mut().0.get_mut()
     }
 }
@@ -78,7 +78,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsStream<S> {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let inner = self.get_mut();
+        let inner = Pin::get_mut(self);
         Pin::new(&mut inner.0).poll_read(cx, buf)
     }
 }
@@ -89,17 +89,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsStream<S> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        let inner = self.get_mut();
+        let inner = Pin::get_mut(self);
         Pin::new(&mut inner.0).poll_write(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner = self.get_mut();
+        let inner = Pin::get_mut(self);
         Pin::new(&mut inner.0).poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let inner = self.get_mut();
+        let inner = Pin::get_mut(self);
         Pin::new(&mut inner.0).poll_close(cx)
     }
 }

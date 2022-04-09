@@ -23,7 +23,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
     pub fn into_inner(self) -> S {
         match self {
             Self::Raw(s) => s,
-            Self::Tls(mut tls) => tls.get_inner_mut().stream.take().unwrap(),
+            Self::Tls(mut tls) => tls.get_mut().stream.take().unwrap(),
         }
     }
 }
