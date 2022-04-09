@@ -1,8 +1,8 @@
+use crate::client::tls_stream::TlsStream;
 use crate::tds::{
     codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType},
     HEADER_BYTES,
 };
-use tokio_rustls::client::TlsStream;
 use bytes::BytesMut;
 use futures::ready;
 use futures::{AsyncRead, AsyncWrite};
@@ -12,19 +12,18 @@ use std::{
     task::{self, Poll},
 };
 use tracing::{event, Level};
-use tokio_util::compat::Compat;
 
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
     Raw(S),
-    Tls(Compat<TlsStream<Compat<TlsPreloginWrapper<S>>>>),
+    Tls(TlsStream<TlsPreloginWrapper<S>>),
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
     pub fn into_inner(self) -> S {
         match self {
             Self::Raw(s) => s,
-            Self::Tls(mut tls) => tls.get_mut().get_mut().0.get_mut().stream.take().unwrap(),
+            Self::Tls(mut tls) => tls.get_inner_mut().stream.take().unwrap(),
         }
     }
 }

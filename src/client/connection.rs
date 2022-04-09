@@ -17,7 +17,6 @@ use asynchronous_codec::Framed;
 use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
 use codec::TokenSspi;
-use hyper_rustls::ConfigBuilderExt;
 use futures::{ready, AsyncRead, AsyncWrite, SinkExt, Stream, TryStream, TryStreamExt};
 #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
 use libgssapi::{
@@ -34,12 +33,7 @@ use task::Poll;
 use tracing::{event, Level};
 #[cfg(all(windows, feature = "winauth"))]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
-use std::sync::Arc;
-use crate::client::no_cert_verifier::NoCertVerifier;
-use tokio_rustls::rustls::ClientConfig;
-use tokio_rustls::TlsConnector;
-use tokio_util::compat::{TokioAsyncReadCompatExt};
-use tokio_util::compat::FuturesAsyncReadCompatExt;
+use crate::client::tls_stream::TlsStream;
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
@@ -384,41 +378,20 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            let mut client_config = ClientConfig::builder()
-                .with_safe_defaults()
-                .with_native_roots()
-                .with_no_client_auth();
-            if trust_cert {
-                event!(
-                    Level::WARN,
-                    "Trusting the server certificate without validation."
-                );
-
-                client_config
-                    .dangerous()
-                    .set_certificate_verifier(Arc::new(NoCertVerifier {}));
-            }
-            let builder = TlsConnector::try_from(Arc::new(client_config)).unwrap();
-
             let Self {
                 transport, context, ..
             } = self;
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
-                    builder
-                        .connect(
-                            config.get_host().try_into().unwrap(),
-                            TlsPreloginWrapper::new(tcp).compat(),
-                        )
-                        .await?
-                }
+                    TlsStream::new(config, trust_cert, TlsPreloginWrapper::new(tcp)).await?
+                },
                 _ => unreachable!(),
             };
 
-            stream.get_mut().0.get_mut().handshake_complete();
+            stream.get_inner_mut().handshake_complete();
             event!(Level::INFO, "TLS handshake successful");
 
-            let transport = Framed::new(MaybeTlsStream::Tls(stream.compat()), PacketCodec);
+            let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
 
             Ok(Self {
                 transport,
