@@ -263,6 +263,16 @@ mod tests {
     }
 
     #[test]
+    fn trust_cert_ca_parsing_ok() -> crate::Result<()> {
+        let test_str = "TrustServerCertificateCA=someca.crt;";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(Some("someca.crt".to_string()), ado.trust_cert_ca());
+
+        Ok(())
+    }
+
+    #[test]
     fn parsing_sql_server_authentication() -> crate::Result<()> {
         let test_str = "uid=Musti; pwd=Naukio;";
         let ado: AdoNetConfig = test_str.parse()?;

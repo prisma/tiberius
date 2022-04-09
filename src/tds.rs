@@ -9,7 +9,6 @@ pub mod xml;
 pub(crate) use collation::*;
 pub(crate) use context::*;
 pub(crate) use numeric::*;
-pub(crate) use time::*;
 
 /// The amount of bytes a packet header consists of
 pub(crate) const HEADER_BYTES: usize = 8;

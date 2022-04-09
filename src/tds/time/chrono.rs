@@ -1,8 +1,9 @@
 //! Mappings between TDS and and Chrono types (with `chrono` feature flag
 //! enabled).
 //!
-//! The chrono library offers better ergonomy and are highly recommended if
-//! needing to modify and deal with date and time in SQL Server.
+//! The chrono library offers better ergonomy, but is known to hold certain
+//! security vulnerabilities. The code here is for legacy purposes, please use
+//! `time` crate for greenfield projects.
 
 #[cfg(not(feature = "tds73"))]
 use super::DateTime as DateTime1;

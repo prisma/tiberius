@@ -171,6 +171,16 @@ mod tests {
     }
 
     #[test]
+    fn trust_cert_ca_parsing_ok() -> crate::Result<()> {
+        let test_str = "jdbc:sqlserver://my-server.com:4200;TrustServerCertificateCA=someca.crt;";
+        let ado: JdbcConfig = test_str.parse()?;
+
+        assert_eq!(Some("someca.crt".to_string()), ado.trust_cert_ca());
+
+        Ok(())
+    }
+
+    #[test]
     fn parsing_sql_server_authentication() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;User ID=Musti;pwd=Naukio;";
         let jdbc: JdbcConfig = test_str.parse()?;

@@ -15,7 +15,7 @@ static LOGGER_SETUP: Once = Once::new();
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
-        "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
+        "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;IntegratedSecurity=true;TrustServerCertificate=true".to_owned()
     })
 });
 
@@ -1798,6 +1798,185 @@ where
 
     assert_eq!(Some(dt), row.get(0));
     assert_eq!(Option::<DateTime<FixedOffset>>::None, row.get(1));
+
+    Ok(())
+}
+
+// time crate
+
+#[cfg(all(not(feature = "tds73"), feature = "time"))]
+#[test_on_runtimes]
+async fn primitive_date_time_tds72_time_crate<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let dt = time::Date::from_calendar_date(2020, time::Month::April, 20)
+        .unwrap()
+        .with_hms(16, 20, 0)
+        .unwrap();
+
+    let stream = conn.query("SELECT @P1", &[&dt]).await?;
+    let row = stream.into_row().await?.unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "time"))]
+#[test_on_runtimes]
+async fn primitive_small_date_time_tds73_time_crate<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let dt = time::Date::from_calendar_date(2020, time::Month::April, 20)
+        .unwrap()
+        .with_hms(16, 20, 0)
+        .unwrap();
+
+    let table = random_table().await;
+
+    conn.execute(
+        format!("CREATE TABLE ##{} (date smalldatetime)", table),
+        &[],
+    )
+    .await?;
+
+    conn.execute(
+        format!("INSERT INTO ##{} (date) VALUES (@P1)", table),
+        &[&dt],
+    )
+    .await?
+    .total();
+
+    let row = conn
+        .query(format!("SELECT date FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "time"))]
+#[test_on_runtimes]
+async fn primitive_date_time2_tds73_time_crate<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let dt = time::Date::from_calendar_date(2020, time::Month::April, 20)
+        .unwrap()
+        .with_hms(16, 20, 0)
+        .unwrap();
+    let table = random_table().await;
+
+    conn.execute(format!("CREATE TABLE ##{} (date datetime2)", table), &[])
+        .await?;
+
+    conn.execute(
+        format!("INSERT INTO ##{} (date) VALUES (@P1)", table),
+        &[&dt],
+    )
+    .await?
+    .total();
+
+    let row = conn
+        .query(format!("SELECT date FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "time"))]
+#[test_on_runtimes]
+async fn time_with_time_crate<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let time = time::Time::from_hms(16, 20, 0).unwrap();
+
+    let row = conn
+        .query("SELECT @P1", &[&time])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(time), row.get(0));
+
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "time"))]
+#[test_on_runtimes]
+async fn date_with_time_crate<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let date = time::Date::from_calendar_date(2020, time::Month::April, 20).unwrap();
+
+    let row = conn
+        .query("SELECT @P1", &[&date])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(date), row.get(0));
+
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "time"))]
+#[test_on_runtimes]
+async fn offset_datetime_utc_with_time_crate<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let dt = time::Date::from_calendar_date(2020, time::Month::April, 20)
+        .unwrap()
+        .with_hms(16, 20, 00)
+        .unwrap()
+        .assume_offset(time::UtcOffset::UTC);
+
+    let row = conn
+        .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "time"))]
+#[test_on_runtimes]
+async fn offset_date_time_fixed_with_time_crate<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let dt = time::Date::from_calendar_date(2020, time::Month::April, 20)
+        .unwrap()
+        .with_hms(16, 20, 00)
+        .unwrap()
+        .assume_offset(time::UtcOffset::from_hms(3, 0, 0).unwrap());
+
+    let row = conn
+        .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
 
     Ok(())
 }
