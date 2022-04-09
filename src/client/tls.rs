@@ -2,31 +2,29 @@ use crate::tds::{
     codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType},
     HEADER_BYTES,
 };
-#[cfg(all(not(target_os = "macos"), not(target_os = "ios")))]
-use async_native_tls::TlsStream;
+use tokio_rustls::client::TlsStream;
 use bytes::BytesMut;
 use futures::ready;
 use futures::{AsyncRead, AsyncWrite};
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-use opentls::async_io::TlsStream;
 use std::{
     cmp, io,
     pin::Pin,
     task::{self, Poll},
 };
 use tracing::{event, Level};
+use tokio_util::compat::Compat;
 
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
     Raw(S),
-    Tls(TlsStream<TlsPreloginWrapper<S>>),
+    Tls(Compat<TlsStream<Compat<TlsPreloginWrapper<S>>>>),
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
     pub fn into_inner(self) -> S {
         match self {
             Self::Raw(s) => s,
-            Self::Tls(mut tls) => tls.get_mut().stream.take().unwrap(),
+            Self::Tls(mut tls) => tls.get_mut().get_mut().0.get_mut().stream.take().unwrap(),
         }
     }
 }
@@ -192,7 +190,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
         let inner = self.get_mut();
 
         // If on handshake mode, wraps the data to a TDS packet before sending.
-        if inner.pending_handshake {
+        if inner.pending_handshake && inner.wr_buf.len() > HEADER_BYTES {
             if !inner.header_written {
                 let mut header = PacketHeader::new(inner.wr_buf.len(), 0);
 
