@@ -1,10 +1,9 @@
-use crate::error::IoErrorKind;
+use crate::client::tls_stream::TlsStream;
 use crate::{
     client::{
         tls::{MaybeTlsStream, TlsPreloginWrapper},
-        AuthMethod, Config, TrustConfig,
+        AuthMethod, Config,
     },
-    error::Error,
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -16,7 +15,6 @@ use crate::{
     EncryptionLevel, SqlReadBytes,
 };
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-use async_native_tls::{Certificate, TlsConnector};
 use asynchronous_codec::Framed;
 use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
@@ -32,12 +30,11 @@ use libgssapi::{
 use pretty_hex::*;
 #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
 use std::ops::Deref;
-use std::{cmp, fmt::Debug, fs, io, pin::Pin, task};
+use std::{cmp, fmt::Debug, io, pin::Pin, task};
 use task::Poll;
 use tracing::{event, Level};
 #[cfg(all(windows, feature = "winauth"))]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
-use crate::client::tls_stream::TlsStream;
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets
@@ -378,57 +375,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         if encryption != EncryptionLevel::NotSupported {
             event!(Level::INFO, "Performing a TLS handshake");
 
-            let mut builder = TlsConnector::new();
-
-            match &config.trust {
-                TrustConfig::CaCertificateLocation(path) => {
-                    if let Ok(buf) = fs::read(path) {
-                        let cert = match path.extension() {
-                            Some(ext)
-                                if ext.to_ascii_lowercase() == "pem"
-                                    || ext.to_ascii_lowercase() == "crt" =>
-                            {
-                                Some(Certificate::from_pem(&buf)?)
-                            }
-                            Some(ext) if ext.to_ascii_lowercase() == "der" => {
-                                Some(Certificate::from_der(&buf)?)
-                            }
-                            Some(_) | None => return Err(Error::Io {
-                                kind: IoErrorKind::InvalidInput,
-                                message: "Provided CA certificate with unsupported file-extension! Supported types are pem, crt and der.".to_string()}),
-                        };
-                        if let Some(c) = cert {
-                            builder = builder.add_root_certificate(c);
-                        }
-                    } else {
-                        return Err(Error::Io {
-                            kind: IoErrorKind::InvalidData,
-                            message: "Could not read provided CA certificate!".to_string(),
-                        });
-                    }
-                }
-                TrustConfig::TrustAll => {
-                    event!(
-                        Level::WARN,
-                        "Trusting the server certificate without validation."
-                    );
-
-                    builder = builder.danger_accept_invalid_certs(true);
-                    builder = builder.danger_accept_invalid_hostnames(true);
-                    builder = builder.use_sni(false);
-                }
-                TrustConfig::Default => {
-                    event!(Level::INFO, "Using default trust configuration.");
-                }
-            }
-
             let Self {
                 transport, context, ..
             } = self;
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
-                    TlsStream::new(config, trust_cert, TlsPreloginWrapper::new(tcp)).await?
-                },
+                    TlsStream::new(config, TlsPreloginWrapper::new(tcp)).await?
+                }
                 _ => unreachable!(),
             };
 
