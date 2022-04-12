@@ -191,7 +191,7 @@ jobs:
         database:
           - 2019
         features:
-          - "--features=all,vendored-openssl"
+          - "--features=all"
 
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"

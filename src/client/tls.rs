@@ -2,13 +2,10 @@ use crate::tds::{
     codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType},
     HEADER_BYTES,
 };
-#[cfg(all(not(target_os = "macos"), not(target_os = "ios")))]
 use async_native_tls::TlsStream;
 use bytes::BytesMut;
 use futures::ready;
 use futures::{AsyncRead, AsyncWrite};
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-use opentls::async_io::TlsStream;
 use std::{
     cmp, io,
     pin::Pin,

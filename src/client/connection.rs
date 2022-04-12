@@ -15,7 +15,6 @@ use crate::{
     },
     EncryptionLevel, SqlReadBytes,
 };
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use async_native_tls::{Certificate, TlsConnector};
 use asynchronous_codec::Framed;
 use bytes::BytesMut;
@@ -29,8 +28,6 @@ use libgssapi::{
     name::Name,
     oid::{OidSet, GSS_MECH_KRB5, GSS_NT_KRB5_PRINCIPAL},
 };
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-use opentls::{async_io::TlsConnector, Certificate};
 use pretty_hex::*;
 #[cfg(all(unix, feature = "integrated-auth-gssapi"))]
 use std::ops::Deref;

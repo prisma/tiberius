@@ -52,18 +52,13 @@ async-trait = "0.1"
 connection-string = "0.1.4"
 num-traits = "0.2"
 uuid = "0.8"
+async-native-tls = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 winauth = { version = "0.0.4", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libgssapi = { version = "0.4.5", optional = true, default-features = false }
-
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-opentls = { version = "0.2.1", features = ["io-async-std"]}
-
-[target.'cfg(not(any(target_os = "macos", target_os = "ios")))'.dependencies]
-async-native-tls = { version = "0.4", features = ["runtime-async-std"] }
 
 [dependencies.tokio]
 version = "1.0"
@@ -159,7 +154,6 @@ all = [
     "bigdecimal"
 ]
 default = ["tds73", "winauth"]
-vendored-openssl = ["opentls/vendored", "async-native-tls/vendored"]
 tds73 = []
 docs = []
 sql-browser-async-std = ["async-std"]
