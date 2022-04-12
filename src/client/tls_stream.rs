@@ -9,7 +9,7 @@ use rustls::{
     client::{ServerCertVerified, ServerCertVerifier},
     Certificate, Error as RustlsError, RootCertStore, ServerName,
 };
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -60,9 +60,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                         if ext.to_ascii_lowercase() == "pem"
                             || ext.to_ascii_lowercase() == "crt" =>
                             {
-                                todo!()
-                                // Some(
-                                //     Certificate::from_pem(&buf)?)
+                                let pem_cert =rustls_pemfile::certs(&mut buf.as_slice())?;
+                                if pem_cert.len() != 1 {
+                                    return Err(crate::Error::Io {
+                                        kind: IoErrorKind::InvalidInput,
+                                        message: format!("Certificate file {} contain 0 or more than 1 certs", path.to_string_lossy()),
+                                    });
+                                }
+
+                                Certificate(pem_cert.into_iter().next().unwrap())
                             }
                         Some(ext) if ext.to_ascii_lowercase() == "der" => {
                             Certificate(buf)
@@ -100,7 +106,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
             }
         };
 
-        let connector = TlsConnector::try_from(Arc::new(client_config)).unwrap();
+        let connector = TlsConnector::from(Arc::new(client_config));
 
         let tls_stream = connector
             .connect(config.get_host().try_into().unwrap(), stream.compat())

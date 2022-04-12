@@ -7,7 +7,7 @@ authors = [
 ]
 description = "A TDS (MSSQL) driver"
 documentation = "https://docs.rs/tiberius/"
-edition = "2018"
+edition = "2021"
 keywords = ["tds", "mssql", "sql"]
 license = "MIT/Apache-2.0"
 name = "tiberius"
@@ -58,6 +58,7 @@ rustls = { version = "0.20.4", features = ["dangerous_configuration"]}
 tokio-util = {version = "0.6", features = ["compat"]}
 async-std = {version = "1", features = ["attributes"]}
 tokio = {version = "1.0", features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]}
+rustls-pemfile = "0.3.0"
 
 [target.'cfg(windows)'.dependencies]
 winauth = { version = "0.0.4", optional = true }
