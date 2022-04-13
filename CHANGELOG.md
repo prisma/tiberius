@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.8.0
+
+- (BREAKING) fix: correctly decode null integers (#209)
+
 ## Version 0.7.3
 
 - Fixing an accidentally renamed time module, that would've been a breaking change.
