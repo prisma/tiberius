@@ -15,8 +15,8 @@ where
 
     let res = match ty {
         Bitn => super::bit::decode(src).await?,
-        Intn => super::int::decode(src).await?,
-        Floatn => super::float::decode(src).await?,
+        Intn => super::int::decode(src, len).await?,
+        Floatn => super::float::decode(src, len).await?,
         Guid => super::guid::decode(src).await?,
         BigChar | BigVarChar | NChar | NVarchar => {
             ColumnData::String(super::string::decode(src, ty, len, collation).await?)

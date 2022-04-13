@@ -4,6 +4,7 @@ use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
+use tiberius::FromSql;
 use tiberius::{numeric::Numeric, xml::XmlData, ColumnType, Query, QueryItem, Result};
 use uuid::Uuid;
 
@@ -669,6 +670,36 @@ where
 }
 
 #[test_on_runtimes]
+async fn read_nullable_u8<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!("CREATE TABLE ##{} (a tinyint null)", table))
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute(format!("INSERT INTO ##{} (a) values (null)", table), &[])
+        .await?;
+
+    let row = conn
+        .query(format!("SELECT a FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    for val in row {
+        assert_eq!(&tiberius::ColumnData::U8(None), &val);
+        assert_eq!(Option::<u8>::None, u8::from_sql(&val)?)
+    }
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn read_nullable_i16<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
@@ -690,7 +721,10 @@ where
         .await?
         .unwrap();
 
-    assert_eq!(Option::<i16>::None, row.get(0));
+    for val in row {
+        assert_eq!(&tiberius::ColumnData::I16(None), &val);
+        assert_eq!(Option::<i16>::None, i16::from_sql(&val)?)
+    }
 
     Ok(())
 }
@@ -717,7 +751,10 @@ where
         .await?
         .unwrap();
 
-    assert_eq!(Option::<i32>::None, row.get(0));
+    for val in row {
+        assert_eq!(&tiberius::ColumnData::I32(None), &val);
+        assert_eq!(Option::<i32>::None, i32::from_sql(&val)?)
+    }
 
     Ok(())
 }
@@ -744,7 +781,71 @@ where
         .await?
         .unwrap();
 
-    assert_eq!(Option::<i64>::None, row.get(0));
+    for val in row {
+        assert_eq!(&tiberius::ColumnData::I64(None), &val);
+        assert_eq!(Option::<i64>::None, i64::from_sql(&val)?)
+    }
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn read_nullable_f32<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!("CREATE TABLE ##{} (a real null)", table))
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute(format!("INSERT INTO ##{} (a) values (null)", table), &[])
+        .await?;
+
+    let row = conn
+        .query(format!("SELECT a FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    for val in row {
+        assert_eq!(Option::<f32>::None, f32::from_sql(&val)?);
+        dbg!(&val);
+        assert_eq!(tiberius::ColumnData::F32(None), val);
+    }
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn read_nullable_f64<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!("CREATE TABLE ##{} (a float(25) null)", table))
+        .await?
+        .into_results()
+        .await?;
+
+    conn.execute(format!("INSERT INTO ##{} (a) values (null)", table), &[])
+        .await?;
+
+    let row = conn
+        .query(format!("SELECT a FROM ##{}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    for val in row {
+        assert_eq!(&tiberius::ColumnData::F64(None), &val);
+        assert_eq!(Option::<f64>::None, f64::from_sql(&val)?)
+    }
 
     Ok(())
 }
