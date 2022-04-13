@@ -56,8 +56,6 @@ tokio-rustls = "0.23.3"
 hyper-rustls = "0.23.0"
 rustls = { version = "0.20.4", features = ["dangerous_configuration"]}
 tokio-util = {version = "0.6", features = ["compat"]}
-async-std = {version = "1", features = ["attributes"]}
-tokio = {version = "1.0", features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]}
 rustls-pemfile = "0.3.0"
 
 [target.'cfg(windows)'.dependencies]
@@ -66,11 +64,15 @@ winauth = { version = "0.0.4", optional = true }
 [target.'cfg(unix)'.dependencies]
 libgssapi = { version = "0.4.5", optional = true, default-features = false }
 
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-opentls = { version = "0.2.1", features = ["io-async-std"]}
+[dependencies.async-std]
+version = "1"
+optional = true
+features = ["attributes"]
 
-[target.'cfg(not(any(target_os = "macos", target_os = "ios")))'.dependencies]
-async-native-tls = { version = "0.4", features = ["runtime-async-std"] }
+[dependencies.tokio]
+version = "1.0"
+optional = true
+features = ["net", "time"]
 
 [dependencies.chrono]
 version = "0.4"
@@ -111,13 +113,17 @@ optional = true
 version = "1.12.0"
 optional = true
 
-[dev-dependencies.uuid]
-version = "0.8"
-features = ["v4"]
+[dev-dependencies.tokio]
+features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]
+version = "1.0"
 
 [dev-dependencies.async-std]
 features = ["attributes"]
 version = "1"
+
+[dev-dependencies.uuid]
+version = "0.8"
+features = ["v4"]
 
 [dev-dependencies.runtimes-macro]
 path = "./runtimes-macro"
@@ -143,11 +149,10 @@ all = [
     "bigdecimal"
 ]
 default = ["tds73", "winauth"]
-vendored-openssl = ["opentls/vendored", "async-native-tls/vendored"]
 tds73 = []
 docs = []
-sql-browser-async-std = []
-sql-browser-tokio = []
+sql-browser-async-std = ["async-std"]
+sql-browser-tokio = ["tokio"]
 sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
 bigdecimal = [ "bigdecimal_"]

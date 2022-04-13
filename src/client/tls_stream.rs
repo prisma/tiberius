@@ -1,23 +1,24 @@
-use crate::client::config::Config;
-use crate::client::TrustConfig;
-use crate::error::IoErrorKind;
-use crate::Error;
-use async_std::task::{Context, Poll};
+use crate::{
+    client::{config::Config, TrustConfig},
+    error::IoErrorKind,
+    Error,
+};
 use futures::{AsyncRead, AsyncWrite};
 use hyper_rustls::ConfigBuilderExt;
 use rustls::{
     client::{ServerCertVerified, ServerCertVerifier},
     Certificate, Error as RustlsError, RootCertStore, ServerName,
 };
-use std::convert::TryInto;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::time::SystemTime;
+use std::{
+    convert::TryInto,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::SystemTime,
+};
 use std::{fs, io};
-use tokio_rustls::rustls::ClientConfig;
-use tokio_rustls::TlsConnector;
-use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
+use tokio_rustls::{rustls::ClientConfig, TlsConnector};
+use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{event, Level};
 
 impl From<tokio_rustls::webpki::Error> for Error {

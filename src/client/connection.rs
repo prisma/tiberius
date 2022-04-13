@@ -14,7 +14,6 @@ use crate::{
     },
     EncryptionLevel, SqlReadBytes,
 };
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use asynchronous_codec::Framed;
 use bytes::BytesMut;
 #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
