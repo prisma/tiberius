@@ -10,7 +10,6 @@ use rustls::{
     Certificate, Error as RustlsError, RootCertStore, ServerName,
 };
 use std::{
-    convert::TryInto,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -47,6 +46,13 @@ impl ServerCertVerifier for NoCertVerifier {
     }
 }
 
+fn get_server_name(config: &Config) -> crate::Result<ServerName> {
+    match (ServerName::try_from(config.get_host()), &config.trust) {
+        (Ok(sn), _) => Ok(sn),
+        (Err(_), TrustConfig::TrustAll) => Ok(ServerName::try_from("placeholder.domain.com").unwrap()),
+        (Err(e), _) => Err(crate::Error::Tls(e.to_string())),
+    }
+}
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
     pub(super) async fn new(config: &Config, stream: S) -> crate::Result<Self> {
         event!(Level::INFO, "Performing a TLS handshake");
@@ -99,6 +105,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                 config
                     .dangerous()
                     .set_certificate_verifier(Arc::new(NoCertVerifier {}));
+                config.enable_sni = false;
                 config
             }
             TrustConfig::Default => {
@@ -110,7 +117,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
         let connector = TlsConnector::from(Arc::new(client_config));
 
         let tls_stream = connector
-            .connect(config.get_host().try_into().unwrap(), stream.compat())
+            .connect(get_server_name(config)?, stream.compat())
             .await?;
 
         Ok(TlsStream(tls_stream.compat()))
