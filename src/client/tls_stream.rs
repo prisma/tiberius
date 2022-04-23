@@ -16,6 +16,8 @@ use std::{
     time::SystemTime,
 };
 use std::{fs, io};
+use rustls::client::HandshakeSignatureValid;
+use rustls::internal::msgs::handshake::DigitallySignedStruct;
 use tokio_rustls::{rustls::ClientConfig, TlsConnector};
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{event, Level};
@@ -44,10 +46,21 @@ impl ServerCertVerifier for NoCertVerifier {
     ) -> Result<ServerCertVerified, RustlsError> {
         Ok(ServerCertVerified::assertion())
     }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &Certificate,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
 }
 
 fn get_server_name(config: &Config) -> crate::Result<ServerName> {
     match (ServerName::try_from(config.get_host()), &config.trust) {
+        (_, TrustConfig::TrustAll) => Ok(ServerName::try_from("placeholder.domain.com").unwrap()),
         (Ok(sn), _) => Ok(sn),
         (Err(_), TrustConfig::TrustAll) => Ok(ServerName::try_from("placeholder.domain.com").unwrap()),
         (Err(e), _) => Err(crate::Error::Tls(e.to_string())),
@@ -105,7 +118,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                 config
                     .dangerous()
                     .set_certificate_verifier(Arc::new(NoCertVerifier {}));
-                config.enable_sni = false;
+                // config.enable_sni = false;
                 config
             }
             TrustConfig::Default => {
