@@ -5,19 +5,19 @@ use crate::{
 };
 use futures::{AsyncRead, AsyncWrite};
 use hyper_rustls::ConfigBuilderExt;
+use rustls::client::HandshakeSignatureValid;
+use rustls::internal::msgs::handshake::DigitallySignedStruct;
 use rustls::{
     client::{ServerCertVerified, ServerCertVerifier},
     Certificate, Error as RustlsError, RootCertStore, ServerName,
 };
+use std::{fs, io};
 use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
     time::SystemTime,
 };
-use std::{fs, io};
-use rustls::client::HandshakeSignatureValid;
-use rustls::internal::msgs::handshake::DigitallySignedStruct;
 use tokio_rustls::{rustls::ClientConfig, TlsConnector};
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{event, Level};
@@ -40,7 +40,7 @@ impl ServerCertVerifier for NoCertVerifier {
         _end_entity: &Certificate,
         _intermediates: &[Certificate],
         _server_name: &ServerName,
-        _scts: &mut dyn Iterator<Item=&[u8]>,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
         _now: SystemTime,
     ) -> Result<ServerCertVerified, RustlsError> {
@@ -60,7 +60,9 @@ impl ServerCertVerifier for NoCertVerifier {
 fn get_server_name(config: &Config) -> crate::Result<ServerName> {
     match (ServerName::try_from(config.get_host()), &config.trust) {
         (Ok(sn), _) => Ok(sn),
-        (Err(_), TrustConfig::TrustAll) => Ok(ServerName::try_from("placeholder.domain.com").unwrap()),
+        (Err(_), TrustConfig::TrustAll) => {
+            Ok(ServerName::try_from("placeholder.domain.com").unwrap())
+        }
         (Err(e), _) => Err(crate::Error::Tls(e.to_string())),
     }
 }
