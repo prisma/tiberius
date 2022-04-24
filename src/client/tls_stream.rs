@@ -40,7 +40,7 @@ impl ServerCertVerifier for NoCertVerifier {
         _end_entity: &Certificate,
         _intermediates: &[Certificate],
         _server_name: &ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _scts: &mut dyn Iterator<Item=&[u8]>,
         _ocsp_response: &[u8],
         _now: SystemTime,
     ) -> Result<ServerCertVerified, RustlsError> {
@@ -55,17 +55,16 @@ impl ServerCertVerifier for NoCertVerifier {
     ) -> Result<HandshakeSignatureValid, RustlsError> {
         Ok(HandshakeSignatureValid::assertion())
     }
-
 }
 
 fn get_server_name(config: &Config) -> crate::Result<ServerName> {
     match (ServerName::try_from(config.get_host()), &config.trust) {
-        (_, TrustConfig::TrustAll) => Ok(ServerName::try_from("placeholder.domain.com").unwrap()),
         (Ok(sn), _) => Ok(sn),
         (Err(_), TrustConfig::TrustAll) => Ok(ServerName::try_from("placeholder.domain.com").unwrap()),
         (Err(e), _) => Err(crate::Error::Tls(e.to_string())),
     }
 }
+
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
     pub(super) async fn new(config: &Config, stream: S) -> crate::Result<Self> {
         event!(Level::INFO, "Performing a TLS handshake");
@@ -80,7 +79,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                         if ext.to_ascii_lowercase() == "pem"
                             || ext.to_ascii_lowercase() == "crt" =>
                             {
-                                let pem_cert =rustls_pemfile::certs(&mut buf.as_slice())?;
+                                let pem_cert = rustls_pemfile::certs(&mut buf.as_slice())?;
                                 if pem_cert.len() != 1 {
                                     return Err(crate::Error::Io {
                                         kind: IoErrorKind::InvalidInput,
@@ -95,7 +94,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                         }
                         Some(_) | None => return Err(crate::Error::Io {
                             kind: IoErrorKind::InvalidInput,
-                            message: "Provided CA certificate with unsupported file-extension! Supported types are pem, crt and der.".to_string()}),
+                            message: "Provided CA certificate with unsupported file-extension! Supported types are pem, crt and der.".to_string(),
+                        }),
                     };
                     let mut cert_store = RootCertStore::empty();
                     cert_store.add(&cert)?;
