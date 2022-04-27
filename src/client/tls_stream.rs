@@ -4,21 +4,24 @@ use crate::{
     Error,
 };
 use futures::{AsyncRead, AsyncWrite};
-use hyper_rustls::ConfigBuilderExt;
-use rustls::client::HandshakeSignatureValid;
-use rustls::internal::msgs::handshake::DigitallySignedStruct;
-use rustls::{
-    client::{ServerCertVerified, ServerCertVerifier},
-    Certificate, Error as RustlsError, RootCertStore, ServerName,
-};
-use std::{fs, io};
 use std::{
+    fs, io,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
     time::SystemTime,
 };
-use tokio_rustls::{rustls::ClientConfig, TlsConnector};
+use tokio_rustls::{
+    rustls::{
+        client::{
+            HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+            WantsTransparencyPolicyOrClientCert,
+        },
+        internal::msgs::handshake::DigitallySignedStruct,
+        Certificate, ClientConfig, ConfigBuilder, RootCertStore, ServerName, WantsVerifier,
+    },
+    TlsConnector,
+};
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{event, Level};
 
@@ -43,7 +46,7 @@ impl ServerCertVerifier for NoCertVerifier {
         _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
         _now: SystemTime,
-    ) -> Result<ServerCertVerified, RustlsError> {
+    ) -> Result<ServerCertVerified, tokio_rustls::rustls::Error> {
         Ok(ServerCertVerified::assertion())
     }
 
@@ -52,7 +55,7 @@ impl ServerCertVerifier for NoCertVerifier {
         _message: &[u8],
         _cert: &Certificate,
         _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, RustlsError> {
+    ) -> Result<HandshakeSignatureValid, tokio_rustls::rustls::Error> {
         Ok(HandshakeSignatureValid::assertion())
     }
 }
@@ -172,5 +175,39 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsStream<S> {
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let inner = Pin::get_mut(self);
         Pin::new(&mut inner.0).poll_close(cx)
+    }
+}
+
+trait ConfigBuilderExt {
+    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert>;
+}
+
+impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
+    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert> {
+        let mut roots = RootCertStore::empty();
+        let mut valid_count = 0;
+        let mut invalid_count = 0;
+
+        for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs")
+        {
+            let cert = Certificate(cert.0);
+            match roots.add(&cert) {
+                Ok(_) => valid_count += 1,
+                Err(err) => {
+                    tracing::event!(Level::TRACE, "invalid cert der {:?}", cert.0);
+                    tracing::event!(Level::DEBUG, "certificate parsing failed: {:?}", err);
+                    invalid_count += 1
+                }
+            }
+        }
+        tracing::event!(
+            Level::TRACE,
+            "with_native_roots processed {} valid and {} invalid certs",
+            valid_count,
+            invalid_count
+        );
+        assert!(!roots.is_empty(), "no CA certificates found");
+
+        self.with_root_certificates(roots)
     }
 }

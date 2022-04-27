@@ -32,6 +32,7 @@
             llvmPackages.libclang.lib
             kerberos
             rust-bin.stable.latest.default
+            cargo-bloat
           ];
           shellHook = with pkgs; ''
             export LIBCLANG_PATH="${llvmPackages.libclang.lib}/lib";

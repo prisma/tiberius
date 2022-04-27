@@ -52,11 +52,10 @@ async-trait = "0.1"
 connection-string = "0.1.4"
 num-traits = "0.2"
 uuid = "0.8"
-tokio-rustls = "0.23.3"
-hyper-rustls = "0.23.0"
-rustls = { version = "0.20.4", features = ["dangerous_configuration"]}
-tokio-util = {version = "0.6", features = ["compat"]}
+tokio-rustls = { version = "0.23.3", features = ["dangerous_configuration"] }
+tokio-util = { version = "0.6", features = ["compat"] }
 rustls-pemfile = "0.3.0"
+rustls-native-certs = "0.6"
 
 [target.'cfg(windows)'.dependencies]
 winauth = { version = "0.0.4", optional = true }
