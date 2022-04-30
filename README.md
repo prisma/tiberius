@@ -45,6 +45,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 | `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                   | `disabled` |
 | `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                              | `disabled` |
 | `vendored-openssl`       | On Linux and macOS platforms links statically against a vendored version of OpenSSL                                       | `disabled` |
+| `use-rustls`             | Use the builtin TLS implementation from rustls instead of OpenSSL                                                         | `disabled` | 
 
 ### Supported protocols
 
