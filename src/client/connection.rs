@@ -1,3 +1,4 @@
+use crate::client::tls_stream::create_tls_stream;
 use crate::{
     client::{
         tls::{MaybeTlsStream, TlsPreloginWrapper},
@@ -33,7 +34,6 @@ use task::Poll;
 use tracing::{event, Level};
 #[cfg(all(windows, feature = "winauth"))]
 use winauth::{windows::NtlmSspiBuilder, NextBytes};
-use crate::client::tls_stream::create_tls_stream;
 
 /// A `Connection` is an abstraction between the [`Client`] and the server. It
 /// can be used as a `Stream` to fetch [`Packet`]s from and to `send` packets

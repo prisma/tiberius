@@ -1,38 +1,48 @@
-use futures::{AsyncRead, AsyncWrite};
 use crate::Config;
+use futures::{AsyncRead, AsyncWrite};
 
-#[cfg(feature = "use_rustls")]
-pub(crate) use rustls_tls_stream::TlsStream;
 #[cfg(not(feature = "use_rustls"))]
 pub(crate) use native_tls_stream::TlsStream;
+#[cfg(feature = "use_rustls")]
+pub(crate) use rustls_tls_stream::TlsStream;
 
 #[cfg(feature = "use_rustls")]
-pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(config: &Config, stream: S) -> crate::Result<TlsStream<S>> {
+pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
+    config: &Config,
+    stream: S,
+) -> crate::Result<TlsStream<S>> {
     TlsStream::new(config, stream).await
 }
 #[cfg(not(feature = "use_rustls"))]
-pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(config: &Config, stream: S) -> crate::Result<TlsStream<S>> {
+pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
+    config: &Config,
+    stream: S,
+) -> crate::Result<TlsStream<S>> {
     native_tls_stream::create_tls_stream(config, stream).await
 }
 
 #[cfg(not(feature = "use_rustls"))]
 mod native_tls_stream {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
-    pub(crate) use opentls::async_io::TlsStream;
+    use crate::{
+        client::{config::Config, TrustConfig},
+        error::{Error, IoErrorKind},
+    };
     #[cfg(all(not(target_os = "macos"), not(target_os = "ios")))]
     pub(crate) use async_native_tls::TlsStream;
-    use futures::{AsyncRead, AsyncWrite};
-    use crate::{
-        client::{config::Config, TrustConfig},    error::{Error, IoErrorKind},
-    };
-    use std::fs;
-    use tracing::{event, Level};
     #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     use async_native_tls::{Certificate, TlsConnector};
+    use futures::{AsyncRead, AsyncWrite};
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    pub(crate) use opentls::async_io::TlsStream;
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     use opentls::{async_io::TlsConnector, Certificate};
+    use std::fs;
+    use tracing::{event, Level};
 
-    pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(config: &Config, stream: S) -> crate::Result<TlsStream<S>> {
+    pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
+        config: &Config,
+        stream: S,
+    ) -> crate::Result<TlsStream<S>> {
         let mut builder = TlsConnector::new();
 
         match &config.trust {
@@ -64,9 +74,9 @@ mod native_tls_stream {
             }
             TrustConfig::TrustAll => {
                 event!(
-                        Level::WARN,
-                        "Trusting the server certificate without validation."
-                    );
+                    Level::WARN,
+                    "Trusting the server certificate without validation."
+                );
 
                 builder = builder.danger_accept_invalid_certs(true);
                 builder = builder.danger_accept_invalid_hostnames(true);
@@ -77,9 +87,7 @@ mod native_tls_stream {
             }
         }
 
-        Ok(builder
-            .connect(config.get_host(), stream)
-            .await?)
+        Ok(builder.connect(config.get_host(), stream).await?)
     }
 }
 
@@ -127,7 +135,7 @@ mod rustls_tls_stream {
             _end_entity: &Certificate,
             _intermediates: &[Certificate],
             _server_name: &ServerName,
-            _scts: &mut dyn Iterator<Item=&[u8]>,
+            _scts: &mut dyn Iterator<Item = &[u8]>,
             _ocsp_response: &[u8],
             _now: SystemTime,
         ) -> Result<ServerCertVerified, RustlsError> {
@@ -200,9 +208,9 @@ mod rustls_tls_stream {
                 }
                 TrustConfig::TrustAll => {
                     event!(
-                    Level::WARN,
-                    "Trusting the server certificate without validation."
-                );
+                        Level::WARN,
+                        "Trusting the server certificate without validation."
+                    );
                     let mut config = builder.with_native_roots().with_no_client_auth();
                     config
                         .dangerous()
