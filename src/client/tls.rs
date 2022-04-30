@@ -1,3 +1,4 @@
+use super::tls_stream::TlsStream;
 use crate::tds::{
     codec::{Decode, Encode, PacketHeader, PacketStatus, PacketType},
     HEADER_BYTES,
@@ -11,7 +12,6 @@ use std::{
     task::{self, Poll},
 };
 use tracing::{event, Level};
-use super::tls_stream::TlsStream;
 
 /// A wrapper to handle either TLS or bare connections.
 pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
