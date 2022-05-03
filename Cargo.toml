@@ -119,6 +119,23 @@ optional = true
 version = "1.12.0"
 optional = true
 
+[dependencies.rustls]
+version = "0.20.4"
+features = ["dangerous_configuration"]
+optional = true
+
+[dependencies.tokio-rustls]
+version = "0.23.3"
+optional = true
+
+[dependencies.hyper-rustls]
+version = "0.23.0"
+optional = true
+
+[dependencies.rustls-pemfile]
+version = "0.3.0"
+optional = true
+
 [dev-dependencies.uuid]
 version = "0.8"
 features = ["v4"]
@@ -156,7 +173,8 @@ all = [
     "sql-browser-smol",
     "integrated-auth-gssapi",
     "rust_decimal",
-    "bigdecimal"
+    "bigdecimal",
+    "use_rustls",
 ]
 default = ["tds73", "winauth"]
 vendored-openssl = ["opentls/vendored", "async-native-tls/vendored"]
@@ -167,3 +185,4 @@ sql-browser-tokio = ["tokio", "tokio-util"]
 sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
 bigdecimal = [ "bigdecimal_"]
+use_rustls = ["rustls", "tokio-rustls", "tokio-util", "hyper-rustls", "rustls-pemfile"]

@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod connection;
 mod tls;
+mod tls_stream;
 
 pub use auth::*;
 pub use config::*;
