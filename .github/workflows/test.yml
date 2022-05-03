@@ -46,8 +46,8 @@ jobs:
         features:
           - "--features=all"
           - "--no-default-features"
-          - "--no-default-features --features=native-tls,chrono"
-          - "--no-default-features --features=native-tls,time"
+          - "--no-default-features --features=chrono"
+          - "--no-default-features --features=time"
           - "--no-default-features --features=rustls"
 
     env:
@@ -193,7 +193,7 @@ jobs:
         database:
           - 2019
         features:
-          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auto-gssapi,rust_decimal,bigdecimal"
+          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
 
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
