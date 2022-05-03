@@ -69,8 +69,8 @@ Tiberius has three runtime encryption settings:
 
 | Encryption level | Description                                      |
 |------------------|--------------------------------------------------|
-| `Required`       | All traffic is encrypted.                        |
-| `Off`            | Only the login procedure is encrypted. (default) |
+| `Required`       | All traffic is encrypted. (default)              |
+| `Off`            | Only the login procedure is encrypted.           |
 | `NotSupported`   | None of the traffic is encrypted.                |
 
 The encryption levels can be set when connecting to the database.
