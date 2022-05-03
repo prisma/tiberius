@@ -45,8 +45,9 @@ jobs:
           - azure-sql-edge
         features:
           - "--features=all"
-          - "--no-default-features --features=chrono"
-          - "--no-default-features --features=time"
+          - "--no-default-features --features=native-tls,chrono"
+          - "--no-default-features --features=native-tls,time"
+          - "--no-default-features --features=rustls"
 
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
@@ -191,7 +192,7 @@ jobs:
         database:
           - 2019
         features:
-          - "--features=all,vendored-openssl"
+          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auto-gssapi,rust_decimal,bigdecimal"
 
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
