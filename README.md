@@ -59,19 +59,21 @@ The shared memory protocol is not documented and seems there are no Rust crates 
 
 ### Encryption (TLS/SSL)
 
-TLS support is a compilation-time setting in Tiberius. By default it uses `native-tls` for encryption, where we link to the TLS implementation of the operating system. This is a good practice and in case of security vulnerabilities, upgrading the system libraries fixes the vulnerability in Tiberius without a recompilation. On Linux we link against OpenSSL, on Windows against schannel and on macOS against Security Framework.
+Tiberius can be set to use two different implementations of TLS connection encryption. By default it uses `native-tls`, linking to the TLS library provided by the operating system. This is a good practice and in case of security vulnerabilities, upgrading the system libraries fixes the vulnerability in Tiberius without a recompilation. On Linux we link against OpenSSL, on Windows against schannel and on macOS against Security Framework.
 
 Alternatively one can use the `rustls` feature flag to use the Rust native TLS implementation. This way there are no dynamic dependencies to the system. This might be useful in certain installations, but requires a rebuild to update to a new TLS version. For some reasons the Security Framework on macOS does not work with SQL Server TLS settings, and on Apple platforms if needing TLS it is recommended to use `rustls` instead of `native-tls`.
 
 The crate can also be compiled without TLS support, but not with both features enabled at the same time.
 
-Tiberius has three encryption settings:
+Tiberius has three runtime encryption settings:
 
 | Encryption level | Description                                      |
 |------------------|--------------------------------------------------|
 | `Required`       | All traffic is encrypted.                        |
 | `Off`            | Only the login procedure is encrypted. (default) |
 | `NotSupported`   | None of the traffic is encrypted.                |
+
+The encryption levels can be set when connecting to the database.
 
 ### Integrated Authentication (TrustedConnection) on \*nix
 
