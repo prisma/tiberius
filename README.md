@@ -10,7 +10,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 
 - A perfect implementation of the TDS protocol.
 - Asynchronous network IO.
-- Independent of the protocol.
+- Independent of the network protocol.
 - Support for latest versions of Linux, Windows and macOS.
 
 ### Non-goals
@@ -33,19 +33,19 @@ A native Microsoft SQL Server (TDS) client for Rust.
 
 ### Feature flags
 
-| Flag                     | Description                                                                                                               | Default    |
-|--------------------------|---------------------------------------------------------------------------------------------------------------------------|------------|
-| `tds73`                  | Support for new date and time types in TDS version 7.3. Disable if using version 7.2.                                     | `enabled`  |
-| `chrono`                 | Read and write date and time values using `chrono`'s types. (for greenfield, using time instead of chrono is recommended) | `disabled` |
-| `time`                   | Read and write date and time values using `time` crate types.                                                             | `disabled` |
-| `rust_decimal`           | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.                                               | `disabled` |
-| `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.                                              | `disabled` |
-| `sql-browser-async-std`  | SQL Browser implementation for the `TcpStream` of async-std.                                                              | `disabled` |
-| `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                                                                  | `disabled` |
-| `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                   | `disabled` |
-| `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                              | `disabled` |
-| `vendored-openssl`       | On Linux and macOS platforms links statically against a vendored version of OpenSSL                                       | `disabled` |
-| `use-rustls`             | Use the builtin TLS implementation from rustls instead of OpenSSL                                                         | `disabled` | 
+| Flag                     | Description                                                                                                                      | Default    |
+|--------------------------|----------------------------------------------------------------------------------------------------------------------------------|------------|
+| `tds73`                  | Support for new date and time types in TDS version 7.3. Disable if using version 7.2.                                            | `enabled`  |
+| `native-tls`             | Use operating system's TLS libraries for traffic encryption.                                                                     | `enabled`  |
+| `chrono`                 | Read and write date and time values using `chrono`'s types. (for greenfield, using time instead of chrono is recommended)        | `disabled` |
+| `time`                   | Read and write date and time values using `time` crate types.                                                                    | `disabled` |
+| `rust_decimal`           | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.                                                      | `disabled` |
+| `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.                                                     | `disabled` |
+| `sql-browser-async-std`  | SQL Browser implementation for the `TcpStream` of async-std.                                                                     | `disabled` |
+| `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                                                                         | `disabled` |
+| `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                          | `disabled` |
+| `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                                     | `disabled` |
+| `rustls`                 | Use the builtin TLS implementation from rustls instead of linking to the operating system implementation for traffic encryption. | `disabled` |
 
 ### Supported protocols
 
@@ -59,6 +59,12 @@ The shared memory protocol is not documented and seems there are no Rust crates 
 
 ### Encryption (TLS/SSL)
 
+TLS support is a compilation-time setting in Tiberius. By default it uses `native-tls` for encryption, where we link to the TLS implementation of the operating system. This is a good practice and in case of security vulnerabilities, upgrading the system libraries fixes the vulnerability in Tiberius without a recompilation. On Linux we link against OpenSSL, on Windows against schannel and on macOS against Security Framework.
+
+Alternatively one can use the `rustls` feature flag to use the Rust native TLS implementation. This way there are no dynamic dependencies to the system. This might be useful in certain installations, but requires a rebuild to update to a new TLS version. For some reasons the Security Framework on macOS does not work with SQL Server TLS settings, and on Apple platforms if needing TLS it is recommended to use `rustls` instead of `native-tls`.
+
+The crate can also be compiled without TLS support, but not with both features enabled at the same time.
+
 Tiberius has three encryption settings:
 
 | Encryption level | Description                                      |
@@ -66,10 +72,6 @@ Tiberius has three encryption settings:
 | `Required`       | All traffic is encrypted.                        |
 | `Off`            | Only the login procedure is encrypted. (default) |
 | `NotSupported`   | None of the traffic is encrypted.                |
-
-Some SQL Server databases, such as the public Docker image use a TLS certificate not accepted by Apple's Secure Transport. Therefore on macOS systems we use OpenSSL instead of Secure Transport, meaning by default Tiberius requires a working OpenSSL installation. By using a feature flag `vendored-openssl` the compilation links statically to a vendored version of OpenSSL, allowing encrypted connections from macOS.
-
-Please be aware of the security implications if deciding to use vendoring.
 
 ### Integrated Authentication (TrustedConnection) on \*nix
 
