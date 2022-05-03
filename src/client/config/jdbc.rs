@@ -36,6 +36,8 @@ impl ConfigString for JdbcConfig {
 mod tests {
     use super::*;
     use crate::client::AuthMethod;
+
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     use crate::EncryptionLevel;
 
     #[test]
@@ -254,6 +256,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     fn encryption_parsing_on() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;encrypt=true;";
         let jdbc: JdbcConfig = test_str.parse()?;
@@ -264,6 +267,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     fn encryption_parsing_off() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;encrypt=false;";
         let jdbc: JdbcConfig = test_str.parse()?;
@@ -274,6 +278,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     fn encryption_parsing_plaintext() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;encrypt=DANGER_PLAINTEXT;";
         let jdbc: JdbcConfig = test_str.parse()?;
@@ -284,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     fn encryption_parsing_missing() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;";
         let jdbc: JdbcConfig = test_str.parse()?;

@@ -45,6 +45,7 @@ jobs:
           - azure-sql-edge
         features:
           - "--features=all"
+          - "--no-default-features"
           - "--no-default-features --features=native-tls,chrono"
           - "--no-default-features --features=native-tls,time"
           - "--no-default-features --features=rustls"

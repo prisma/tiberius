@@ -1,9 +1,7 @@
-use crate::client::tls_stream::create_tls_stream;
+#[cfg(any(feature = "rustls", feature = "native-tls"))]
+use crate::client::{tls::TlsPreloginWrapper, tls_stream::create_tls_stream};
 use crate::{
-    client::{
-        tls::{MaybeTlsStream, TlsPreloginWrapper},
-        AuthMethod, Config,
-    },
+    client::{tls::MaybeTlsStream, AuthMethod, Config},
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -114,6 +112,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         TokenStream::new(self).flush_sspi().await
     }
 
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
         if let EncryptionLevel::Off = encryption {
             event!(
@@ -126,6 +125,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
         }
 
+        self
+    }
+
+    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    fn post_login_encryption(self, _: EncryptionLevel) -> Self {
         self
     }
 
@@ -366,6 +370,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     /// Implements the TLS handshake with the SQL Server.
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     async fn tls_handshake(
         self,
         config: &Config,
@@ -403,6 +408,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
             Ok(self)
         }
+    }
+
+    /// Implements the TLS handshake with the SQL Server.
+    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    async fn tls_handshake(self, _: &Config, _: EncryptionLevel) -> crate::Result<Self> {
+        event!(
+            Level::WARN,
+            "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
+        );
+
+        Ok(self)
     }
 }
 
