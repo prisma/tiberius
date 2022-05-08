@@ -13,7 +13,7 @@ license = "MIT/Apache-2.0"
 name = "tiberius"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
-version = "0.7.3"
+version = "0.9.0"
 
 [workspace]
 members = ["runtimes-macro"]
@@ -52,11 +52,6 @@ async-trait = "0.1"
 connection-string = "0.1.4"
 num-traits = "0.2"
 uuid = "0.8"
-tokio-rustls = "0.23.3"
-hyper-rustls = "0.23.0"
-rustls = { version = "0.20.4", features = ["dangerous_configuration"]}
-tokio-util = {version = "0.6", features = ["compat"]}
-rustls-pemfile = "0.3.0"
 
 [target.'cfg(windows)'.dependencies]
 winauth = { version = "0.0.4", optional = true }
@@ -64,15 +59,25 @@ winauth = { version = "0.0.4", optional = true }
 [target.'cfg(unix)'.dependencies]
 libgssapi = { version = "0.4.5", optional = true, default-features = false }
 
-[dependencies.async-std]
-version = "1"
+[dependencies.async-native-tls]
+version = "0.4"
+features = ["runtime-async-std"]
 optional = true
-features = ["attributes"]
 
 [dependencies.tokio]
 version = "1.0"
 optional = true
 features = ["net", "time"]
+
+[dependencies.tokio-util]
+version = "0.6"
+features = ["compat"]
+optional = true
+
+[dependencies.async-std]
+version = "1"
+optional = true
+features = ["attributes"]
 
 [dependencies.chrono]
 version = "0.4"
@@ -113,6 +118,27 @@ optional = true
 version = "1.12.0"
 optional = true
 
+[dependencies.tokio-rustls]
+version = "0.23.3"
+optional = true
+features = ["dangerous_configuration"]
+
+[dependencies.rustls-pemfile]
+version = "0.3"
+optional = true
+
+[dependencies.rustls-native-certs]
+version = "0.6"
+optional = true
+
+[dev-dependencies.uuid]
+version = "0.8"
+features = ["v4"]
+
+[dev-dependencies.tokio-util]
+version = "0.6"
+features = ["compat"]
+
 [dev-dependencies.tokio]
 features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]
 version = "1.0"
@@ -120,10 +146,6 @@ version = "1.0"
 [dev-dependencies.async-std]
 features = ["attributes"]
 version = "1"
-
-[dev-dependencies.uuid]
-version = "0.8"
-features = ["v4"]
 
 [dev-dependencies.runtimes-macro]
 path = "./runtimes-macro"
@@ -146,13 +168,16 @@ all = [
     "sql-browser-smol",
     "integrated-auth-gssapi",
     "rust_decimal",
-    "bigdecimal"
+    "bigdecimal",
+    "native-tls",
 ]
-default = ["tds73", "winauth"]
+default = ["tds73", "winauth", "native-tls"]
 tds73 = []
 docs = []
 sql-browser-async-std = ["async-std"]
-sql-browser-tokio = ["tokio"]
+sql-browser-tokio = ["tokio", "tokio-util"]
 sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
-bigdecimal = [ "bigdecimal_"]
+bigdecimal = ["bigdecimal_"]
+rustls = ["tokio-rustls", "tokio-util", "rustls-pemfile", "rustls-native-certs"]
+native-tls = ["async-native-tls"]

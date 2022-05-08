@@ -1,5 +1,15 @@
 # Changes
 
+## Version 0.9.0
+
+- (BREAKING) support rustls, switch between native-tls and rustls.
+  the feature flag vendored-openssl is gone. instead if needing vendored TLS,
+  use feature flag rustls
+
+## Version 0.8.0
+
+- (BREAKING) fix: correctly decode null integers (#209)
+
 ## Version 0.7.3
 
 - Fixing an accidentally renamed time module, that would've been a breaking change.

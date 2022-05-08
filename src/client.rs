@@ -1,7 +1,9 @@
 mod auth;
 mod config;
 mod connection;
+
 mod tls;
+#[cfg(any(feature = "rustls", feature = "native-tls"))]
 mod tls_stream;
 
 pub use auth::*;
