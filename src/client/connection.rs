@@ -364,6 +364,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 self.send(PacketHeader::login(id), login_message).await?;
                 self = self.post_login_encryption(encryption);
             }
+            AuthMethod::AADToken(token) => {
+                todo!()
+            }
         }
 
         Ok(self)
