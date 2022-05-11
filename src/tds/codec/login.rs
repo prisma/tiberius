@@ -129,17 +129,15 @@ pub enum LoginTypeFlag {
     ReadOnlyIntent = 1 << 5,
 }
 
-pub mod FeatureExtensionId {
-    pub const SESSIONRECOVERY: u8 = 0x01u8;
-    pub const FEDAUTH: u8 = 0x02u8;
-    pub const COLUMNENCRYPTION: u8 = 0x04u8;
-    pub const GLOBALTRANSACTIONS: u8 = 0x05u8;
-    pub const AZURESQLSUPPORT: u8 = 0x06u8;
-    pub const DATACLASSIFICATION: u8 = 0x09u8;
-    pub const UTF8_SUPPORT: u8 = 0x0Au8;
-    pub const AZURESQLDNSCACHING: u8 = 0x0Bu8;
-    pub const TERMINATOR: u8 = 0xFFu8;
-}
+// pub const SESSIONRECOVERY: u8 = 0x01u8;
+pub const FEA_EXT_FEDAUTH: u8 = 0x02u8;
+// pub const COLUMNENCRYPTION: u8 = 0x04u8;
+// pub const GLOBALTRANSACTIONS: u8 = 0x05u8;
+// pub const AZURESQLSUPPORT: u8 = 0x06u8;
+// pub const DATACLASSIFICATION: u8 = 0x09u8;
+// pub const UTF8_SUPPORT: u8 = 0x0Au8;
+// pub const AZURESQLDNSCACHING: u8 = 0x0Bu8;
+pub const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
 
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 /// When bFedAuthLibrary is Security Token, the format is as follows:
@@ -360,7 +358,7 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
         cursor.set_position(data_offset as u64);
 
         // FeatureExt: unsupported for now, simply write a terminator
-        cursor.write_u8(0xFF)?;
+        cursor.write_u8(FEA_EXT_TERMINATOR)?;
 
         cursor.set_position(0);
         cursor.write_u32::<LittleEndian>(cursor.get_ref().len() as u32)?;
@@ -377,8 +375,7 @@ mod tests {
     use crate::Decode;
     use byteorder::ReadBytesExt;
     use bytes::BytesMut;
-    use std::io::Read;
-    use tracing::log::kv::ToValue;
+    use std::io::{Read, Seek, SeekFrom};
 
     impl<'a> Decode<BytesMut> for LoginMessage<'a> {
         fn decode(src: &mut BytesMut) -> crate::Result<Self>
@@ -388,7 +385,7 @@ mod tests {
             let mut cursor = Cursor::new(src);
             let mut ret = LoginMessage::new();
 
-            let length = cursor.read_u32::<LittleEndian>()?;
+            let total_length = cursor.read_u32::<LittleEndian>()?;
 
             ret.tds_version = cursor
                 .read_u32::<LittleEndian>()?
@@ -411,24 +408,6 @@ mod tests {
             ret.client_timezone = cursor.read_u32::<LittleEndian>()? as i32;
             ret.client_lcid = cursor.read_u32::<LittleEndian>()?;
 
-            // variable length data (OffsetLength)
-            // let var_data = [
-            //     &self.hostname,
-            //     &self.username,
-            //     &self.password,
-            //     &self.app_name,
-            //     &self.server_name,
-            //     &"".into(), // 5. ibExtension
-            //     &"".into(), // ibCltIntName
-            //     &"".into(), // ibLanguage
-            //     &self.db_name,
-            //     &"".into(), // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong (4=2*2) and can insert it at the correct position
-            //     &"".into(), // 10. ibSSPI
-            //     &"".into(), // ibAtchDBFile
-            //     &"".into(), // ibChangePassword
-            // ];
-            // let mut offsets = [0u16; 14];
-
             macro_rules! read_offset_length_bytes {
                 () => {{
                     let offset = cursor.read_u16::<LittleEndian>()?;
@@ -437,24 +416,25 @@ mod tests {
                     cursor.set_position(offset as u64);
 
                     let mut values = vec![0u8; length as usize];
-                    cursor.read_exact(&mut values);
+                    cursor.read_exact(&mut values)?;
 
                     cursor.set_position(pos);
                     values
                 }};
             }
 
-            macro_rules! read_offset_length {
+            macro_rules! read_offset_length_string {
                 () => {
-                    read_offset_length!("")
+                    read_offset_length_string!("")
                 };
-                ($field:expr) => {{
+                ($tag:expr) => {{
                     let offset = cursor.read_u16::<LittleEndian>()?;
                     let length = cursor.read_u16::<LittleEndian>()?;
                     let pos = cursor.position();
+                    dbg!(offset, length);
                     cursor.set_position(offset as u64);
 
-                    if $field == "password" {
+                    if $tag == "password" {
                         let buffer = cursor.get_mut();
                         for byte in buffer
                             .iter_mut()
@@ -467,29 +447,41 @@ mod tests {
                     }
 
                     let mut values = vec![0u16; length as usize];
-                    cursor.read_u16_into::<LittleEndian>(&mut values);
+                    cursor.read_u16_into::<LittleEndian>(&mut values)?;
                     cursor.set_position(pos);
 
                     String::from_utf16(&values).expect("decode utf16")
                 }};
             }
 
-            ret.hostname = read_offset_length!().into();
-            ret.username = read_offset_length!().into();
-            ret.password = read_offset_length!("password").into();
-            ret.app_name = read_offset_length!().into();
-            ret.server_name = read_offset_length!().into();
-            let _ = read_offset_length!(); // 5. ibExtension
-            let _ = read_offset_length!(); // ibCltIntName
-            let _ = read_offset_length!(); // ibLanguage
-            ret.db_name = read_offset_length!().into();
+            ret.hostname = read_offset_length_string!().into();
+            ret.username = read_offset_length_string!().into();
+            ret.password = read_offset_length_string!("password").into();
+            ret.app_name = read_offset_length_string!().into();
+            ret.server_name = read_offset_length_string!().into();
+            let _ = read_offset_length_string!(); // 5. ibExtension
+            let _ = read_offset_length_string!(); // ibCltIntName
+            let _ = read_offset_length_string!(); // ibLanguage
+            ret.db_name = read_offset_length_string!().into();
             // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong (4=2*2) and can insert it at the correct position
             let _ = cursor.read_u32::<LittleEndian>()?;
             let _ = cursor.read_u16::<LittleEndian>()?;
             let is = read_offset_length_bytes!();
             ret.integrated_security = if is.is_empty() { None } else { Some(is) };
-            let _ = read_offset_length!(); // ibAtchDBFile
-            let _ = read_offset_length!(); // ibChangePassword
+            let _ = read_offset_length_string!(); // ibAtchDBFile
+            let _ = read_offset_length_string!(); // ibChangePassword
+                                                  // let _ = cursor.read_u32::<LittleEndian>()?;
+                                                  // cbSSPILong
+
+            // find the data offset
+            cursor.seek(SeekFrom::Current(-4))?;
+            let offset = cursor.read_u16::<LittleEndian>()?;
+            let length = cursor.read_u16::<LittleEndian>()?;
+
+            cursor.set_position((offset + length * 2) as u64);
+            let fe = cursor.read_u8()?;
+            assert_eq!(fe, FEA_EXT_TERMINATOR);
+            assert_eq!(cursor.position(), total_length as u64);
 
             Ok(ret)
         }
@@ -510,6 +502,20 @@ mod tests {
         login.server_name("fake-server-name");
         login.user_name("fake-user-name");
         login.password("fake-pw");
+        login
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = LoginMessage::decode(&mut payload).expect("decode should succeed");
+
+        assert_eq!(login, decoded);
+    }
+
+    #[test]
+    fn login_message_with_fed_auth_round_trip() {
+        let mut payload = BytesMut::new();
+        let mut login = LoginMessage::new();
         login
             .clone()
             .encode(&mut payload)
