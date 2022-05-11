@@ -166,13 +166,13 @@ pub const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
 ///     by the client. This field MUST be present if the server’s PRELOGIN message included a NONCE field.
 ///     Otherwise, this field MUST NOT be present.
 #[derive(Debug, Clone, Default)]
-struct FedAuthExt {
+struct FedAuthExt<'a> {
     fed_auth_library: u8,
     fed_auth_echo: bool,
-    fed_auth_token: String,
+    fed_auth_token: Cow<'a, str>,
 }
 
-impl Encode<BytesMut> for FedAuthExt {
+impl<'a> Encode<BytesMut> for FedAuthExt<'a> {
     fn encode(self, _dst: &mut BytesMut) -> crate::Result<()> {
         todo!()
     }
@@ -207,7 +207,7 @@ pub struct LoginMessage<'a> {
     server_name: Cow<'a, str>,
     /// the default database to connect to
     db_name: Cow<'a, str>,
-    fed_auth_ext: Option<FedAuthExt>,
+    fed_auth_ext: Option<FedAuthExt<'a>>,
 }
 
 impl<'a> LoginMessage<'a> {
@@ -251,6 +251,14 @@ impl<'a> LoginMessage<'a> {
 
     pub fn password(&mut self, password: impl Into<Cow<'a, str>>) {
         self.password = password.into();
+    }
+
+    pub fn aad_token(&mut self, token: impl Into<Cow<'a, str>>) {
+        self.fed_auth_ext = Some(FedAuthExt {
+            fed_auth_library: FEA_EXT_FEDAUTH,
+            fed_auth_echo: false,
+            fed_auth_token: token.into(),
+        })
     }
 }
 
@@ -510,6 +518,13 @@ mod tests {
         let decoded = LoginMessage::decode(&mut payload).expect("decode should succeed");
 
         assert_eq!(login, decoded);
+    }
+
+    #[test]
+    fn specify_aad_token() {
+        let mut login = LoginMessage::new();
+        let token = "fake-aad-token";
+        login.aad_token(token);
     }
 
     #[test]

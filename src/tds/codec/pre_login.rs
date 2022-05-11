@@ -3,6 +3,7 @@ use super::{Decode, Encode};
 use crate::{tds, Error, Result};
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 use bytes::{BufMut, BytesMut};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{self, Cursor, Read};
 use tds::EncryptionLevel;
@@ -11,14 +12,14 @@ use uuid::Uuid;
 /// Client application activity id token used for debugging purposes introduced
 /// in TDS 7.4.
 #[allow(unused)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ActivityId {
     id: Uuid,
     sequence: u32,
 }
 
 /// The prelogin packet used to initialize a connection
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PreloginMessage {
     /// [BE] token=0x00
     /// Either the driver version or the version of the SQL server
@@ -78,6 +79,7 @@ impl PreloginMessage {
 
 impl Encode<BytesMut> for PreloginMessage {
     fn encode(self, dst: &mut BytesMut) -> Result<()> {
+        let mut fields = HashMap::new();
         // build the packet-body
         // offset = PL_OPTION_TOKEN + PL_OFFSET + PL_OPTION_LENGTH = 5 bytes + the terminator (0xFF)
         let mut data_offset = 4 * 5 + 1;
@@ -166,8 +168,15 @@ impl Decode<BytesMut> for PreloginMessage {
                         ret.instance_name = Some(String::from_utf8_lossy(&bytes).into_owned());
                     }
                 }
-                // threadid (should be empty when sent from server to client)
-                0x03 => debug_assert_eq!(length, 0),
+                0x03 => {
+                    ret.thread_id = if length == 0 {
+                        0
+                    } else if length == 4 {
+                        cursor.read_u32::<BigEndian>()?
+                    } else {
+                        panic!("should never happen")
+                    }
+                }
                 // mars
                 0x04 => {
                     ret.mars = cursor.read_u8()? != 0;
@@ -207,5 +216,45 @@ impl Decode<BytesMut> for PreloginMessage {
         }
 
         Ok(ret)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl PartialEq for PreloginMessage {
+        fn eq(&self, other: &Self) -> bool {
+            format!("{:?}", self) == format!("{:?}", other)
+        }
+    }
+
+    #[test]
+    fn prelogin_roundtrip() {
+        let mut payload = BytesMut::new();
+        let prelogin = PreloginMessage::new();
+        prelogin
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = PreloginMessage::decode(&mut payload).expect("decode should succeed");
+
+        assert_eq!(prelogin, decoded);
+    }
+
+    #[test]
+    fn prelogin_with_fedauth_roundtrip() {
+        let mut payload = BytesMut::new();
+        let mut prelogin = PreloginMessage::new();
+        prelogin.fed_auth_required = true;
+        prelogin
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = PreloginMessage::decode(&mut payload).expect("decode should succeed");
+
+        assert_eq!(prelogin, decoded);
     }
 }
