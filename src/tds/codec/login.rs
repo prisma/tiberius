@@ -175,7 +175,7 @@ struct FedAuthExt {
 }
 
 impl Encode<BytesMut> for FedAuthExt {
-    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+    fn encode(self, _dst: &mut BytesMut) -> crate::Result<()> {
         todo!()
     }
 }
@@ -368,5 +368,155 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
         dst.extend(cursor.into_inner());
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Decode;
+    use byteorder::ReadBytesExt;
+    use bytes::BytesMut;
+    use std::io::Read;
+    use tracing::log::kv::ToValue;
+
+    impl<'a> Decode<BytesMut> for LoginMessage<'a> {
+        fn decode(src: &mut BytesMut) -> crate::Result<Self>
+        where
+            Self: Sized,
+        {
+            let mut cursor = Cursor::new(src);
+            let mut ret = LoginMessage::new();
+
+            let length = cursor.read_u32::<LittleEndian>()?;
+
+            ret.tds_version = cursor
+                .read_u32::<LittleEndian>()?
+                .try_into()
+                .expect("tds_version verification");
+            ret.packet_size = cursor.read_u32::<LittleEndian>()?;
+            ret.client_prog_ver = cursor.read_u32::<LittleEndian>()?;
+            ret.client_pid = cursor.read_u32::<LittleEndian>()?;
+            ret.connection_id = cursor.read_u32::<LittleEndian>()?;
+
+            ret.option_flags_1 =
+                BitFlags::from_bits(cursor.read_u8()?).expect("option_flags_1 verification");
+            ret.option_flags_2 =
+                BitFlags::from_bits(cursor.read_u8()?).expect("option_flags_2 verification");
+            ret.type_flags =
+                BitFlags::from_bits(cursor.read_u8()?).expect("type_flags verification");
+            ret.option_flags_3 =
+                BitFlags::from_bits(cursor.read_u8()?).expect("option_flags_3 verification");
+
+            ret.client_timezone = cursor.read_u32::<LittleEndian>()? as i32;
+            ret.client_lcid = cursor.read_u32::<LittleEndian>()?;
+
+            // variable length data (OffsetLength)
+            // let var_data = [
+            //     &self.hostname,
+            //     &self.username,
+            //     &self.password,
+            //     &self.app_name,
+            //     &self.server_name,
+            //     &"".into(), // 5. ibExtension
+            //     &"".into(), // ibCltIntName
+            //     &"".into(), // ibLanguage
+            //     &self.db_name,
+            //     &"".into(), // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong (4=2*2) and can insert it at the correct position
+            //     &"".into(), // 10. ibSSPI
+            //     &"".into(), // ibAtchDBFile
+            //     &"".into(), // ibChangePassword
+            // ];
+            // let mut offsets = [0u16; 14];
+
+            macro_rules! read_offset_length_bytes {
+                () => {{
+                    let offset = cursor.read_u16::<LittleEndian>()?;
+                    let length = cursor.read_u16::<LittleEndian>()?;
+                    let pos = cursor.position();
+                    cursor.set_position(offset as u64);
+
+                    let mut values = vec![0u8; length as usize];
+                    cursor.read_exact(&mut values);
+
+                    cursor.set_position(pos);
+                    values
+                }};
+            }
+
+            macro_rules! read_offset_length {
+                () => {
+                    read_offset_length!("")
+                };
+                ($field:expr) => {{
+                    let offset = cursor.read_u16::<LittleEndian>()?;
+                    let length = cursor.read_u16::<LittleEndian>()?;
+                    let pos = cursor.position();
+                    cursor.set_position(offset as u64);
+
+                    if $field == "password" {
+                        let buffer = cursor.get_mut();
+                        for byte in buffer
+                            .iter_mut()
+                            .skip(offset as usize)
+                            .take(length as usize * 2)
+                        {
+                            *byte = *byte ^ 0xA5;
+                            *byte = ((*byte << 4) & 0xf0 | (*byte >> 4) & 0x0f);
+                        }
+                    }
+
+                    let mut values = vec![0u16; length as usize];
+                    cursor.read_u16_into::<LittleEndian>(&mut values);
+                    cursor.set_position(pos);
+
+                    String::from_utf16(&values).expect("decode utf16")
+                }};
+            }
+
+            ret.hostname = read_offset_length!().into();
+            ret.username = read_offset_length!().into();
+            ret.password = read_offset_length!("password").into();
+            ret.app_name = read_offset_length!().into();
+            ret.server_name = read_offset_length!().into();
+            let _ = read_offset_length!(); // 5. ibExtension
+            let _ = read_offset_length!(); // ibCltIntName
+            let _ = read_offset_length!(); // ibLanguage
+            ret.db_name = read_offset_length!().into();
+            // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong (4=2*2) and can insert it at the correct position
+            let _ = cursor.read_u32::<LittleEndian>()?;
+            let _ = cursor.read_u16::<LittleEndian>()?;
+            let is = read_offset_length_bytes!();
+            ret.integrated_security = if is.is_empty() { None } else { Some(is) };
+            let _ = read_offset_length!(); // ibAtchDBFile
+            let _ = read_offset_length!(); // ibChangePassword
+
+            Ok(ret)
+        }
+    }
+
+    impl<'a> PartialEq for LoginMessage<'a> {
+        fn eq(&self, other: &Self) -> bool {
+            dbg!(format!("{:?}", self)) == dbg!(format!("{:?}", other))
+        }
+    }
+
+    #[test]
+    fn login_message_round_trip() {
+        let mut payload = BytesMut::new();
+        let mut login = LoginMessage::new();
+        login.db_name("fake-database-name");
+        login.app_name("fake-app-name");
+        login.server_name("fake-server-name");
+        login.user_name("fake-user-name");
+        login.password("fake-pw");
+        login
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = LoginMessage::decode(&mut payload).expect("decode should succeed");
+
+        assert_eq!(login, decoded);
     }
 }
