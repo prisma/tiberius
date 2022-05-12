@@ -130,14 +130,15 @@ pub enum LoginTypeFlag {
 }
 
 // pub const SESSIONRECOVERY: u8 = 0x01u8;
-pub const FEA_EXT_FEDAUTH: u8 = 0x02u8;
+const FEA_EXT_FEDAUTH: u8 = 0x02u8;
 // pub const COLUMNENCRYPTION: u8 = 0x04u8;
 // pub const GLOBALTRANSACTIONS: u8 = 0x05u8;
 // pub const AZURESQLSUPPORT: u8 = 0x06u8;
 // pub const DATACLASSIFICATION: u8 = 0x09u8;
 // pub const UTF8_SUPPORT: u8 = 0x0Au8;
 // pub const AZURESQLDNSCACHING: u8 = 0x0Bu8;
-pub const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
+const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
+const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
 
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 /// When bFedAuthLibrary is Security Token, the format is as follows:
@@ -165,17 +166,11 @@ pub const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
 /// Nonce: The nonce provided by the server during the Prelogin exchange and echoed back to the server
 ///     by the client. This field MUST be present if the server’s PRELOGIN message included a NONCE field.
 ///     Otherwise, this field MUST NOT be present.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct FedAuthExt<'a> {
-    fed_auth_library: u8,
     fed_auth_echo: bool,
     fed_auth_token: Cow<'a, str>,
-}
-
-impl<'a> Encode<BytesMut> for FedAuthExt<'a> {
-    fn encode(self, _dst: &mut BytesMut) -> crate::Result<()> {
-        todo!()
-    }
+    nonce: Option<[u8; 32]>,
 }
 
 /// the login packet
@@ -253,11 +248,17 @@ impl<'a> LoginMessage<'a> {
         self.password = password.into();
     }
 
-    pub fn aad_token(&mut self, token: impl Into<Cow<'a, str>>) {
+    pub fn aad_token(
+        &mut self,
+        token: impl Into<Cow<'a, str>>,
+        fed_auth_echo: bool,
+        nonce: Option<[u8; 32]>,
+    ) {
+        self.option_flags_3.insert(OptionFlag3::ExtensionUsed);
         self.fed_auth_ext = Some(FedAuthExt {
-            fed_auth_library: FEA_EXT_FEDAUTH,
-            fed_auth_echo: false,
+            fed_auth_echo,
             fed_auth_token: token.into(),
+            nonce,
         })
     }
 }
@@ -365,7 +366,37 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
 
         cursor.set_position(data_offset as u64);
 
-        // FeatureExt: unsupported for now, simply write a terminator
+        // FeatureExt
+        if let Some(fed_auth_ext) = self.fed_auth_ext {
+            cursor.write_u8(FEA_EXT_FEDAUTH)?;
+
+            let mut token = Cursor::new(Vec::new());
+            for codepoint in fed_auth_ext.fed_auth_token.encode_utf16() {
+                token.write_u16::<LittleEndian>(codepoint)?;
+            }
+            let token = token.into_inner();
+
+            // options (1) + TokenLength(4) + Token.length + nonce.length
+            let feature_ext_length =
+                1 + 4 + token.len() + if fed_auth_ext.nonce.is_some() { 32 } else { 0 };
+
+            cursor.write_u32::<LittleEndian>(feature_ext_length as u32)?;
+
+            let mut options: u8 = FED_AUTH_LIBRARYSECURITYTOKEN << 1;
+            if fed_auth_ext.fed_auth_echo {
+                options |= 1 // fFedAuthEcho
+            }
+
+            cursor.write_u8(options)?;
+
+            cursor.write_u32::<LittleEndian>(token.len() as u32)?;
+            cursor.write_all(token.as_slice())?;
+
+            if let Some(nonce) = fed_auth_ext.nonce {
+                cursor.write_all(nonce.as_ref())?;
+            }
+        }
+
         cursor.write_u8(FEA_EXT_TERMINATOR)?;
 
         cursor.set_position(0);
@@ -439,7 +470,6 @@ mod tests {
                     let offset = cursor.read_u16::<LittleEndian>()?;
                     let length = cursor.read_u16::<LittleEndian>()?;
                     let pos = cursor.position();
-                    dbg!(offset, length);
                     cursor.set_position(offset as u64);
 
                     if $tag == "password" {
@@ -487,8 +517,52 @@ mod tests {
             let length = cursor.read_u16::<LittleEndian>()?;
 
             cursor.set_position((offset + length * 2) as u64);
-            let fe = cursor.read_u8()?;
-            assert_eq!(fe, FEA_EXT_TERMINATOR);
+
+            if ret.option_flags_3.contains(OptionFlag3::ExtensionUsed) {
+                loop {
+                    let fe = cursor.read_u8()?;
+                    if fe == FEA_EXT_TERMINATOR {
+                        break;
+                    } else if fe == FEA_EXT_FEDAUTH {
+                        let fea_ext_len = cursor.read_u32::<LittleEndian>()?;
+                        let pos = cursor.position();
+                        let mut options = cursor.read_u8()?;
+                        let fed_auth_echo = (options & 1) == 1;
+                        options = options >> 1;
+                        if options != FED_AUTH_LIBRARYSECURITYTOKEN {
+                            unimplemented!("unsupported FedAuthLibrary {:?}", options);
+                        }
+                        let token_len = cursor.read_u32::<LittleEndian>()? as usize;
+                        let mut token = vec![0u16; token_len / 2];
+                        cursor.read_u16_into::<LittleEndian>(&mut token)?;
+                        let token = String::from_utf16(&token).expect("decode utf16");
+                        let remaining = fea_ext_len - (cursor.position() - pos) as u32;
+                        let nonce = if remaining == 32 {
+                            let mut a = [0u8; 32];
+                            cursor.read_exact(&mut a)?;
+                            Some(a)
+                        } else if remaining == 0 {
+                            None
+                        } else {
+                            panic!("read feature ext fail: {}", remaining);
+                        };
+
+                        let fed_auth_ext = FedAuthExt {
+                            fed_auth_echo,
+                            fed_auth_token: token.into(),
+                            nonce,
+                        };
+                        ret.fed_auth_ext = Some(fed_auth_ext);
+                    } else {
+                        unimplemented!("unsupported feature ext {:?}", fe);
+                    }
+                }
+            } else {
+                let fe = cursor.read_u8()?;
+
+                assert_eq!(fe, FEA_EXT_TERMINATOR);
+            }
+
             assert_eq!(cursor.position(), total_length as u64);
 
             Ok(ret)
@@ -524,13 +598,26 @@ mod tests {
     fn specify_aad_token() {
         let mut login = LoginMessage::new();
         let token = "fake-aad-token";
-        login.aad_token(token);
+        let nonce = [3u8; 32];
+        login.aad_token(token, true, Some(nonce.clone()));
+
+        assert!(login.option_flags_3.contains(OptionFlag3::ExtensionUsed));
+        assert_eq!(
+            login.fed_auth_ext.expect("fed_auto_specified"),
+            FedAuthExt {
+                fed_auth_echo: true,
+                fed_auth_token: token.into(),
+                nonce: Some(nonce)
+            }
+        )
     }
 
     #[test]
     fn login_message_with_fed_auth_round_trip() {
         let mut payload = BytesMut::new();
         let mut login = LoginMessage::new();
+        let nonce = [1u8; 32];
+        login.aad_token("fake-aad-token", true, Some(nonce));
         login
             .clone()
             .encode(&mut payload)

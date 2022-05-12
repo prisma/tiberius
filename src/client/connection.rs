@@ -81,7 +81,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             buf: BytesMut::new(),
         };
 
-        let prelogin = connection.prelogin(config.encryption).await?;
+        let fed_auth_required = if let AuthMethod::AADToken(_) = config.auth {
+            true
+        } else {
+            false
+        };
+        let prelogin = connection
+            .prelogin(config.encryption, fed_auth_required)
+            .await?;
         let encryption = prelogin.negotiated_encryption(config.encryption);
 
         let connection = connection.tls_handshake(&config, encryption).await?;
@@ -93,6 +100,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 config.database,
                 config.host,
                 config.application_name,
+                prelogin,
             )
             .await?;
 
@@ -219,9 +227,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// encryption is needed. In this scenario, where PRELOGIN message is
     /// transporting the TLS handshake payload, the packet data is simply the
     /// raw bytes of the TLS handshake payload.
-    async fn prelogin(&mut self, encryption: EncryptionLevel) -> crate::Result<PreloginMessage> {
+    async fn prelogin(
+        &mut self,
+        encryption: EncryptionLevel,
+        fed_auth_required: bool,
+    ) -> crate::Result<PreloginMessage> {
         let mut msg = PreloginMessage::new();
         msg.encryption = encryption;
+        msg.fed_auth_required = fed_auth_required;
 
         let id = self.context.next_packet_id();
         self.send(PacketHeader::pre_login(id), msg).await?;
@@ -241,6 +254,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         db: Option<String>,
         server_name: Option<String>,
         application_name: Option<String>,
+        prelogin: PreloginMessage,
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
 
@@ -367,8 +381,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 self.send(PacketHeader::login(id), login_message).await?;
                 self = self.post_login_encryption(encryption);
             }
-            AuthMethod::AADToken(_token) => {
-                todo!()
+            AuthMethod::AADToken(token) => {
+                login_message.aad_token(token, prelogin.fed_auth_required, prelogin.nonce);
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), login_message).await?;
+                self = self.post_login_encryption(encryption);
             }
         }
 
