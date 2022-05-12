@@ -130,15 +130,15 @@ pub enum LoginTypeFlag {
 }
 
 // pub const SESSIONRECOVERY: u8 = 0x01u8;
-const FEA_EXT_FEDAUTH: u8 = 0x02u8;
+pub const FEA_EXT_FEDAUTH: u8 = 0x02u8;
 // pub const COLUMNENCRYPTION: u8 = 0x04u8;
 // pub const GLOBALTRANSACTIONS: u8 = 0x05u8;
 // pub const AZURESQLSUPPORT: u8 = 0x06u8;
 // pub const DATACLASSIFICATION: u8 = 0x09u8;
 // pub const UTF8_SUPPORT: u8 = 0x0Au8;
 // pub const AZURESQLDNSCACHING: u8 = 0x0Bu8;
-const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
-const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
+pub const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
+pub const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
 
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 /// When bFedAuthLibrary is Security Token, the format is as follows:
@@ -303,7 +303,13 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
 
         let mut data_offset = cursor.position() as usize + var_data.len() * 2 * 2 + 6;
 
+        let mut fea_ext_offset = 0;
         for (i, value) in var_data.iter().enumerate() {
+            if i == 5 {
+                // we might need to update the feature ext potion later
+                fea_ext_offset = cursor.position();
+            }
+
             // write the client ID (created from the MAC address)
             if i == 9 {
                 cursor.write_u32::<LittleEndian>(0)?; //TODO:
@@ -364,10 +370,17 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
         // cbSSPILong
         cursor.write_u32::<LittleEndian>(0)?;
 
-        cursor.set_position(data_offset as u64);
-
         // FeatureExt
         if let Some(fed_auth_ext) = self.fed_auth_ext {
+            // update fea_ext_offset
+            cursor.set_position(fea_ext_offset);
+            cursor.write_u16::<LittleEndian>(data_offset as u16)?;
+            cursor.write_u16::<LittleEndian>(4)?;
+
+            cursor.set_position(data_offset as u64);
+            data_offset += 4;
+            cursor.write_u32::<LittleEndian>(data_offset as u32)?;
+
             cursor.write_u8(FEA_EXT_FEDAUTH)?;
 
             let mut token = Cursor::new(Vec::new());
@@ -395,6 +408,8 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
             if let Some(nonce) = fed_auth_ext.nonce {
                 cursor.write_all(nonce.as_ref())?;
             }
+        } else {
+            cursor.set_position(data_offset as u64);
         }
 
         cursor.write_u8(FEA_EXT_TERMINATOR)?;
@@ -497,7 +512,12 @@ mod tests {
             ret.password = read_offset_length_string!("password").into();
             ret.app_name = read_offset_length_string!().into();
             ret.server_name = read_offset_length_string!().into();
-            let _ = read_offset_length_string!(); // 5. ibExtension
+            let fea_ext_offset = read_offset_length_bytes!(); // 5. ibExtension
+            let fea_ext_offset = if fea_ext_offset.len() == 4 {
+                u32::from_le_bytes(fea_ext_offset.try_into().unwrap())
+            } else {
+                0
+            };
             let _ = read_offset_length_string!(); // ibCltIntName
             let _ = read_offset_length_string!(); // ibLanguage
             ret.db_name = read_offset_length_string!().into();
@@ -511,14 +531,10 @@ mod tests {
                                                   // let _ = cursor.read_u32::<LittleEndian>()?;
                                                   // cbSSPILong
 
-            // find the data offset
-            cursor.seek(SeekFrom::Current(-4))?;
-            let offset = cursor.read_u16::<LittleEndian>()?;
-            let length = cursor.read_u16::<LittleEndian>()?;
+            if fea_ext_offset != 0 {
+                cursor.set_position((fea_ext_offset) as u64);
 
-            cursor.set_position((offset + length * 2) as u64);
-
-            if ret.option_flags_3.contains(OptionFlag3::ExtensionUsed) {
+                assert!(ret.option_flags_3.contains(OptionFlag3::ExtensionUsed));
                 loop {
                     let fe = cursor.read_u8()?;
                     if fe == FEA_EXT_TERMINATOR {
@@ -557,13 +573,7 @@ mod tests {
                         unimplemented!("unsupported feature ext {:?}", fe);
                     }
                 }
-            } else {
-                let fe = cursor.read_u8()?;
-
-                assert_eq!(fe, FEA_EXT_TERMINATOR);
             }
-
-            assert_eq!(cursor.position(), total_length as u64);
 
             Ok(ret)
         }
@@ -571,7 +581,7 @@ mod tests {
 
     impl<'a> PartialEq for LoginMessage<'a> {
         fn eq(&self, other: &Self) -> bool {
-            dbg!(format!("{:?}", self)) == dbg!(format!("{:?}", other))
+            format!("{:?}", self) == format!("{:?}", other)
         }
     }
 
