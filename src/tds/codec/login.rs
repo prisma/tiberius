@@ -429,7 +429,7 @@ mod tests {
     use crate::Decode;
     use byteorder::ReadBytesExt;
     use bytes::BytesMut;
-    use std::io::{Read, Seek, SeekFrom};
+    use std::io::Read;
 
     impl<'a> Decode<BytesMut> for LoginMessage<'a> {
         fn decode(src: &mut BytesMut) -> crate::Result<Self>
@@ -574,6 +574,8 @@ mod tests {
                     }
                 }
             }
+
+            assert!(cursor.position() <= total_length as u64);
 
             Ok(ret)
         }
