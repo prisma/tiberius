@@ -166,7 +166,8 @@ pub const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
 /// Nonce: The nonce provided by the server during the Prelogin exchange and echoed back to the server
 ///     by the client. This field MUST be present if the server’s PRELOGIN message included a NONCE field.
 ///     Otherwise, this field MUST NOT be present.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(test, derive(PartialEq))]
 struct FedAuthExt<'a> {
     fed_auth_echo: bool,
     fed_auth_token: Cow<'a, str>,
@@ -175,6 +176,7 @@ struct FedAuthExt<'a> {
 
 /// the login packet
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct LoginMessage<'a> {
     /// the highest TDS version the client supports
     tds_version: FeatureLevel,
@@ -408,11 +410,9 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
             if let Some(nonce) = fed_auth_ext.nonce {
                 cursor.write_all(nonce.as_ref())?;
             }
-        } else {
-            cursor.set_position(data_offset as u64);
-        }
 
-        cursor.write_u8(FEA_EXT_TERMINATOR)?;
+            cursor.write_u8(FEA_EXT_TERMINATOR)?;
+        }
 
         cursor.set_position(0);
         cursor.write_u32::<LittleEndian>(cursor.get_ref().len() as u32)?;
@@ -578,12 +578,6 @@ mod tests {
             assert!(cursor.position() <= total_length as u64);
 
             Ok(ret)
-        }
-    }
-
-    impl<'a> PartialEq for LoginMessage<'a> {
-        fn eq(&self, other: &Self) -> bool {
-            format!("{:?}", self) == format!("{:?}", other)
         }
     }
 

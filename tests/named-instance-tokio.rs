@@ -3,7 +3,7 @@
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{AuthMethod, Client, Config, Result, SqlBrowser};
+use tiberius::{Client, Config, Result, SqlBrowser};
 use tokio::{net::TcpStream, runtime::Runtime};
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 

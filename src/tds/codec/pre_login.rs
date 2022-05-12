@@ -12,6 +12,7 @@ use uuid::Uuid;
 /// in TDS 7.4.
 #[allow(unused)]
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct ActivityId {
     id: Uuid,
     sequence: u32,
@@ -19,6 +20,7 @@ pub struct ActivityId {
 
 /// The prelogin packet used to initialize a connection
 #[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct PreloginMessage {
     /// [BE] token=0x00
     /// Either the driver version or the version of the SQL server
@@ -243,12 +245,6 @@ impl Decode<BytesMut> for PreloginMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    impl PartialEq for PreloginMessage {
-        fn eq(&self, other: &Self) -> bool {
-            format!("{:?}", self) == format!("{:?}", other)
-        }
-    }
 
     #[test]
     fn prelogin_roundtrip() {
