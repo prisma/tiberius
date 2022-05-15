@@ -86,6 +86,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         } else {
             false
         };
+
         let prelogin = connection
             .prelogin(config.encryption, fed_auth_required)
             .await?;

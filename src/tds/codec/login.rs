@@ -257,6 +257,7 @@ impl<'a> LoginMessage<'a> {
         nonce: Option<[u8; 32]>,
     ) {
         self.option_flags_3.insert(OptionFlag3::ExtensionUsed);
+
         self.fed_auth_ext = Some(FedAuthExt {
             fed_auth_echo,
             fed_auth_token: token.into(),

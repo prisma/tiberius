@@ -10,6 +10,7 @@ pub struct TokenFeatureExtAck {
 pub enum FedAuthAck {
     SecurityToken { nonce: Option<[u8; 32]> },
 }
+
 #[derive(Debug)]
 pub enum FeatureAck {
     FedAuth(FedAuthAck),
