@@ -171,9 +171,7 @@
 //! ```no_run
 //! use azure_identity::client_credentials_flow;
 //! use oauth2::{ClientId, ClientSecret};
-//! use url::Url;
 //! use std::env;
-//! use std::error::Error;
 //! use tiberius::{Client, Query, Config, AuthMethod};
 //! use tokio::net::TcpStream;
 //! use tokio_util::compat::TokioAsyncWriteCompatExt;
