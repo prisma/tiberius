@@ -81,7 +81,7 @@ impl PreloginMessage {
 // prelogin fields
 // http://msdn.microsoft.com/en-us/library/dd357559.aspx
 const PRELOGIN_VERSION: u8 = 0;
-const PRELOGIN_ENCTYPTION: u8 = 1;
+const PRELOGIN_ENCRYPTION: u8 = 1;
 const PRELOGIN_INSTOPT: u8 = 2;
 const PRELOGIN_THREADID: u8 = 3;
 const PRELOGIN_MARS: u8 = 4;
@@ -101,7 +101,7 @@ impl Encode<BytesMut> for PreloginMessage {
         data_cursor.write_u16::<BigEndian>(self.sub_build as u16)?;
 
         // encryption
-        fields.push((PRELOGIN_ENCTYPTION, 0x01)); // encryption
+        fields.push((PRELOGIN_ENCRYPTION, 0x01)); // encryption
         data_cursor.write_u8(self.encryption as u8)?;
 
         // threadid
@@ -171,7 +171,7 @@ impl Decode<BytesMut> for PreloginMessage {
                     ret.sub_build = cursor.read_u16::<BigEndian>()?;
                 }
                 // encryption
-                PRELOGIN_ENCTYPTION => {
+                PRELOGIN_ENCRYPTION => {
                     let encrypt = cursor.read_u8()?;
                     ret.encryption = tds::EncryptionLevel::try_from(encrypt).map_err(|_| {
                         Error::Protocol(format!("invalid encryption value: {}", encrypt).into())

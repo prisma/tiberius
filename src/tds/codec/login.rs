@@ -129,16 +129,9 @@ pub enum LoginTypeFlag {
     ReadOnlyIntent = 1 << 5,
 }
 
-// pub const SESSIONRECOVERY: u8 = 0x01u8;
-pub const FEA_EXT_FEDAUTH: u8 = 0x02u8;
-// pub const COLUMNENCRYPTION: u8 = 0x04u8;
-// pub const GLOBALTRANSACTIONS: u8 = 0x05u8;
-// pub const AZURESQLSUPPORT: u8 = 0x06u8;
-// pub const DATACLASSIFICATION: u8 = 0x09u8;
-// pub const UTF8_SUPPORT: u8 = 0x0Au8;
-// pub const AZURESQLDNSCACHING: u8 = 0x0Bu8;
-pub const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
-pub const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
+pub(crate) const FEA_EXT_FEDAUTH: u8 = 0x02u8;
+pub(crate) const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
+pub(crate) const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
 
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 /// When bFedAuthLibrary is Security Token, the format is as follows:

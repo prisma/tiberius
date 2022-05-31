@@ -29,15 +29,18 @@ impl TokenFeatureExtAck {
                 break;
             } else if feature_id == FEA_EXT_FEDAUTH {
                 let data_len = src.read_u32_le().await?;
+
                 let nonce = if data_len == 32 {
                     let mut n = [0u8; 32];
                     src.read_exact(&mut n).await?;
+
                     Some(n)
                 } else if data_len == 0 {
                     None
                 } else {
                     panic!("invalid Feature_Ext_Ack token");
                 };
+
                 features.push(FeatureAck::FedAuth(FedAuthAck::SecurityToken { nonce }))
             } else {
                 unimplemented!("unsupported feature {}", feature_id)
