@@ -219,7 +219,6 @@
 //! }
 //! ```
 //!
-//!
 //! # TLS
 //!
 //! When compiled using the default features, a TLS encryption will be available
