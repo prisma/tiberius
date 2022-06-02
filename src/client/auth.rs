@@ -67,6 +67,9 @@ pub enum AuthMethod {
         doc(cfg(any(windows, all(unix, feature = "integrated-auth-gssapi"))))
     )]
     Integrated,
+    /// Authenticate with an AAD token. The token should encode an AAD user/service principal
+    /// which has access to SQL Server.
+    AADToken(String),
     #[doc(hidden)]
     None,
 }
@@ -94,5 +97,10 @@ impl AuthMethod {
             password: password.to_string(),
             domain: domain.map(|s| s.to_string()),
         })
+    }
+
+    /// Construct a new configuration with AAD auth token.
+    pub fn aad_token(token: impl ToString) -> Self {
+        Self::AADToken(token.to_string())
     }
 }
