@@ -37,6 +37,8 @@ A native Microsoft SQL Server (TDS) client for Rust.
 |--------------------------|----------------------------------------------------------------------------------------------------------------------------------|------------|
 | `tds73`                  | Support for new date and time types in TDS version 7.3. Disable if using version 7.2.                                            | `enabled`  |
 | `native-tls`             | Use operating system's TLS libraries for traffic encryption.                                                                     | `enabled`  |
+| `rustls`                 | Use the builtin TLS implementation from rustls instead of linking to the operating system implementation for traffic encryption. | `disabled` |
+| `vendored-openssl`       | Statically link against OpenSSL instead of dynamically linking to the operating system implementation for traffic encryption.    | `disabled` |
 | `chrono`                 | Read and write date and time values using `chrono`'s types. (for greenfield, using time instead of chrono is recommended)        | `disabled` |
 | `time`                   | Read and write date and time values using `time` crate types.                                                                    | `disabled` |
 | `rust_decimal`           | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.                                                      | `disabled` |
@@ -45,7 +47,6 @@ A native Microsoft SQL Server (TDS) client for Rust.
 | `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                                                                         | `disabled` |
 | `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                          | `disabled` |
 | `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                                     | `disabled` |
-| `rustls`                 | Use the builtin TLS implementation from rustls instead of linking to the operating system implementation for traffic encryption. | `disabled` |
 
 ### Supported protocols
 
