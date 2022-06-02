@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.9.2
+
+- Allow statically linking against OpenSSL (#222)
+
 ## Version 0.9.1
 
 - Support AAD token authentication (#215)
