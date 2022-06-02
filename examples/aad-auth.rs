@@ -37,13 +37,15 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     let mut config = Config::new();
-    let server = env::var("SERVER").expect("Missing HOST environment variable.");
+    let server = env::var("SERVER").expect("Missing SERVER environment variable.");
     config.host(server);
     config.port(1433);
     config.authentication(AuthMethod::AADToken(token.access_token().secret().clone()));
     config.trust_cert();
+
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
+
     let mut client = Client::connect(config, tcp.compat_write()).await?;
     let params = vec![String::from("foo"), String::from("bar")];
     let mut select = Query::new("SELECT @P1, @P2, @P3");

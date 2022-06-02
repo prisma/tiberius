@@ -90,6 +90,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let prelogin = connection
             .prelogin(config.encryption, fed_auth_required)
             .await?;
+
         let encryption = prelogin.negotiated_encryption(config.encryption);
 
         let connection = connection.tls_handshake(&config, encryption).await?;
