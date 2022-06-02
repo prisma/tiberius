@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.9.1
+
+- Support AAD token authentication (#215)
+
 ## Version 0.9.0
 
 - (BREAKING) support rustls, switch between native-tls and rustls.
