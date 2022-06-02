@@ -7,7 +7,7 @@
 //!   - CLIENT_ID: service principal ID;
 //!   - CLIENT_SECRET: service principal secret;
 //!   - TENANT_ID: tenant id of service principal and sql instance;
-//!   - SUBSCRIPTION_ID:  
+//!   - SERVER: SQL server URI
 use azure_identity::client_credentials_flow;
 use oauth2::{ClientId, ClientSecret};
 use std::env;
