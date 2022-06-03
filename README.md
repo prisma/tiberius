@@ -10,7 +10,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 
 - A perfect implementation of the TDS protocol.
 - Asynchronous network IO.
-- Independent of the protocol.
+- Independent of the network protocol.
 - Support for latest versions of Linux, Windows and macOS.
 
 ### Non-goals
@@ -33,23 +33,26 @@ A native Microsoft SQL Server (TDS) client for Rust.
 
 ### Feature flags
 
-| Flag                     | Description                                                                                                               | Default    |
-|--------------------------|---------------------------------------------------------------------------------------------------------------------------|------------|
-| `tds73`                  | Support for new date and time types in TDS version 7.3. Disable if using version 7.2.                                     | `enabled`  |
-| `chrono`                 | Read and write date and time values using `chrono`'s types. (for greenfield, using time instead of chrono is recommended) | `disabled` |
-| `time`                   | Read and write date and time values using `time` crate types.                                                             | `disabled` |
-| `rust_decimal`           | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.                                               | `disabled` |
-| `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.                                              | `disabled` |
-| `sql-browser-async-std`  | SQL Browser implementation for the `TcpStream` of async-std.                                                              | `disabled` |
-| `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                                                                  | `disabled` |
-| `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                   | `disabled` |
-| `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                              | `disabled` |
+| Flag                     | Description                                                                                                                      | Default    |
+|--------------------------|----------------------------------------------------------------------------------------------------------------------------------|------------|
+| `tds73`                  | Support for new date and time types in TDS version 7.3. Disable if using version 7.2.                                            | `enabled`  |
+| `native-tls`             | Use operating system's TLS libraries for traffic encryption.                                                                     | `enabled`  |
+| `rustls`                 | Use the builtin TLS implementation from rustls instead of linking to the operating system implementation for traffic encryption. | `disabled` |
+| `vendored-openssl`       | Statically link against OpenSSL instead of dynamically linking to the operating system implementation for traffic encryption.    | `disabled` |
+| `chrono`                 | Read and write date and time values using `chrono`'s types. (for greenfield, using time instead of chrono is recommended)        | `disabled` |
+| `time`                   | Read and write date and time values using `time` crate types.                                                                    | `disabled` |
+| `rust_decimal`           | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.                                                      | `disabled` |
+| `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.                                                     | `disabled` |
+| `sql-browser-async-std`  | SQL Browser implementation for the `TcpStream` of async-std.                                                                     | `disabled` |
+| `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                                                                         | `disabled` |
+| `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                          | `disabled` |
+| `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                                     | `disabled` |
 
 ### Supported protocols
 
 Tiberius does not rely on any protocol when connecting to an SQL Server instance. Instead the `Client` takes a socket that implements the `AsyncRead` and `AsyncWrite` traits from the [futures-rs](https://crates.io/crates/futures) crate.
 
-Currently there are good async implementations for TCP in the [async-std](https://crates.io/crates/async-std), [Tokio](https://crates.io/crates/tokio) and [Smol](https://crates.io/crates/smol) projects. To be able to use them together with Tiberius on Windows platforms with SQL Server, TCP protocol should be enabled in the [server settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx) (disabled by default). In the offficial [Docker image](https://hub.docker.com/_/microsoft-mssql-server) TCP is is enabled by default.
+Currently there are good async implementations for TCP in the [async-std](https://crates.io/crates/async-std), [Tokio](https://crates.io/crates/tokio) and [Smol](https://crates.io/crates/smol) projects. To be able to use them together with Tiberius on Windows platforms with SQL Server, TCP protocol should be enabled in the [server settings](https://technet.microsoft.com/en-us/library/hh231672(v=sql.110).aspx) (disabled by default). In the official [Docker image](https://hub.docker.com/_/microsoft-mssql-server) TCP is is enabled by default.
 
 Named pipes should work by using the [NamedPipeClient](https://docs.rs/tokio/1.9.0/tokio/net/windows/named_pipe/struct.NamedPipeClient.html) from the latest Tokio versions.
 
@@ -57,13 +60,21 @@ The shared memory protocol is not documented and seems there are no Rust crates 
 
 ### Encryption (TLS/SSL)
 
-Tiberius has three encryption settings:
+Tiberius can be set to use two different implementations of TLS connection encryption. By default it uses `native-tls`, linking to the TLS library provided by the operating system. This is a good practice and in case of security vulnerabilities, upgrading the system libraries fixes the vulnerability in Tiberius without a recompilation. On Linux we link against OpenSSL, on Windows against schannel and on macOS against Security Framework.
+
+Alternatively one can use the `rustls` feature flag to use the Rust native TLS implementation. This way there are no dynamic dependencies to the system. This might be useful in certain installations, but requires a rebuild to update to a new TLS version. For some reasons the Security Framework on macOS does not work with SQL Server TLS settings, and on Apple platforms if needing TLS it is recommended to use `rustls` instead of `native-tls`. The other option is to use the `vendored-openssl` feature flag, that statically links against the latest OpenSSL implementation.
+
+The crate can also be compiled without TLS support, but not with both features enabled at the same time.
+
+Tiberius has three runtime encryption settings:
 
 | Encryption level | Description                                      |
 |------------------|--------------------------------------------------|
-| `Required`       | All traffic is encrypted.                        |
-| `Off`            | Only the login procedure is encrypted. (default) |
+| `Required`       | All traffic is encrypted. (default)              |
+| `Off`            | Only the login procedure is encrypted.           |
 | `NotSupported`   | None of the traffic is encrypted.                |
+
+The encryption levels can be set when connecting to the database.
 
 ### Integrated Authentication (TrustedConnection) on \*nix
 

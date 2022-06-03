@@ -1,24 +1,26 @@
 use super::guid::reorder_bytes;
 use super::{Decode, Encode};
 use crate::{tds, Error, Result};
-use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use std::convert::TryFrom;
-use std::io::{self, Cursor, Read};
+use std::io::{Cursor, Read};
 use tds::EncryptionLevel;
 use uuid::Uuid;
 
 /// Client application activity id token used for debugging purposes introduced
 /// in TDS 7.4.
 #[allow(unused)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct ActivityId {
     id: Uuid,
     sequence: u32,
 }
 
 /// The prelogin packet used to initialize a connection
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct PreloginMessage {
     /// [BE] token=0x00
     /// Either the driver version or the version of the SQL server
@@ -55,6 +57,7 @@ impl PreloginMessage {
         }
     }
 
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     pub fn negotiated_encryption(&self, expected: EncryptionLevel) -> EncryptionLevel {
         match (expected, self.encryption) {
             (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
@@ -68,40 +71,68 @@ impl PreloginMessage {
             (_, _) => EncryptionLevel::On,
         }
     }
+
+    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    pub fn negotiated_encryption(&self, _: EncryptionLevel) -> EncryptionLevel {
+        EncryptionLevel::NotSupported
+    }
 }
+
+// prelogin fields
+// http://msdn.microsoft.com/en-us/library/dd357559.aspx
+const PRELOGIN_VERSION: u8 = 0;
+const PRELOGIN_ENCRYPTION: u8 = 1;
+const PRELOGIN_INSTOPT: u8 = 2;
+const PRELOGIN_THREADID: u8 = 3;
+const PRELOGIN_MARS: u8 = 4;
+const PRELOGIN_TRACEID: u8 = 5;
+const PRELOGIN_FEDAUTHREQUIRED: u8 = 6;
+const PRELOGIN_NONCEOPT: u8 = 7;
+const PRELOGIN_TERMINATOR: u8 = 0xff;
 
 impl Encode<BytesMut> for PreloginMessage {
     fn encode(self, dst: &mut BytesMut) -> Result<()> {
-        // build the packet-body
-        // offset = PL_OPTION_TOKEN + PL_OFFSET + PL_OPTION_LENGTH = 5 bytes + the terminator (0xFF)
-        let mut data_offset = 4 * 5 + 1;
+        let mut fields = Vec::new();
+        let mut data_cursor = Cursor::new(Vec::with_capacity(512));
 
-        // write the offsets
-        {
-            let mut write_option = |token: u8, length: u16| -> io::Result<()> {
-                dst.put_u8(token);
-                dst.put_u16(data_offset);
-                dst.put_u16(length);
+        // version
+        fields.push((PRELOGIN_VERSION, 0x04 + 0x02)); // version + subbuild
+        data_cursor.write_u32::<BigEndian>(self.version as u32)?;
+        data_cursor.write_u16::<BigEndian>(self.sub_build as u16)?;
 
-                data_offset += length;
+        // encryption
+        fields.push((PRELOGIN_ENCRYPTION, 0x01)); // encryption
+        data_cursor.write_u8(self.encryption as u8)?;
 
-                Ok(())
-            };
+        // threadid
+        fields.push((PRELOGIN_THREADID, 0x04)); // thread id
+        data_cursor.write_u32::<BigEndian>(self.thread_id)?;
 
-            write_option(0x00, 0x04 + 0x02)?; // version + subbuild
-            write_option(0x01, 0x01)?; // encryption
-            write_option(0x03, 0x04)?; // threadid
-            write_option(0x04, 0x01)?; // MARS
+        // MARS
+        fields.push((PRELOGIN_MARS, 0x01)); // MARS
+        data_cursor.write_u8(self.mars as u8)?;
+
+        // fed auth
+        if self.fed_auth_required {
+            fields.push((PRELOGIN_FEDAUTHREQUIRED, 0x01));
+            data_cursor.write_u8(0x01)?;
         }
 
-        dst.put_u8(255);
+        // build the packet-body
+        // offset = PL_OPTION_TOKEN + PL_OFFSET + PL_OPTION_LENGTH = 5 bytes + the terminator (0xFF)
+        let mut data_offset = (fields.len() * 5 + 1) as u16;
 
-        // write the data (body of the options)
-        dst.put_u32(self.version as u32);
-        dst.put_u16(self.sub_build as u16);
-        dst.put_u8(self.encryption as u8);
-        dst.put_u32(self.thread_id);
-        dst.put_u8(self.mars as u8);
+        // write the offset table
+        for (token, length) in fields {
+            dst.put_u8(token);
+            dst.put_u16(data_offset);
+            dst.put_u16(length);
+
+            data_offset += length;
+        }
+
+        dst.put_u8(PRELOGIN_TERMINATOR);
+        dst.extend(data_cursor.into_inner());
 
         Ok(())
     }
@@ -135,19 +166,19 @@ impl Decode<BytesMut> for PreloginMessage {
             // TODO: support parsing more
             match token {
                 // version
-                0x00 => {
+                PRELOGIN_VERSION => {
                     ret.version = cursor.read_u32::<BigEndian>()?;
                     ret.sub_build = cursor.read_u16::<BigEndian>()?;
                 }
                 // encryption
-                0x01 => {
+                PRELOGIN_ENCRYPTION => {
                     let encrypt = cursor.read_u8()?;
                     ret.encryption = tds::EncryptionLevel::try_from(encrypt).map_err(|_| {
                         Error::Protocol(format!("invalid encryption value: {}", encrypt).into())
                     })?;
                 }
                 // instance name
-                0x02 => {
+                PRELOGIN_INSTOPT => {
                     let mut bytes = Vec::new();
                     let mut next_byte = cursor.read_u8()?;
 
@@ -160,14 +191,21 @@ impl Decode<BytesMut> for PreloginMessage {
                         ret.instance_name = Some(String::from_utf8_lossy(&bytes).into_owned());
                     }
                 }
-                // threadid (should be empty when sent from server to client)
-                0x03 => debug_assert_eq!(length, 0),
+                PRELOGIN_THREADID => {
+                    ret.thread_id = if length == 0 {
+                        0
+                    } else if length == 4 {
+                        cursor.read_u32::<BigEndian>()?
+                    } else {
+                        panic!("should never happen")
+                    }
+                }
                 // mars
-                0x04 => {
+                PRELOGIN_MARS => {
                     ret.mars = cursor.read_u8()? != 0;
                 }
                 // activity id
-                0x05 => {
+                PRELOGIN_TRACEID => {
                     // Data is a Guid, 16 bytes and ordered the wrong way around
                     // than Uuid.
                     let mut data = [0u8; 16];
@@ -181,11 +219,11 @@ impl Decode<BytesMut> for PreloginMessage {
                     });
                 }
                 // fed auth
-                0x06 => {
+                PRELOGIN_FEDAUTHREQUIRED => {
                     ret.fed_auth_required = cursor.read_u8()? != 0;
                 }
                 // nonce
-                0x07 => {
+                PRELOGIN_NONCEOPT => {
                     let mut data = [0u8; 32];
 
                     for item in data.iter_mut() {
@@ -201,5 +239,39 @@ impl Decode<BytesMut> for PreloginMessage {
         }
 
         Ok(ret)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prelogin_roundtrip() {
+        let mut payload = BytesMut::new();
+        let prelogin = PreloginMessage::new();
+        prelogin
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = PreloginMessage::decode(&mut payload).expect("decode should succeed");
+
+        assert_eq!(prelogin, decoded);
+    }
+
+    #[test]
+    fn prelogin_with_fedauth_roundtrip() {
+        let mut payload = BytesMut::new();
+        let mut prelogin = PreloginMessage::new();
+        prelogin.fed_auth_required = true;
+        prelogin
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        let decoded = PreloginMessage::decode(&mut payload).expect("decode should succeed");
+
+        assert_eq!(prelogin, decoded);
     }
 }

@@ -45,8 +45,11 @@ jobs:
           - azure-sql-edge
         features:
           - "--features=all"
+          - "--no-default-features"
           - "--no-default-features --features=chrono"
           - "--no-default-features --features=time"
+          - "--no-default-features --features=rustls"
+          - "--no-default-features --features=vendored-openssl"
 
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
@@ -84,6 +87,8 @@ jobs:
           - 2019
         features:
           - "--features=all"
+          - "--no-default-features --features=rustls,winauth"
+          - "--no-default-features --features=vendored-openssl,winauth"
 
     env:
       TIBERIUS_TEST_INSTANCE: "MSSQLSERVER"
@@ -180,7 +185,7 @@ jobs:
 
       - name: Run normal tests
         shell: powershell
-        run: cargo test --features all
+        run: cargo test ${{matrix.features}}
 
   cargo-test-macos:
     runs-on: macos-latest
@@ -191,7 +196,8 @@ jobs:
         database:
           - 2019
         features:
-          - "--features=all"
+          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
+          - "--no-default-features --features=vendored-openssl"
 
     env:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"

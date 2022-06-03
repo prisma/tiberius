@@ -73,5 +73,10 @@ uint_enum! {
 
         /// Indicates the completion status of a SQL statement within a stored procedure.
         DoneInProc = 0xFF,
+
+        /// used to send an optional acknowledge message to the client for features that
+        /// are defined in FeatureExt. The token stream is sent only along with the LOGINACK
+        /// in a Login Response message.
+        FeatureExtAck = 0xAE,
     }
 }

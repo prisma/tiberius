@@ -1,9 +1,7 @@
-use crate::client::tls_stream::TlsStream;
+#[cfg(any(feature = "rustls", feature = "native-tls"))]
+use crate::client::{tls::TlsPreloginWrapper, tls_stream::create_tls_stream};
 use crate::{
-    client::{
-        tls::{MaybeTlsStream, TlsPreloginWrapper},
-        AuthMethod, Config,
-    },
+    client::{tls::MaybeTlsStream, AuthMethod, Config},
     tds::{
         codec::{
             self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
@@ -83,7 +81,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             buf: BytesMut::new(),
         };
 
-        let prelogin = connection.prelogin(config.encryption).await?;
+        let fed_auth_required = if let AuthMethod::AADToken(_) = config.auth {
+            true
+        } else {
+            false
+        };
+
+        let prelogin = connection
+            .prelogin(config.encryption, fed_auth_required)
+            .await?;
+
         let encryption = prelogin.negotiated_encryption(config.encryption);
 
         let connection = connection.tls_handshake(&config, encryption).await?;
@@ -95,6 +102,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 config.database,
                 config.host,
                 config.application_name,
+                prelogin,
             )
             .await?;
 
@@ -114,6 +122,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         TokenStream::new(self).flush_sspi().await
     }
 
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
         if let EncryptionLevel::Off = encryption {
             event!(
@@ -126,6 +135,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
         }
 
+        self
+    }
+
+    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    fn post_login_encryption(self, _: EncryptionLevel) -> Self {
         self
     }
 
@@ -215,14 +229,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// encryption is needed. In this scenario, where PRELOGIN message is
     /// transporting the TLS handshake payload, the packet data is simply the
     /// raw bytes of the TLS handshake payload.
-    async fn prelogin(&mut self, encryption: EncryptionLevel) -> crate::Result<PreloginMessage> {
+    async fn prelogin(
+        &mut self,
+        encryption: EncryptionLevel,
+        fed_auth_required: bool,
+    ) -> crate::Result<PreloginMessage> {
         let mut msg = PreloginMessage::new();
         msg.encryption = encryption;
+        msg.fed_auth_required = fed_auth_required;
 
         let id = self.context.next_packet_id();
         self.send(PacketHeader::pre_login(id), msg).await?;
 
-        Ok(codec::collect_from(self).await?)
+        let response: PreloginMessage = codec::collect_from(self).await?;
+        // threadid (should be empty when sent from server to client)
+        debug_assert_eq!(response.thread_id, 0);
+        Ok(response)
     }
 
     /// Defines the login record rules with SQL Server. Authentication with
@@ -234,6 +256,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         db: Option<String>,
         server_name: Option<String>,
         application_name: Option<String>,
+        prelogin: PreloginMessage,
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
 
@@ -360,12 +383,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 self.send(PacketHeader::login(id), login_message).await?;
                 self = self.post_login_encryption(encryption);
             }
+            AuthMethod::AADToken(token) => {
+                login_message.aad_token(token, prelogin.fed_auth_required, prelogin.nonce);
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), login_message).await?;
+                self = self.post_login_encryption(encryption);
+            }
         }
 
         Ok(self)
     }
 
     /// Implements the TLS handshake with the SQL Server.
+    #[cfg(any(feature = "rustls", feature = "native-tls"))]
     async fn tls_handshake(
         self,
         config: &Config,
@@ -379,7 +409,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             } = self;
             let mut stream = match transport.release().0 {
                 MaybeTlsStream::Raw(tcp) => {
-                    TlsStream::new(config, TlsPreloginWrapper::new(tcp)).await?
+                    create_tls_stream(config, TlsPreloginWrapper::new(tcp)).await?
                 }
                 _ => unreachable!(),
             };
@@ -403,6 +433,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
             Ok(self)
         }
+    }
+
+    /// Implements the TLS handshake with the SQL Server.
+    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    async fn tls_handshake(self, _: &Config, _: EncryptionLevel) -> crate::Result<Self> {
+        event!(
+            Level::WARN,
+            "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
+        );
+
+        Ok(self)
     }
 }
 
