@@ -1,4 +1,8 @@
-#[cfg(any(feature = "rustls", feature = "native-tls"))]
+#[cfg(any(
+    feature = "rustls",
+    feature = "native-tls",
+    feature = "vendored-openssl"
+))]
 use crate::client::{tls::TlsPreloginWrapper, tls_stream::create_tls_stream};
 use crate::{
     client::{tls::MaybeTlsStream, AuthMethod, Config},
@@ -122,7 +126,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         TokenStream::new(self).flush_sspi().await
     }
 
-    #[cfg(any(feature = "rustls", feature = "native-tls"))]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
     fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
         if let EncryptionLevel::Off = encryption {
             event!(
@@ -138,7 +146,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         self
     }
 
-    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    #[cfg(not(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    )))]
     fn post_login_encryption(self, _: EncryptionLevel) -> Self {
         self
     }
@@ -395,7 +407,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     /// Implements the TLS handshake with the SQL Server.
-    #[cfg(any(feature = "rustls", feature = "native-tls"))]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
     async fn tls_handshake(
         self,
         config: &Config,
@@ -436,7 +452,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     /// Implements the TLS handshake with the SQL Server.
-    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    #[cfg(not(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    )))]
     async fn tls_handshake(self, _: &Config, _: EncryptionLevel) -> crate::Result<Self> {
         event!(
             Level::WARN,
