@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.9.3
+
+- Enable SSL if using vendored-openssl feature (#225)
+
 ## Version 0.9.2
 
 - Allow statically linking against OpenSSL (#222)
