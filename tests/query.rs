@@ -2143,6 +2143,7 @@ where
         )
         .await?;
 
+    assert_eq!(&[1], res.rows_affected());
     assert_eq!(1, res.total());
 
     let row = conn

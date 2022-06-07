@@ -1,14 +1,12 @@
-use crate::{
-    tds::{lcid_to_encoding, sortid_to_encoding},
-    Error, SqlReadBytes,
-};
+use crate::{tds::Collation, Error, SqlReadBytes};
 use byteorder::{LittleEndian, ReadBytesExt};
-use encoding::Encoding;
 use fmt::Debug;
 use futures::io::AsyncReadExt;
-use std::io::Cursor;
-use std::io::Read;
-use std::{convert::TryFrom, fmt};
+use std::{
+    convert::TryFrom,
+    fmt,
+    io::{Cursor, Read},
+};
 
 uint_enum! {
     #[repr(u8)]
@@ -63,52 +61,13 @@ impl fmt::Display for EnvChangeTy {
     }
 }
 
-pub struct CollationInfo {
-    lcid_encoding: Option<&'static (dyn Encoding + Send + Sync)>,
-    sortid_encoding: Option<&'static (dyn Encoding + Send + Sync)>,
-}
-
-impl CollationInfo {
-    pub fn new(bytes: &[u8]) -> Self {
-        let lcid_encoding = match (bytes.get(0), bytes.get(1)) {
-            (Some(fst), Some(snd)) => lcid_to_encoding(u16::from_le_bytes([*fst, *snd])),
-            _ => None,
-        };
-
-        let sortid_encoding = match bytes.get(4) {
-            Some(byte) => sortid_to_encoding(*byte),
-            _ => None,
-        };
-
-        Self {
-            lcid_encoding,
-            sortid_encoding,
-        }
-    }
-}
-
-impl Debug for CollationInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
-}
-
-impl fmt::Display for CollationInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (self.lcid_encoding, self.sortid_encoding) {
-            (Some(lcid), Some(sortid)) => write!(f, "{}/{}", lcid.name(), sortid.name()),
-            _ => write!(f, "None"),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum TokenEnvChange {
     Database(String, String),
     PacketSize(u32, u32),
     SqlCollation {
-        old: CollationInfo,
-        new: CollationInfo,
+        old: Option<Collation>,
+        new: Option<Collation>,
     },
     BeginTransaction([u8; 8]),
     CommitTransaction,
@@ -131,9 +90,11 @@ impl fmt::Display for TokenEnvChange {
             Self::PacketSize(old, new) => {
                 write!(f, "Packet size change from '{}' to '{}'", old, new)
             }
-            Self::SqlCollation { old, new } => {
-                write!(f, "SQL collation change from {} to {}", old, new)
-            }
+            Self::SqlCollation { old, new } => match (old, new) {
+                (Some(old), Some(new)) => write!(f, "SQL collation change from {} to {}", old, new),
+                (_, Some(new)) => write!(f, "SQL collation changed to {}", new),
+                (_, _) => write!(f, "SQL collation change"),
+            },
             Self::BeginTransaction(_) => write!(f, "Begin transaction"),
             Self::CommitTransaction => write!(f, "Commit transaction"),
             Self::RollbackTransaction => write!(f, "Rollback transaction"),
@@ -216,14 +177,39 @@ impl TokenEnvChange {
                 let mut new_value = vec![0; len];
                 buf.read_exact(&mut new_value[0..len])?;
 
+                let new = if len == 5 {
+                    let new_sortid = new_value[4];
+                    let new_info = u32::from_le_bytes([
+                        new_value[0],
+                        new_value[1],
+                        new_value[2],
+                        new_value[3],
+                    ]);
+
+                    Some(Collation::new(new_info, new_sortid))
+                } else {
+                    None
+                };
+
                 let len = buf.read_u8()? as usize;
                 let mut old_value = vec![0; len];
                 buf.read_exact(&mut old_value[0..len])?;
 
-                TokenEnvChange::SqlCollation {
-                    new: CollationInfo::new(new_value.as_slice()),
-                    old: CollationInfo::new(old_value.as_slice()),
-                }
+                let old = if len == 5 {
+                    let old_sortid = old_value[4];
+                    let old_info = u32::from_le_bytes([
+                        old_value[0],
+                        old_value[1],
+                        old_value[2],
+                        old_value[3],
+                    ]);
+
+                    Some(Collation::new(old_info, old_sortid))
+                } else {
+                    None
+                };
+
+                TokenEnvChange::SqlCollation { new, old }
             }
             EnvChangeTy::BeginTransaction | EnvChangeTy::EnlistDTCTransaction => {
                 let len = buf.read_u8()?;

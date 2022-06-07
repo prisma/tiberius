@@ -276,7 +276,14 @@ pub use query::Query;
 pub use result::*;
 pub use row::{Column, ColumnType, Row};
 pub use sql_browser::SqlBrowser;
-pub use tds::{codec::ColumnData, numeric, stream::QueryStream, time, xml, EncryptionLevel};
+pub use tds::{
+    codec::{
+        BulkLoadMetadata, BulkLoadRequest, ColumnData, ColumnFlag, TokenRow, TypeInfo, TypeLength,
+    },
+    numeric,
+    stream::QueryStream,
+    time, xml, EncryptionLevel,
+};
 pub use to_sql::{IntoSql, ToSql};
 pub use uuid::Uuid;
 

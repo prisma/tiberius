@@ -1,9 +1,12 @@
-use crate::{Error, SqlReadBytes};
+use crate::{tds::codec::Encode, Error, SqlReadBytes, TokenType};
+use asynchronous_codec::BytesMut;
+use bytes::BufMut;
 use enumflags2::{bitflags, BitFlags};
 use std::fmt;
 
 #[allow(dead_code)] // we might want to debug the values
 #[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TokenDone {
     status: BitFlags<DoneStatus>,
     cur_cmd: u16,
@@ -55,6 +58,18 @@ impl TokenDone {
 
     pub(crate) fn rows(&self) -> u64 {
         self.done_rows
+    }
+}
+
+impl Encode<BytesMut> for TokenDone {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u8(TokenType::Done as u8);
+        dst.put_u16_le(BitFlags::bits(self.status));
+
+        dst.put_u16_le(self.cur_cmd);
+        dst.put_u64_le(self.done_rows);
+
+        Ok(())
     }
 }
 

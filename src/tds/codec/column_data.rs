@@ -1,5 +1,6 @@
 mod binary;
 mod bit;
+mod buf;
 #[cfg(feature = "tds73")]
 mod date;
 #[cfg(feature = "tds73")]
@@ -26,9 +27,11 @@ use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
     tds::{time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
+    tds::{codec::TypeInfoInner, xml::XmlData, DateTime, Numeric, SmallDateTime},
     SqlReadBytes,
 };
-use bytes::{BufMut, BytesMut};
+pub(crate) use buf::BufColumnData;
+use bytes::BufMut;
 use std::borrow::{BorrowMut, Cow};
 use uuid::Uuid;
 
@@ -124,16 +127,16 @@ impl<'a> ColumnData<'a> {
     where
         R: SqlReadBytes + Unpin,
     {
-        let res = match ctx {
-            TypeInfo::FixedLen(fixed_ty) => fixed_len::decode(src, fixed_ty).await?,
-            TypeInfo::VarLenSized(cx) => var_len::decode(src, cx).await?,
-            TypeInfo::VarLenSizedPrecision { ty, scale, .. } => match ty {
+        let res = match dbg!(&ctx.inner) {
+            TypeInfoInner::FixedLen(fixed_ty) => fixed_len::decode(src, fixed_ty).await?,
+            TypeInfoInner::VarLenSized(cx) => var_len::decode(src, cx).await?,
+            TypeInfoInner::VarLenSizedPrecision { ty, scale, .. } => match ty {
                 VarLenType::Decimaln | VarLenType::Numericn => {
                     ColumnData::Numeric(Numeric::decode(src, *scale).await?)
                 }
                 _ => todo!(),
             },
-            TypeInfo::Xml { schema, size } => xml::decode(src, *size, schema.clone()).await?,
+            TypeInfoInner::Xml { schema, size } => xml::decode(src, *size, schema.clone()).await?,
         };
 
         Ok(res)

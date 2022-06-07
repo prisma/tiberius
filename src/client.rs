@@ -13,10 +13,10 @@ pub(crate) use connection::*;
 use crate::{
     result::ExecuteResult,
     tds::{
-        codec,
+        codec::{self, IteratorJoin},
         stream::{QueryStream, TokenStream},
     },
-    SqlReadBytes, ToSql,
+    BulkLoadMetadata, BulkLoadRequest, SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use enumflags2::BitFlags;
@@ -245,7 +245,78 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         Ok(result)
     }
 
-    pub(crate) fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
+    /// Execute a `BULK INSERT` statement, efficiantly storing a large number of
+    /// rows to a specified table.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use tiberius::{Config, BulkLoadMetadata, TypeInfo, TokenRow, IntoSql};
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
+    /// # use std::env;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
+    /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
+    /// # );
+    /// # let config = Config::from_ado_string(&c_str)?;
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # tcp.set_nodelay(true)?;
+    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// let create_table = r#"
+    ///     CREATE TABLE ##bulk_test (
+    ///         id INT IDENTITY PRIMARY KEY,
+    ///         val INT NOT NULL
+    ///     )
+    /// "#;
+    ///
+    /// client.simple_query(create_table).await?;
+    ///
+    /// // The request must have correct typing.
+    /// let mut meta = BulkLoadMetadata::new();
+    /// meta.add_column("val", TypeInfo::int());
+    ///
+    /// // Start the bulk insert with the client.
+    /// let mut req = client.bulk_insert("##bulk_test", meta).await?;
+    ///
+    /// for i in [0i32, 1i32, 2i32] {
+    ///     let mut row = TokenRow::new();
+    ///     row.push(i.into_sql());
+    ///
+    ///     // The request will handle flushing to the wire in an optimal way,
+    ///     // balancing between memory usage and IO performance.
+    ///     req.send(row).await?;
+    /// }
+    ///
+    /// // The request must be finalized.
+    /// let res = req.finalize().await?;
+    /// assert_eq!(3, res.total());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn bulk_insert<'a>(
+        &'a mut self,
+        table: &str,
+        meta: BulkLoadMetadata<'a>,
+    ) -> crate::Result<BulkLoadRequest<'a, S>> {
+        // Start the bulk request
+        self.connection.flush_stream().await?;
+
+        let col_data = meta.column_descriptions().join(", ");
+        let query = format!("INSERT BULK {} ({})", table, col_data);
+
+        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
+        let id = self.connection.context_mut().next_packet_id();
+
+        self.connection.send(PacketHeader::batch(id), req).await?;
+
+        let ts = TokenStream::new(&mut self.connection);
+        ts.flush_done().await?;
+
+        BulkLoadRequest::new(&mut self.connection, meta)
+    }
+
+    fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
         vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),

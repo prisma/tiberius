@@ -1,4 +1,4 @@
-use super::codec::*;
+use super::{codec::*, Collation};
 use std::sync::Arc;
 
 /// Context, that might be required to make sure we understand and are understood by the server
@@ -8,8 +8,9 @@ pub(crate) struct Context {
     packet_size: u32,
     packet_id: u8,
     transaction_desc: [u8; 8],
-    last_meta: Option<Arc<TokenColMetaData>>,
+    last_meta: Option<Arc<TokenColMetaData<'static>>>,
     spn: Option<String>,
+    collation: Option<Collation>,
 }
 
 impl Context {
@@ -21,6 +22,7 @@ impl Context {
             transaction_desc: [0; 8],
             last_meta: None,
             spn: None,
+            collation: None,
         }
     }
 
@@ -30,11 +32,11 @@ impl Context {
         id
     }
 
-    pub fn set_last_meta(&mut self, meta: Arc<TokenColMetaData>) {
+    pub fn set_last_meta(&mut self, meta: Arc<TokenColMetaData<'static>>) {
         self.last_meta.replace(meta);
     }
 
-    pub fn last_meta(&self) -> Option<Arc<TokenColMetaData>> {
+    pub fn last_meta(&self) -> Option<Arc<TokenColMetaData<'static>>> {
         self.last_meta.as_ref().map(Arc::clone)
     }
 
@@ -52,6 +54,14 @@ impl Context {
 
     pub fn set_transaction_descriptor(&mut self, desc: [u8; 8]) {
         self.transaction_desc = desc;
+    }
+
+    pub fn set_collation(&mut self, collation: Collation) {
+        self.collation = Some(collation);
+    }
+
+    pub fn collation(&self) -> Option<Collation> {
+        self.collation
     }
 
     pub fn version(&self) -> FeatureLevel {

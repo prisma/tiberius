@@ -1,3 +1,5 @@
+use std::fmt;
+
 ///! legacy implementation of collations (or codepages rather) for dealing with varchar's with legacy databases
 ///! references [1] which has some mappings from the katmai (SQL Server 2008) source code and is a TDS driver
 ///! directly from microsoft
@@ -12,9 +14,9 @@ use crate::error::Error;
 #[derive(Debug, Clone, Copy)]
 pub struct Collation {
     /// LCID ColFlags Version
-    info: u32,
+    pub(crate) info: u32,
     /// Sortid
-    sort_id: u8,
+    pub(crate) sort_id: u8,
 }
 
 impl Collation {
@@ -49,6 +51,15 @@ impl Collation {
                 .into(),
             )
         })
+    }
+}
+
+impl fmt::Display for Collation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.encoding() {
+            Ok(encoding) => write!(f, "{}", encoding.name()),
+            _ => write!(f, "None"),
+        }
     }
 }
 

@@ -13,8 +13,8 @@ use tracing::{event, Level};
 
 #[derive(Debug)]
 pub enum ReceivedToken {
-    NewResultset(Arc<TokenColMetaData>),
-    Row(TokenRow),
+    NewResultset(Arc<TokenColMetaData<'static>>),
+    Row(TokenRow<'static>),
     Done(TokenDone),
     DoneInProc(TokenDone),
     DoneProc(TokenDone),
@@ -146,6 +146,11 @@ where
             }
             TokenEnvChange::BeginTransaction(desc) => {
                 self.conn.context_mut().set_transaction_descriptor(desc);
+            }
+            TokenEnvChange::SqlCollation { new, .. } => {
+                if let Some(collation) = new {
+                    self.conn.context_mut().set_collation(collation);
+                }
             }
             TokenEnvChange::CommitTransaction
             | TokenEnvChange::RollbackTransaction

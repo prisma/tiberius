@@ -21,16 +21,22 @@ impl Decoder for PacketCodec {
         }
 
         let header = PacketHeader::decode(&mut BytesMut::from(&src[0..HEADER_BYTES]))?;
-        let length = header.length as usize;
+        let length = header.length() as usize;
 
         if src.len() < length {
             src.reserve(length);
             return Ok(None);
         }
 
-        event!(Level::TRACE, "Reading a {:?} ({} bytes)", header.ty, length,);
+        event!(
+            Level::TRACE,
+            "Reading a {:?} ({} bytes)",
+            header.r#type(),
+            length,
+        );
 
         let header = PacketHeader::decode(src)?;
+
         if length < HEADER_BYTES {
             return Err(Error::Protocol("Invalid packet length".into()));
         }
