@@ -8,7 +8,11 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 static LOGGER_SETUP: Once = Once::new();
 
 #[test]
-#[cfg(any(feature = "rustls", feature = "native-tls"))]
+#[cfg(any(
+    feature = "rustls",
+    feature = "native-tls",
+    feature = "vendored-openssl"
+))]
 fn connect_to_custom_cert_instance_ado() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
@@ -40,7 +44,11 @@ fn connect_to_custom_cert_instance_ado() -> Result<()> {
 }
 
 #[test]
-#[cfg(any(feature = "rustls", feature = "native-tls"))]
+#[cfg(any(
+    feature = "rustls",
+    feature = "native-tls",
+    feature = "vendored-openssl"
+))]
 fn connect_to_custom_cert_instance_jdbc() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();

@@ -57,7 +57,11 @@ impl PreloginMessage {
         }
     }
 
-    #[cfg(any(feature = "rustls", feature = "native-tls"))]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
     pub fn negotiated_encryption(&self, expected: EncryptionLevel) -> EncryptionLevel {
         match (expected, self.encryption) {
             (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
@@ -72,7 +76,11 @@ impl PreloginMessage {
         }
     }
 
-    #[cfg(not(any(feature = "rustls", feature = "native-tls")))]
+    #[cfg(not(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    )))]
     pub fn negotiated_encryption(&self, _: EncryptionLevel) -> EncryptionLevel {
         EncryptionLevel::NotSupported
     }

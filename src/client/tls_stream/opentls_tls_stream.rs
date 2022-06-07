@@ -3,8 +3,8 @@ use crate::{
     error::{Error, IoErrorKind},
 };
 use futures::{AsyncRead, AsyncWrite};
-pub(crate) use opentls::TlsStream;
-use opentls::{Certificate, TlsConnector};
+pub(crate) use opentls::async_io::{TlsConnector, TlsStream};
+use opentls::Certificate;
 use std::fs;
 use tracing::{event, Level};
 

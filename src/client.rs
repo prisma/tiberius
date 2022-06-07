@@ -3,7 +3,11 @@ mod config;
 mod connection;
 
 mod tls;
-#[cfg(any(feature = "rustls", feature = "native-tls"))]
+#[cfg(any(
+    feature = "rustls",
+    feature = "native-tls",
+    feature = "vendored-openssl"
+))]
 mod tls_stream;
 
 pub use auth::*;
