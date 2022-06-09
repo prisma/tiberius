@@ -4,6 +4,7 @@ use std::env;
 use tiberius::{BulkLoadMetadata, Client, ColumnFlag, Config, IntoSql, TokenRow, TypeInfo};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
+use tracing::log::{error, info, LevelFilter};
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
@@ -23,20 +24,26 @@ async fn main() -> anyhow::Result<()> {
     let mut client = Client::connect(config, tcp.compat_write()).await?;
 
     client
+        .execute("DROP TABLE IF EXISTS bulk_test1", &[])
+        .await?;
+    info!("drop table");
+    client
         .execute(
-            "CREATE TABLE ##bulk_test1 (id INT IDENTITY PRIMARY KEY, content VARCHAR(255))",
+            "CREATE TABLE bulk_test1 (id INT IDENTITY PRIMARY KEY, content VARCHAR(255))",
             &[],
         )
         .await?;
+    info!("create table done");
 
     let mut meta = BulkLoadMetadata::new();
-    meta.add_column("content", TypeInfo::int(), ColumnFlag::Nullable.into());
+    meta.add_column("content", TypeInfo::int(), ColumnFlag::Nullable);
 
-    let mut req = client.bulk_insert("##bulk_test1", meta).await?;
-    let count = 2000i32;
+    let mut req = client.bulk_insert("bulk_test1", meta).await?;
+    let count = 1000i32;
 
     let pb = ProgressBar::new(count as u64);
 
+    info!("start loading data");
     for i in vec!["aaaaaaaaaaaaaaaaaaaa"; 1000].into_iter() {
         let mut row = TokenRow::new();
         row.push(i.into_sql());
@@ -47,8 +54,6 @@ async fn main() -> anyhow::Result<()> {
     pb.finish_with_message("waiting...");
 
     let res = req.finalize().await?;
-
-    dbg!(res);
 
     Ok(())
 }

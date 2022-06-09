@@ -72,7 +72,6 @@ where
         meta: BulkLoadMetadata<'a>,
     ) -> crate::Result<Self> {
         let packet_id = connection.context_mut().next_packet_id();
-        let collation = connection.context().collation();
         let mut buf = BytesMut::new();
 
         meta.encode(&mut buf)?;
@@ -99,7 +98,7 @@ where
 
         row.encode(&mut self.buf)?;
 
-        while self.buf.len() >= packet_size {
+        while dbg!(self.buf.len()) >= dbg!(packet_size) {
             let header = PacketHeader::bulk_load(self.packet_id);
             let data = self.buf.split_to(packet_size);
 
@@ -134,8 +133,8 @@ where
             data.len() + HEADER_BYTES,
         );
 
-        self.connection.write_to_wire(header, data).await?;
-        self.connection.flush_sink().await?;
+        dbg!(self.connection.write_to_wire(header, data).await)?;
+        dbg!(self.connection.flush_sink().await)?;
 
         ExecuteResult::new(self.connection).await
     }

@@ -6,7 +6,7 @@ pub trait IntoRow<'a> {
 
 impl<'a, A> IntoRow<'a> for A
 where
-    A: IntoSql,
+    A: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -17,8 +17,8 @@ where
 
 impl<'a, A, B> IntoRow<'a> for (A, B)
 where
-    A: IntoSql,
-    B: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -30,9 +30,9 @@ where
 
 impl<'a, A, B, C> IntoRow<'a> for (A, B, C)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -45,10 +45,10 @@ where
 
 impl<'a, A, B, C, D> IntoRow<'a> for (A, B, C, D)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
-    D: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
+    D: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -62,11 +62,11 @@ where
 
 impl<'a, A, B, C, D, E> IntoRow<'a> for (A, B, C, D, E)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
-    D: IntoSql,
-    E: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
+    D: IntoSql<'a>,
+    E: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -81,12 +81,12 @@ where
 
 impl<'a, A, B, C, D, E, F> IntoRow<'a> for (A, B, C, D, E, F)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
-    D: IntoSql,
-    E: IntoSql,
-    F: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
+    D: IntoSql<'a>,
+    E: IntoSql<'a>,
+    F: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -102,13 +102,13 @@ where
 
 impl<'a, A, B, C, D, E, F, G> IntoRow<'a> for (A, B, C, D, E, F, G)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
-    D: IntoSql,
-    E: IntoSql,
-    F: IntoSql,
-    G: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
+    D: IntoSql<'a>,
+    E: IntoSql<'a>,
+    F: IntoSql<'a>,
+    G: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -125,14 +125,14 @@ where
 
 impl<'a, A, B, C, D, E, F, G, H> IntoRow<'a> for (A, B, C, D, E, F, G, H)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
-    D: IntoSql,
-    E: IntoSql,
-    F: IntoSql,
-    G: IntoSql,
-    H: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
+    D: IntoSql<'a>,
+    E: IntoSql<'a>,
+    F: IntoSql<'a>,
+    G: IntoSql<'a>,
+    H: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -150,15 +150,15 @@ where
 
 impl<'a, A, B, C, D, E, F, G, H, I> IntoRow<'a> for (A, B, C, D, E, F, G, H, I)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
-    D: IntoSql,
-    E: IntoSql,
-    F: IntoSql,
-    G: IntoSql,
-    H: IntoSql,
-    I: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
+    D: IntoSql<'a>,
+    E: IntoSql<'a>,
+    F: IntoSql<'a>,
+    G: IntoSql<'a>,
+    H: IntoSql<'a>,
+    I: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();
@@ -177,16 +177,16 @@ where
 
 impl<'a, A, B, C, D, E, F, G, H, I, J> IntoRow<'a> for (A, B, C, D, E, F, G, H, I, J)
 where
-    A: IntoSql,
-    B: IntoSql,
-    C: IntoSql,
-    D: IntoSql,
-    E: IntoSql,
-    F: IntoSql,
-    G: IntoSql,
-    H: IntoSql,
-    I: IntoSql,
-    J: IntoSql,
+    A: IntoSql<'a>,
+    B: IntoSql<'a>,
+    C: IntoSql<'a>,
+    D: IntoSql<'a>,
+    E: IntoSql<'a>,
+    F: IntoSql<'a>,
+    G: IntoSql<'a>,
+    H: IntoSql<'a>,
+    I: IntoSql<'a>,
+    J: IntoSql<'a>,
 {
     fn into_row(self) -> TokenRow<'a> {
         let mut row = TokenRow::new();

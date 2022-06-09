@@ -26,8 +26,10 @@ use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 #[cfg(feature = "tds73")]
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
-    tds::{time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
-    tds::{codec::TypeInfoInner, xml::XmlData, DateTime, Numeric, SmallDateTime},
+    tds::{
+        codec::BytesMut, codec::TypeInfoInner, time::DateTime, time::SmallDateTime, xml::XmlData,
+        Numeric,
+    },
     SqlReadBytes,
 };
 pub(crate) use buf::BufColumnData;

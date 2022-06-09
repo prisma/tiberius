@@ -316,7 +316,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         BulkLoadRequest::new(&mut self.connection, meta)
     }
 
-    fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
+    pub(crate) fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
         vec![
             RpcParam {
                 name: Cow::Borrowed("stmt"),

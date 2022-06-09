@@ -176,13 +176,38 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 split_payload.len() + HEADER_BYTES,
             );
 
-            let packet = Packet::new(header, split_payload);
-            self.transport.send(packet).await?;
+            self.write_to_wire(header, split_payload).await?;
         }
 
-        self.transport.flush().await?;
+        // self.transport.flush().await?;
+        self.flush_sink().await?;
 
         Ok(())
+    }
+
+    /// Sends a packet of data to the database.
+    ///
+    /// # Warning
+    ///
+    /// Please be sure the packet size doesn't exceed the largest allowed size
+    /// dictaded by the server.
+    pub async fn write_to_wire(
+        &mut self,
+        header: PacketHeader,
+        data: BytesMut,
+    ) -> crate::Result<()> {
+        self.flushed = false;
+
+        let packet = Packet::new(header, data);
+        self.transport.send(packet).await?;
+
+        Ok(())
+    }
+
+    /// Sends all pending packages to the wire.
+    pub async fn flush_sink(&mut self) -> crate::Result<()> {
+        // SinkExt::<Packet>::flush(&mut self.transport).await
+        self.transport.flush().await
     }
 
     /// Cleans the packet stream from previous use. It is important to use the

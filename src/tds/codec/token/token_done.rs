@@ -5,7 +5,6 @@ use enumflags2::{bitflags, BitFlags};
 use std::fmt;
 
 #[allow(dead_code)] // we might want to debug the values
-#[derive(Debug)]
 #[derive(Debug, Default)]
 pub struct TokenDone {
     status: BitFlags<DoneStatus>,
