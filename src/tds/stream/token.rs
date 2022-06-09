@@ -199,7 +199,7 @@ where
                 return Ok(None);
             }
 
-            let ty_byte = dbg!(this.conn.read_u8().await)?;
+            let ty_byte = this.conn.read_u8().await?;
 
             let ty = TokenType::try_from(ty_byte)
                 .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;

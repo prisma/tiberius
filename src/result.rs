@@ -50,13 +50,11 @@ impl<'a> ExecuteResult {
     pub(crate) async fn new<S: AsyncRead + AsyncWrite + Unpin + Send>(
         connection: &'a mut Connection<S>,
     ) -> crate::Result<Self> {
-        dbg!(&connection);
         let token_stream = TokenStream::new(connection).try_unfold();
 
-        dbg!("aaa");
         let rows_affected = token_stream
             .try_fold(Vec::new(), |mut acc, token| async move {
-                match dbg!(token) {
+                match token {
                     ReceivedToken::DoneProc(done) if done.is_final() => (),
                     ReceivedToken::DoneProc(done) => acc.push(done.rows()),
                     ReceivedToken::DoneInProc(done) => acc.push(done.rows()),
@@ -66,7 +64,6 @@ impl<'a> ExecuteResult {
                 Ok(acc)
             })
             .await?;
-        dbg!("bbb");
 
         Ok(Self { rows_affected })
     }

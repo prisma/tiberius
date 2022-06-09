@@ -98,7 +98,7 @@ where
 
         row.encode(&mut self.buf)?;
 
-        while dbg!(self.buf.len()) >= dbg!(packet_size) {
+        while self.buf.len() >= packet_size {
             let header = PacketHeader::bulk_load(self.packet_id);
             let data = self.buf.split_to(packet_size);
 
@@ -133,8 +133,8 @@ where
             data.len() + HEADER_BYTES,
         );
 
-        dbg!(self.connection.write_to_wire(header, data).await)?;
-        dbg!(self.connection.flush_sink().await)?;
+        self.connection.write_to_wire(header, data).await?;
+        self.connection.flush_sink().await?;
 
         ExecuteResult::new(self.connection).await
     }

@@ -1,7 +1,9 @@
 use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
 use std::env;
-use tiberius::{BulkLoadMetadata, Client, ColumnFlag, Config, IntoSql, TokenRow, TypeInfo};
+use tiberius::{
+    BulkLoadMetadata, Client, ColumnFlag, Config, IntoSql, TokenRow, TypeInfo, TypeLength,
+};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use tracing::log::{error, info, LevelFilter};
@@ -28,10 +30,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     info!("drop table");
     client
-        .execute(
-            "CREATE TABLE bulk_test1 (id INT IDENTITY PRIMARY KEY, content VARCHAR(255))",
-            &[],
-        )
+        .execute("CREATE TABLE bulk_test1 (content int)", &[])
         .await?;
     info!("create table done");
 
@@ -44,9 +43,10 @@ async fn main() -> anyhow::Result<()> {
     let pb = ProgressBar::new(count as u64);
 
     info!("start loading data");
-    for i in vec!["aaaaaaaaaaaaaaaaaaaa"; 1000].into_iter() {
+    // for i in vec!["aaaaaaaaaaaaaaaaaaaa"; 1000].into_iter() {
+    for i in 0..1000 {
         let mut row = TokenRow::new();
-        row.push(i.into_sql());
+        row.push((i as i32).into_sql());
         req.send(row).await?;
         pb.inc(1);
     }
