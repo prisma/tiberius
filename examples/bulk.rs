@@ -51,28 +51,6 @@ async fn main() -> anyhow::Result<()> {
         pb.inc(1);
     }
 
-    // client
-    //     .execute("DROP TABLE IF EXISTS bulk_test1", &[])
-    //     .await?;
-    // client
-    //     .execute("CREATE TABLE bulk_test1 (number INT)", &[])
-    //     .await?;
-    //
-    // let mut meta = BulkLoadMetadata::new();
-    // meta.add_column("number", TypeInfo::int(), ColumnFlag::Nullable);
-    //
-    // let mut req = client.bulk_insert("bulk_test1", meta).await?;
-    // let count = 2000i32;
-    //
-    // let pb = ProgressBar::new(count as u64);
-    //
-    // for (id, s) in vec!["aaaaaaaaaaaaaaaaaaaa"; 1000].into_iter().enumerate() {
-    //     let mut row = TokenRow::new();
-    //     row.push(((id * 3) as i32).into_sql());
-    //     req.send(row).await?;
-    //     pb.inc(1);
-    // }
-
     pb.finish_with_message("waiting...");
 
     let res = req.finalize().await?;
