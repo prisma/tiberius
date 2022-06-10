@@ -96,10 +96,9 @@ where
     pub async fn send(&mut self, row: TokenRow<'a>) -> crate::Result<()> {
         let packet_size = (self.connection.context().packet_size() as usize) - HEADER_BYTES;
 
-        dbg!(&row);
         row.encode(&mut self.buf)?;
 
-        while dbg!(self.buf.len()) >= packet_size {
+        while self.buf.len() >= packet_size {
             let header = PacketHeader::bulk_load(self.packet_id);
             let data = self.buf.split_to(packet_size);
 

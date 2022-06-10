@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
     for (id, s) in vec!["aaaaaaaaaaaaaaaaaaaa"; 1000].into_iter().enumerate() {
         let mut row = TokenRow::new();
-        row.push(((id * 2) as i32).into_sql());
+        row.push(((id * 3) as i32).into_sql());
         req.send(row).await?;
         pb.inc(1);
     }

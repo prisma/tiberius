@@ -26,10 +26,7 @@ use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 #[cfg(feature = "tds73")]
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
-    tds::{
-        codec::BytesMut, codec::TypeInfoInner, time::DateTime, time::SmallDateTime, xml::XmlData,
-        Numeric,
-    },
+    tds::{codec::TypeInfoInner, time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
     SqlReadBytes,
 };
 pub(crate) use buf::BufColumnData;
@@ -145,63 +142,81 @@ impl<'a> ColumnData<'a> {
     }
 }
 
-impl<'a> Encode<BytesMut> for ColumnData<'a> {
-    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+impl<'a> Encode<BufColumnData<'a>> for ColumnData<'a> {
+    fn encode(self, dst: &mut BufColumnData<'a>) -> crate::Result<()> {
         match self {
             ColumnData::Bit(Some(val)) => {
-                let header = [&[VarLenType::Bitn as u8, 1, 1][..]].concat();
+                if dst.write_headers {
+                    let header = [&[VarLenType::Bitn as u8, 1, 1][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
-                dst.extend_from_slice(&header);
                 dst.put_u8(val as u8);
             }
             ColumnData::U8(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
+                if dst.write_headers {
+                    let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
-                dst.extend_from_slice(&header);
                 dst.put_u8(val);
             }
             ColumnData::I16(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 2, 2][..]].concat();
+                if dst.write_headers {
+                    let header = [&[VarLenType::Intn as u8, 2, 2][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
-                dst.extend_from_slice(&header);
                 dst.put_i16_le(val);
             }
             ColumnData::I32(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 4, 4][..]].concat();
+                if dst.write_headers {
+                    let header = [&[VarLenType::Intn as u8, 4, 4][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
-                dst.extend_from_slice(&header);
                 dst.put_i32_le(val);
             }
             ColumnData::I64(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 8, 8][..]].concat();
+                if dst.write_headers {
+                    let header = [&[VarLenType::Intn as u8, 8, 8][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
-                dst.extend_from_slice(&header);
                 dst.put_i64_le(val);
             }
             ColumnData::F32(Some(val)) => {
-                let header = [&[VarLenType::Floatn as u8, 4, 4][..]].concat();
+                if dst.write_headers {
+                    let header = [&[VarLenType::Floatn as u8, 4, 4][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
-                dst.extend_from_slice(&header);
                 dst.put_f32_le(val);
             }
             ColumnData::F64(Some(val)) => {
-                let header = [&[VarLenType::Floatn as u8, 8, 8][..]].concat();
+                if dst.write_headers {
+                    let header = [&[VarLenType::Floatn as u8, 8, 8][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
-                dst.extend_from_slice(&header);
                 dst.put_f64_le(val);
             }
             ColumnData::Guid(Some(uuid)) => {
-                let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
-                dst.extend_from_slice(&header);
+                if dst.write_headers {
+                    let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
+                    dst.extend_from_slice(&header);
+                }
 
                 let mut data = *uuid.as_bytes();
                 super::guid::reorder_bytes(&mut data);
                 dst.extend_from_slice(&data);
             }
             ColumnData::String(Some(ref s)) if s.len() <= 4000 => {
-                dst.put_u8(VarLenType::NVarchar as u8);
-                dst.put_u16_le(8000);
-                dst.extend_from_slice(&[0u8; 5][..]);
+                if dst.write_headers {
+                    dst.put_u8(VarLenType::NVarchar as u8);
+                    dst.put_u16_le(8000);
+                    dst.extend_from_slice(&[0u8; 5][..]);
+                }
 
                 let mut length = 0u16;
                 let len_pos = dst.len();
@@ -221,14 +236,16 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 }
             }
             ColumnData::String(Some(ref s)) => {
-                // length: 0xffff and raw collation
-                dst.put_u8(VarLenType::NVarchar as u8);
-                dst.extend_from_slice(&[0xff_u8; 2][..]);
-                dst.extend_from_slice(&[0u8; 5][..]);
+                if dst.write_headers {
+                    // length: 0xffff and raw collation
+                    dst.put_u8(VarLenType::NVarchar as u8);
+                    dst.extend_from_slice(&[0xff_u8; 2][..]);
+                    dst.extend_from_slice(&[0u8; 5][..]);
 
-                // we cannot cheaply predetermine the length of the UCS2 string beforehand
-                // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
-                dst.put_u64_le(0xfffffffffffffffe_u64);
+                    // we cannot cheaply predetermine the length of the UCS2 string beforehand
+                    // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
+                    dst.put_u64_le(0xfffffffffffffffe_u64);
+                }
 
                 // Write the varchar length
                 let mut length = 0u32;
@@ -252,17 +269,23 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 }
             }
             ColumnData::Binary(Some(bytes)) if bytes.len() <= 8000 => {
-                dst.put_u8(VarLenType::BigVarBin as u8);
-                dst.put_u16_le(8000);
+                if dst.write_headers {
+                    dst.put_u8(VarLenType::BigVarBin as u8);
+                    dst.put_u16_le(8000);
+                }
+
                 dst.put_u16_le(bytes.len() as u16);
                 dst.extend(bytes.into_owned());
             }
             ColumnData::Binary(Some(bytes)) => {
-                dst.put_u8(VarLenType::BigVarBin as u8);
-                // Max length
-                dst.put_u16_le(0xffff_u16);
-                // Also the length is unknown
-                dst.put_u64_le(0xfffffffffffffffe_u64);
+                if dst.write_headers {
+                    dst.put_u8(VarLenType::BigVarBin as u8);
+                    // Max length
+                    dst.put_u16_le(0xffff_u16);
+                    // Also the length is unknown
+                    dst.put_u64_le(0xfffffffffffffffe_u64);
+                }
+
                 // We'll write in one chunk, length is the whole bytes length
                 dst.put_u32_le(bytes.len() as u32);
                 // Payload
@@ -271,54 +294,77 @@ impl<'a> Encode<BytesMut> for ColumnData<'a> {
                 dst.put_u32_le(0);
             }
             ColumnData::DateTime(Some(dt)) => {
-                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 8, 8]);
-                dt.encode(dst)?;
+                if dst.write_headers {
+                    dst.extend_from_slice(&[VarLenType::Datetimen as u8, 8, 8]);
+                }
+
+                dt.encode(&mut *dst)?;
             }
             ColumnData::SmallDateTime(Some(dt)) => {
-                dst.extend_from_slice(&[VarLenType::Datetimen as u8, 4, 4]);
-                dt.encode(dst)?;
+                if dst.write_headers {
+                    dst.extend_from_slice(&[VarLenType::Datetimen as u8, 4, 4]);
+                }
+
+                dt.encode(&mut *dst)?;
             }
             #[cfg(feature = "tds73")]
             ColumnData::Time(Some(time)) => {
-                dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale(), time.len()?]);
+                if dst.write_headers {
+                    dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale(), time.len()?]);
+                }
 
-                time.encode(dst)?;
+                time.encode(&mut *dst)?;
             }
             #[cfg(feature = "tds73")]
             ColumnData::Date(Some(date)) => {
-                dst.extend_from_slice(&[VarLenType::Daten as u8, 3]);
-                date.encode(dst)?;
+                if dst.write_headers {
+                    dst.extend_from_slice(&[VarLenType::Daten as u8, 3]);
+                }
+
+                date.encode(&mut *dst)?;
             }
             #[cfg(feature = "tds73")]
             ColumnData::DateTime2(Some(dt)) => {
-                let len = dt.time().len()? + 3;
+                if dst.write_headers {
+                    let len = dt.time().len()? + 3;
+                    dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time().scale(), len]);
+                }
 
-                dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time().scale(), len]);
-
-                dt.encode(dst)?;
+                dt.encode(&mut *dst)?;
             }
             #[cfg(feature = "tds73")]
             ColumnData::DateTimeOffset(Some(dto)) => {
-                dst.extend_from_slice(&[
-                    VarLenType::DatetimeOffsetn as u8,
-                    dto.datetime2().time().scale(),
-                    dto.datetime2().time().len()? + 5,
-                ]);
+                if dst.write_headers {
+                    let headers = &[
+                        VarLenType::DatetimeOffsetn as u8,
+                        dto.datetime2().time().scale(),
+                        dto.datetime2().time().len()? + 5,
+                    ];
 
-                dto.encode(dst)?;
+                    dst.extend_from_slice(headers);
+                }
+
+                dto.encode(&mut *dst)?;
             }
             ColumnData::Xml(Some(xml)) => {
-                dst.put_u8(VarLenType::Xml as u8);
-                xml.into_owned().encode(dst)?;
+                if dst.write_headers {
+                    dst.put_u8(VarLenType::Xml as u8);
+                }
+                xml.into_owned().encode(&mut *dst)?;
             }
             ColumnData::Numeric(Some(num)) => {
-                dst.extend_from_slice(&[
-                    VarLenType::Numericn as u8,
-                    num.len(),
-                    num.precision(),
-                    num.scale(),
-                ]);
-                num.encode(dst)?;
+                if dst.write_headers {
+                    let headers = &[
+                        VarLenType::Numericn as u8,
+                        num.len(),
+                        num.precision(),
+                        num.scale(),
+                    ];
+
+                    dst.extend_from_slice(headers);
+                }
+
+                num.encode(&mut *dst)?;
             }
             _ => {
                 // None/null
