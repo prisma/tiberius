@@ -10,17 +10,20 @@ pub use auth::*;
 pub use config::*;
 pub(crate) use connection::*;
 
+use crate::tds::stream::ReceivedToken;
 use crate::{
     result::ExecuteResult,
     tds::{
         codec::{self, IteratorJoin},
         stream::{QueryStream, TokenStream},
     },
-    BulkLoadMetadata, BulkLoadRequest, SqlReadBytes, ToSql,
+    BulkLoadMetadata, BulkLoadRequest, MetaDataColumn, SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use enumflags2::BitFlags;
 use futures::{AsyncRead, AsyncWrite};
+use futures_util::TryStreamExt;
+use std::sync::Arc;
 use std::{borrow::Cow, fmt::Debug};
 
 /// `Client` is the main entry point to the SQL Server, providing query
@@ -314,6 +317,52 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         ts.flush_done().await?;
 
         BulkLoadRequest::new(&mut self.connection, meta)
+    }
+
+    pub async fn bulk_insert_1<'a>(
+        &'a mut self,
+        table: &str,
+    ) -> crate::Result<Vec<MetaDataColumn<'a>>> {
+        // Start the bulk request
+        self.connection.flush_stream().await?;
+
+        let query = format!("SELECT TOP 0 * FROM {}", table);
+
+        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
+
+        let id = self.connection.context_mut().next_packet_id();
+        self.connection.send(PacketHeader::batch(id), req).await?;
+
+        let token_stream = TokenStream::new(&mut self.connection).try_unfold();
+
+        let columns = token_stream
+            .try_fold(None, |mut columns, token| async move {
+                match token {
+                    ReceivedToken::NewResultset(metadata) => {
+                        columns = Some(metadata.columns.clone());
+                    }
+                    _ => (),
+                }
+                Ok(columns)
+            })
+            .await?;
+
+        columns.ok_or(crate::Error::Protocol(
+            "expecting column metadata from query but not found".into(),
+        ))
+
+        // let col_data = meta.column_descriptions().join(", ");
+        // let query = format!("INSERT BULK {} ({})", table, col_data);
+        //
+        // let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
+        // let id = self.connection.context_mut().next_packet_id();
+        //
+        // self.connection.send(PacketHeader::batch(id), req).await?;
+        //
+        // let ts = TokenStream::new(&mut self.connection);
+        // ts.flush_done().await?;
+        //
+        // BulkLoadRequest::new(&mut self.connection, meta)
     }
 
     pub(crate) fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
