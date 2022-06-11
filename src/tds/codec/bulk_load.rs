@@ -13,7 +13,7 @@ use super::{
 /// Column metadata for a bulk load request.
 #[derive(Debug, Default, Clone)]
 pub struct BulkLoadMetadata<'a> {
-    columns: Vec<MetaDataColumn<'a>>,
+    pub columns: Vec<MetaDataColumn<'a>>,
 }
 
 impl<'a> BulkLoadMetadata<'a> {
@@ -61,6 +61,7 @@ where
     connection: &'a mut Connection<S>,
     packet_id: u8,
     buf: BytesMut,
+    columns: Vec<MetaDataColumn<'a>>,
 }
 
 impl<'a, S> BulkLoadRequest<'a, S>
@@ -73,6 +74,7 @@ where
     ) -> crate::Result<Self> {
         let packet_id = connection.context_mut().next_packet_id();
         let mut buf = BytesMut::new();
+        let columns = meta.columns.clone();
 
         meta.encode(&mut buf)?;
 
@@ -80,6 +82,7 @@ where
             connection,
             packet_id,
             buf,
+            columns,
         };
 
         Ok(this)
@@ -96,7 +99,7 @@ where
     pub async fn send(&mut self, row: TokenRow<'a>) -> crate::Result<()> {
         let packet_size = (self.connection.context().packet_size() as usize) - HEADER_BYTES;
 
-        row.encode(&mut self.buf)?;
+        row.encode(&mut self.buf, &self.columns)?;
 
         while self.buf.len() >= packet_size {
             let header = PacketHeader::bulk_load(self.packet_id);

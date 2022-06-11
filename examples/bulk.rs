@@ -25,21 +25,23 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = Client::connect(config, tcp.compat_write()).await?;
 
-    // client
-    //     .execute("DROP TABLE IF EXISTS bulk_test1", &[])
-    //     .await?;
-    // info!("drop table");
-    // client
-    //     .execute("CREATE TABLE bulk_test1 (content int)", &[])
-    //     .await?;
-    // info!("create table done");
-
-    let colomns = client.bulk_insert_1("bulk_test1").await?;
-    dbg!(colomns);
+    client
+        .execute("DROP TABLE IF EXISTS bulk_test1", &[])
+        .await?;
+    info!("drop table");
+    client
+        .execute("CREATE TABLE bulk_test1 (content int NULL)", &[])
+        .await?;
+    info!("create table done");
 
     // let mut meta = BulkLoadMetadata::new();
-    // meta.add_column("content", TypeInfo::int(), ColumnFlag::Nullable);
+    // meta.add_column(
+    //     "content",
+    //     TypeInfo::int(),
+    //     ColumnFlag::Nullable | ColumnFlag::Updateable,
+    // );
     //
+    // dbg!(&meta);
     // let mut req = client.bulk_insert("bulk_test1", meta).await?;
     // let count = 1000i32;
     //
@@ -57,8 +59,26 @@ async fn main() -> anyhow::Result<()> {
     // pb.finish_with_message("waiting...");
     //
     // let res = req.finalize().await?;
-    //
-    // info!("{:?}", res);
+
+    let mut req = client.bulk_insert_1("bulk_test1").await?;
+
+    let count = 1000i32;
+
+    let pb = ProgressBar::new(count as u64);
+
+    info!("start loading data");
+    for i in 0..1000 {
+        let mut row = TokenRow::new();
+        row.push(Some(i as i32).into_sql());
+        req.send(row).await?;
+        pb.inc(1);
+    }
+
+    pb.finish_with_message("waiting...");
+
+    let res = req.finalize().await?;
+
+    info!("{:?}", res);
 
     Ok(())
 }

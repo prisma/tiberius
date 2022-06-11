@@ -1,7 +1,7 @@
 mod into_row;
 use crate::{
     tds::codec::{BufColumnData, ColumnData, Encode},
-    SqlReadBytes, TokenType,
+    MetaDataColumn, SqlReadBytes, TokenType, TypeInfoInner,
 };
 use asynchronous_codec::BytesMut;
 use bytes::BufMut;
@@ -30,6 +30,39 @@ impl<'a> Encode<BytesMut> for TokenRow<'a> {
         let mut col_buf = BufColumnData::without_headers(dst);
 
         for value in self.data.into_iter() {
+            value.encode(&mut col_buf)?
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> TokenRow<'a> {
+    pub(crate) fn encode(
+        self,
+        dst: &mut BytesMut,
+        meta: &'a Vec<MetaDataColumn<'a>>,
+    ) -> crate::Result<()> {
+        dst.put_u8(TokenType::Row as u8);
+
+        if self.data.len() != meta.len() {
+            Err(crate::Error::BulkInput(
+                format!(
+                    "Expecting {} columns but {} were given",
+                    meta.len(),
+                    self.data.len()
+                )
+                .into(),
+            ))?;
+        }
+
+        for (value, column) in self.data.into_iter().zip(meta) {
+            let mut col_buf = match &column.base.ty.inner {
+                TypeInfoInner::FixedLen(_) => BufColumnData::without_headers(dst),
+                _ => BufColumnData::with_headers(dst),
+            };
+
+            // dbg!(&col_buf.write_headers);
             value.encode(&mut col_buf)?
         }
 

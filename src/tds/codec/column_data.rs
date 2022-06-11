@@ -126,7 +126,7 @@ impl<'a> ColumnData<'a> {
     where
         R: SqlReadBytes + Unpin,
     {
-        let res = match dbg!(&ctx.inner) {
+        let res = match &ctx.inner {
             TypeInfoInner::FixedLen(fixed_ty) => fixed_len::decode(src, fixed_ty).await?,
             TypeInfoInner::VarLenSized(cx) => var_len::decode(src, cx).await?,
             TypeInfoInner::VarLenSizedPrecision { ty, scale, .. } => match ty {
@@ -373,5 +373,31 @@ impl<'a> Encode<BufColumnData<'a>> for ColumnData<'a> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::VarLenContext;
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn round_trip() {
+        let data = vec![ColumnData::I32(42)];
+
+        for d in data {
+            let mut buf = BytesMut::new();
+            let mut col_buf = BufColumnData::with_headers(&mut buf);
+
+            d.encode(&mut col_buf);
+
+            let ti = TypeInfo {
+                inner: TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 4, None)),
+            };
+            let nd = ColumnData::decode(&mut buf, &ti).await.unwrap();
+
+            assert_eq!(nd, d)
+        }
     }
 }
