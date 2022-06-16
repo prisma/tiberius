@@ -31,7 +31,12 @@ async fn main() -> anyhow::Result<()> {
     info!("drop table");
     client
         .execute(
-            "CREATE TABLE bulk_test1 (null_bit bit NULL, nonnull_bit bit NOT NULL, null_int int NULL, nonnull_int int NOT NULL)",
+            r#"CREATE TABLE bulk_test1 (
+                    id INT IDENTITY PRIMARY KEY,
+                    null_bit bit NULL, 
+                    nonnull_bit bit NOT NULL, 
+                    null_int int NULL, 
+                    nonnull_int int NOT NULL)"#,
             &[],
         )
         .await?;

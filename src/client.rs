@@ -17,7 +17,7 @@ use crate::{
         codec::{self, IteratorJoin},
         stream::{QueryStream, TokenStream},
     },
-    BulkLoadMetadata, BulkLoadRequest, MetaDataColumn, SqlReadBytes, ToSql,
+    BulkLoadMetadata, BulkLoadRequest, ColumnFlag, MetaDataColumn, SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use enumflags2::BitFlags;
@@ -348,9 +348,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             .await?;
 
         // now start bulk upload
-        let columns = columns.ok_or(crate::Error::Protocol(
-            "expecting column metadata from query but not found".into(),
-        ))?;
+        let columns = columns
+            .ok_or(crate::Error::Protocol(
+                "expecting column metadata from query but not found".into(),
+            ))?
+            .into_iter()
+            .filter(|column| column.base.flags.contains(ColumnFlag::Updateable))
+            .collect();
         dbg!(&columns);
         let meta = BulkLoadMetadata { columns };
 
