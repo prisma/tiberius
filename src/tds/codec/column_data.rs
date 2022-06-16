@@ -143,66 +143,84 @@ impl<'a> ColumnData<'a> {
 
     pub(crate) fn encode(self, dst: &mut BytesMut, ctx: &TypeInfo) -> crate::Result<()> {
         match (self, &ctx.inner) {
-            (ColumnData::Bit(Some(val)), TypeInfoInner::VarLenSized(vlc))
+            (ColumnData::Bit(opt), TypeInfoInner::VarLenSized(vlc))
                 if vlc.r#type() == VarLenType::Bitn =>
             {
-                dst.put_u8(1);
-                dst.put_u8(val as u8);
-            }
-            (ColumnData::Bit(None), TypeInfoInner::VarLenSized(vlc))
-                if vlc.r#type() == VarLenType::Bitn =>
-            {
-                dst.put_u8(0);
+                if let Some(val) = opt {
+                    dst.put_u8(1);
+                    dst.put_u8(val as u8);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::Bit(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Bit)) => {
                 dst.put_u8(val as u8);
             }
-            // ColumnData::U8(Some(val)) => {
-            //     if dst.write_headers {
-            //         let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
-            //         dst.extend_from_slice(&header);
-            //     }
-            //
-            //     dst.put_u8(val);
-            // }
-            // ColumnData::I16(Some(val)) => {
-            //     if dst.write_headers {
-            //         let header = [&[VarLenType::Intn as u8, 2, 2][..]].concat();
-            //         dst.extend_from_slice(&header);
-            //     }
-            //
-            //     dst.put_i16_le(val);
-            // }
+            (ColumnData::U8(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Intn =>
+            {
+                if let Some(val) = opt {
+                    dst.put_u8(1);
+                    dst.put_u8(val);
+                } else {
+                    dst.put_u8(0);
+                }
+            }
+            (ColumnData::U8(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Int1)) => {
+                dst.put_u8(val);
+            }
+            (ColumnData::I16(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Int2)) => {
+                dst.put_i16_le(val);
+            }
+            (ColumnData::I16(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Intn =>
+            {
+                if let Some(val) = opt {
+                    dst.put_u8(2);
+                    dst.put_i16_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
+            }
             (ColumnData::I32(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Int4)) => {
                 dst.put_i32_le(val);
             }
-            (ColumnData::I32(Some(val)), TypeInfoInner::VarLenSized(vlc))
+            (ColumnData::I32(opt), TypeInfoInner::VarLenSized(vlc))
                 if vlc.r#type() == VarLenType::Intn =>
             {
-                dst.put_u8(4);
-                dst.put_i32_le(val);
+                if let Some(val) = opt {
+                    dst.put_u8(4);
+                    dst.put_i32_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
-            (ColumnData::I32(None), TypeInfoInner::VarLenSized(vlc))
+            (ColumnData::I64(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Int8)) => {
+                dst.put_i64_le(val);
+            }
+            (ColumnData::I64(opt), TypeInfoInner::VarLenSized(vlc))
                 if vlc.r#type() == VarLenType::Intn =>
             {
-                dst.put_u8(0);
+                if let Some(val) = opt {
+                    dst.put_u8(8);
+                    dst.put_i64_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
-            // ColumnData::I64(Some(val)) => {
-            //     if dst.write_headers {
-            //         let header = [&[VarLenType::Intn as u8, 8, 8][..]].concat();
-            //         dst.extend_from_slice(&header);
-            //     }
-            //
-            //     dst.put_i64_le(val);
-            // }
-            // ColumnData::F32(Some(val)) => {
-            //     if dst.write_headers {
-            //         let header = [&[VarLenType::Floatn as u8, 4, 4][..]].concat();
-            //         dst.extend_from_slice(&header);
-            //     }
-            //
-            //     dst.put_f32_le(val);
-            // }
+            (ColumnData::F32(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Float4)) => {
+                dst.put_f32_le(val);
+            }
+            (ColumnData::F32(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Floatn =>
+            {
+                if let Some(val) = opt {
+                    dst.put_u8(4);
+                    dst.put_f32_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
+            }
             // ColumnData::F64(Some(val)) => {
             //     if dst.write_headers {
             //         let header = [&[VarLenType::Floatn as u8, 8, 8][..]].concat();
@@ -362,20 +380,18 @@ impl<'a> ColumnData<'a> {
             //     }
             //     xml.into_owned().encode(&mut *dst)?;
             // }
-            // ColumnData::Numeric(Some(num)) => {
-            //     if dst.write_headers {
-            //         let headers = &[
-            //             VarLenType::Numericn as u8,
-            //             num.len(),
-            //             num.precision(),
-            //             num.scale(),
-            //         ];
-            //
-            //         dst.extend_from_slice(headers);
-            //     }
-            //
-            //     num.encode(&mut *dst)?;
-            // }
+            (ColumnData::Numeric(opt), TypeInfoInner::VarLenSizedPrecision { ty, scale, .. })
+                if ty == &VarLenType::Numericn || ty == &VarLenType::Decimaln =>
+            {
+                if let Some(num) = opt {
+                    if scale != &num.scale() {
+                        todo!("this still need some work, if client scale not aligned with server, we need to do conversion but will lose precision")
+                    }
+                    num.encode(&mut *dst)?;
+                } else {
+                    dst.put_u8(0);
+                }
+            }
             (v, ref ti) => Err(crate::Error::BulkInput(
                 format!("invalid data type, expecting {:?} but found {:?}", ti, v).into(),
             ))?,
@@ -699,6 +715,72 @@ mod tests {
             (
                 TypeInfoInner::FixedLen(FixedLenType::Bit),
                 ColumnData::Bit(Some(true)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
+                ColumnData::U8(Some(8u8)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
+                ColumnData::U8(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Int1),
+                ColumnData::U8(Some(8u8)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
+                ColumnData::I16(Some(8i16)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
+                ColumnData::I16(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Int2),
+                ColumnData::I16(Some(8i16)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
+                ColumnData::I64(Some(8i64)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
+                ColumnData::I64(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Int8),
+                ColumnData::I64(Some(8i64)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+                ColumnData::F32(Some(8f32)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+                ColumnData::F32(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Float4),
+                ColumnData::F32(Some(8f32)),
+            ),
+            (
+                TypeInfoInner::VarLenSizedPrecision {
+                    ty: VarLenType::Numericn,
+                    size: 17,
+                    precision: 18,
+                    scale: 0,
+                },
+                ColumnData::Numeric(Some(Numeric::new_with_scale(23, 0))),
+            ),
+            (
+                TypeInfoInner::VarLenSizedPrecision {
+                    ty: VarLenType::Numericn,
+                    size: 17,
+                    precision: 18,
+                    scale: 0,
+                },
+                ColumnData::Numeric(None),
             ),
         ];
 

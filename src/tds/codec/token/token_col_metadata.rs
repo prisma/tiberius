@@ -87,6 +87,11 @@ impl<'a> Display for MetaDataColumn<'a> {
                     8 => write!(f, "bigint")?,
                     _ => unreachable!(),
                 },
+                VarLenType::Floatn => match ctx.len() {
+                    4 => write!(f, "real")?,
+                    8 => write!(f, "double")?,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
             TypeInfoInner::VarLenSizedPrecision {
