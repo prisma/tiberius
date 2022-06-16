@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     info!("drop table");
     client
         .execute(
-            "CREATE TABLE bulk_test1 (null_int int NULL, nonnull_int int NOT NULL)",
+            "CREATE TABLE bulk_test1 (null_bit bit NULL, nonnull_bit bit NOT NULL, null_int int NULL, nonnull_int int NOT NULL)",
             &[],
         )
         .await?;
@@ -46,6 +46,14 @@ async fn main() -> anyhow::Result<()> {
     info!("start loading data");
     for i in 0..1000 {
         let mut row = TokenRow::new();
+
+        // null_bit
+        let null_bit = [Some(true), None][i % 2];
+        row.push(null_bit.into_sql());
+
+        // nonnull_bit
+        let nonnull_bit = false;
+        row.push(nonnull_bit.into_sql());
 
         // null_int
         let null_int = [Some(32), None][i % 2];

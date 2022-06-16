@@ -43,6 +43,7 @@ impl<'a> Display for MetaDataColumn<'a> {
                 FixedLenType::Null => unreachable!(),
             },
             TypeInfoInner::VarLenSized(ctx) => match ctx.r#type() {
+                VarLenType::Bitn => write!(f, "bit")?,
                 VarLenType::Guid => write!(f, "uniqueidentifier")?,
                 #[cfg(feature = "tds73")]
                 VarLenType::Daten => write!(f, "date")?,

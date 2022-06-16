@@ -143,14 +143,20 @@ impl<'a> ColumnData<'a> {
 
     pub(crate) fn encode(self, dst: &mut BytesMut, ctx: &TypeInfo) -> crate::Result<()> {
         match (self, &ctx.inner) {
-            // ColumnData::Bit(Some(val)) => {
-            //     if dst.write_headers {
-            //         let header = [&[VarLenType::Bitn as u8, 1, 1][..]].concat();
-            //         dst.extend_from_slice(&header);
-            //     }
-            //
-            //     dst.put_u8(val as u8);
-            // }
+            (ColumnData::Bit(Some(val)), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Bitn =>
+            {
+                dst.put_u8(1);
+                dst.put_u8(val as u8);
+            }
+            (ColumnData::Bit(None), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Bitn =>
+            {
+                dst.put_u8(0);
+            }
+            (ColumnData::Bit(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Bit)) => {
+                dst.put_u8(val as u8);
+            }
             // ColumnData::U8(Some(val)) => {
             //     if dst.write_headers {
             //         let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
@@ -167,7 +173,7 @@ impl<'a> ColumnData<'a> {
             //
             //     dst.put_i16_le(val);
             // }
-            (ColumnData::I32(Some(val)), TypeInfoInner::FixedLen(_)) => {
+            (ColumnData::I32(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Int4)) => {
                 dst.put_i32_le(val);
             }
             (ColumnData::I32(Some(val)), TypeInfoInner::VarLenSized(vlc))
@@ -677,6 +683,22 @@ mod tests {
             (
                 TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 4, None)),
                 ColumnData::I32(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Int4),
+                ColumnData::I32(Some(42)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Bitn, 1, None)),
+                ColumnData::Bit(Some(true)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Bitn, 1, None)),
+                ColumnData::Bit(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Bit),
+                ColumnData::Bit(Some(true)),
             ),
         ];
 
