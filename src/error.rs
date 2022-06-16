@@ -61,6 +61,7 @@ pub enum Error {
         port: u16,
     },
     #[error("BULK UPLOAD input failure: {0}")]
+    /// Invalid input in Bulk Upload
     BulkInput(Cow<'static, str>),
 }
 

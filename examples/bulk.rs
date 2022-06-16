@@ -30,35 +30,12 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     info!("drop table");
     client
-        .execute("CREATE TABLE bulk_test1 (content int NULL)", &[])
+        .execute(
+            "CREATE TABLE bulk_test1 (null_int int NULL, nonnull_int int NOT NULL)",
+            &[],
+        )
         .await?;
     info!("create table done");
-
-    // let mut meta = BulkLoadMetadata::new();
-    // meta.add_column(
-    //     "content",
-    //     TypeInfo::int(),
-    //     ColumnFlag::Nullable | ColumnFlag::Updateable,
-    // );
-    //
-    // dbg!(&meta);
-    // let mut req = client.bulk_insert("bulk_test1", meta).await?;
-    // let count = 1000i32;
-    //
-    // let pb = ProgressBar::new(count as u64);
-    //
-    // info!("start loading data");
-    // // for i in vec!["aaaaaaaaaaaaaaaaaaaa"; 1000].into_iter() {
-    // for i in 0..1000 {
-    //     let mut row = TokenRow::new();
-    //     row.push((i as i32).into_sql());
-    //     req.send(row).await?;
-    //     pb.inc(1);
-    // }
-    //
-    // pb.finish_with_message("waiting...");
-    //
-    // let res = req.finalize().await?;
 
     let mut req = client.bulk_insert_1("bulk_test1").await?;
 
@@ -69,7 +46,15 @@ async fn main() -> anyhow::Result<()> {
     info!("start loading data");
     for i in 0..1000 {
         let mut row = TokenRow::new();
-        row.push(Some(i as i32).into_sql());
+
+        // null_int
+        let null_int = [Some(32), None][i % 2];
+        row.push(null_int.into_sql());
+
+        // nonnull_int
+        let nonnull_int = 44;
+        row.push(nonnull_int.into_sql());
+
         req.send(row).await?;
         pb.inc(1);
     }

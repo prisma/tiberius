@@ -258,10 +258,6 @@ impl TypeInfo {
         Self::fixed(FixedLenType::Int4)
     }
 
-    pub fn int1() -> Self {
-        Self::varlen(VarLenType::Intn, 4)
-    }
-
     /// 64-bit integer, signed.
     pub fn bigint() -> Self {
         Self::fixed(FixedLenType::Int8)

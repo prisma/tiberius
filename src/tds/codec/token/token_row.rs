@@ -23,20 +23,6 @@ impl<'a> IntoIterator for TokenRow<'a> {
     }
 }
 
-impl<'a> Encode<BytesMut> for TokenRow<'a> {
-    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        dst.put_u8(TokenType::Row as u8);
-
-        let mut col_buf = BufColumnData::without_headers(dst);
-
-        for value in self.data.into_iter() {
-            value.encode(&mut col_buf)?
-        }
-
-        Ok(())
-    }
-}
-
 impl<'a> TokenRow<'a> {
     pub(crate) fn encode(
         self,
@@ -63,7 +49,7 @@ impl<'a> TokenRow<'a> {
             };
 
             // dbg!(&col_buf.write_headers);
-            value.encode(&mut col_buf)?
+            value.encode(&mut col_buf, &column.base.ty)?
         }
 
         Ok(())
