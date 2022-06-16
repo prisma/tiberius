@@ -46,6 +46,8 @@ async fn main() -> anyhow::Result<()> {
                         nonnull_bigint bigint NOT NULL,
                         null_float real NULL,
                         nonnull_float real NOT NULL,
+                        null_double float NULL,
+                        nonnull_double float NOT NULL,
                         null_numeric numeric NULL,
                         nonnull_numeric numeric NOT NULL)"#,
             &[],
@@ -63,59 +65,51 @@ async fn main() -> anyhow::Result<()> {
     for i in 0..1000 {
         let mut row = TokenRow::new();
 
-        // null_bit
         let null_bit = [Some(true), None][i % 2];
         row.push(null_bit.into_sql());
 
-        // nonnull_bit
         let nonnull_bit = false;
         row.push(nonnull_bit.into_sql());
 
-        // null_tinyint
         let null_tinyint = [Some(23u8), None][i % 2];
         row.push(null_tinyint.into_sql());
 
-        // nonnull_bit
         let nonnull_tinyint = 45u8;
         row.push(nonnull_tinyint.into_sql());
 
-        // null_smallint
         let null_smallint = [Some(23i16), None][i % 2];
         row.push(null_smallint.into_sql());
 
-        // nonnull_bit
         let nonnull_smallint = 45i16;
         row.push(nonnull_smallint.into_sql());
 
-        // null_int
         let null_int = [Some(32), None][i % 2];
         row.push(null_int.into_sql());
 
-        // nonnull_int
         let nonnull_int = 44;
         row.push(nonnull_int.into_sql());
 
-        // null_bigint
         let null_bigint = [Some(32i64), None][i % 2];
         row.push(null_bigint.into_sql());
 
-        // nonnull_bigint
         let nonnull_bigint = 44i64;
         row.push(nonnull_bigint.into_sql());
 
-        // null_float
         let null_float = [Some(34f32), None][i % 2];
         row.push(null_float.into_sql());
 
-        // nonnull_float
         let nonnull_float = 32f32;
         row.push(nonnull_float.into_sql());
 
-        // null_numeric
+        let null_double = [Some(34f64), None][i % 2];
+        row.push(null_double.into_sql());
+
+        let nonnull_double = 32f64;
+        row.push(nonnull_double.into_sql());
+
         let null_numeric = [Some(Numeric::new_with_scale(12, 0)), None][i % 2];
         row.push(null_numeric.into_sql());
 
-        // nonnull_numeric
         let nonnull_numeric = Numeric::new_with_scale(23, 0);
         row.push(nonnull_numeric.into_sql());
 

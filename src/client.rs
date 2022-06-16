@@ -361,6 +361,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         self.connection.flush_stream().await?;
         let col_data = meta.column_descriptions().join(", ");
         let query = format!("INSERT BULK {} ({})", table, col_data);
+        dbg!(&query);
 
         let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
         let id = self.connection.context_mut().next_packet_id();

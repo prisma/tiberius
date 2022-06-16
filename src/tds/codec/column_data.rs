@@ -221,14 +221,19 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            // ColumnData::F64(Some(val)) => {
-            //     if dst.write_headers {
-            //         let header = [&[VarLenType::Floatn as u8, 8, 8][..]].concat();
-            //         dst.extend_from_slice(&header);
-            //     }
-            //
-            //     dst.put_f64_le(val);
-            // }
+            (ColumnData::F64(Some(val)), TypeInfoInner::FixedLen(FixedLenType::Float8)) => {
+                dst.put_f64_le(val);
+            }
+            (ColumnData::F64(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Floatn =>
+            {
+                if let Some(val) = opt {
+                    dst.put_u8(8);
+                    dst.put_f64_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
+            }
             // ColumnData::Guid(Some(uuid)) => {
             //     if dst.write_headers {
             //         let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
@@ -763,6 +768,18 @@ mod tests {
             (
                 TypeInfoInner::FixedLen(FixedLenType::Float4),
                 ColumnData::F32(Some(8f32)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
+                ColumnData::F64(Some(8f64)),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
+                ColumnData::F64(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Float8),
+                ColumnData::F64(Some(8f64)),
             ),
             (
                 TypeInfoInner::VarLenSizedPrecision {

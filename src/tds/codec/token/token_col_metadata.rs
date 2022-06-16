@@ -89,7 +89,7 @@ impl<'a> Display for MetaDataColumn<'a> {
                 },
                 VarLenType::Floatn => match ctx.len() {
                     4 => write!(f, "real")?,
-                    8 => write!(f, "double")?,
+                    8 => write!(f, "float")?,
                     _ => unreachable!(),
                 },
                 _ => unreachable!(),
