@@ -17,7 +17,7 @@ use crate::{
         codec::{self, IteratorJoin},
         stream::{QueryStream, TokenStream},
     },
-    BulkLoadMetadata, BulkLoadRequest, ColumnFlag, MetaDataColumn, SqlReadBytes, ToSql,
+    BulkLoadMetadata, BulkLoadRequest, ColumnFlag, SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use enumflags2::BitFlags;

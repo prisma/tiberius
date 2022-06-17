@@ -27,14 +27,12 @@ use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
     tds::{codec::TypeInfoInner, time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
-    SqlReadBytes, VarLenContext,
+    SqlReadBytes,
 };
 pub(crate) use buf::BufColumnData;
-use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use encoding::EncoderTrap;
 use std::borrow::{BorrowMut, Cow};
-use std::io::Cursor;
 use uuid::Uuid;
 
 const MAX_NVARCHAR_SIZE: usize = 1 << 30;
@@ -300,45 +298,68 @@ impl<'a> ColumnData<'a> {
                     dst.put_u16_le(0xffff);
                 }
             }
-            // ColumnData::Binary(Some(bytes)) if bytes.len() <= 8000 => {
-            //     if dst.write_headers {
-            //         dst.put_u8(VarLenType::BigVarBin as u8);
-            //         dst.put_u16_le(8000);
-            //     }
-            //
-            //     dst.put_u16_le(bytes.len() as u16);
-            //     dst.extend(bytes.into_owned());
-            // }
-            // ColumnData::Binary(Some(bytes)) => {
-            //     if dst.write_headers {
-            //         dst.put_u8(VarLenType::BigVarBin as u8);
-            //         // Max length
-            //         dst.put_u16_le(0xffff_u16);
-            //         // Also the length is unknown
-            //         dst.put_u64_le(0xfffffffffffffffe_u64);
-            //     }
-            //
-            //     // We'll write in one chunk, length is the whole bytes length
-            //     dst.put_u32_le(bytes.len() as u32);
-            //     // Payload
-            //     dst.extend(bytes.into_owned());
-            //     // PLP_TERMINATOR
-            //     dst.put_u32_le(0);
-            // }
-            // ColumnData::DateTime(Some(dt)) => {
-            //     if dst.write_headers {
-            //         dst.extend_from_slice(&[VarLenType::Datetimen as u8, 8, 8]);
-            //     }
-            //
-            //     dt.encode(&mut *dst)?;
-            // }
-            // ColumnData::SmallDateTime(Some(dt)) => {
-            //     if dst.write_headers {
-            //         dst.extend_from_slice(&[VarLenType::Datetimen as u8, 4, 4]);
-            //     }
-            //
-            //     dt.encode(&mut *dst)?;
-            // }
+            (ColumnData::Binary(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::BigBinary
+                    || vlc.r#type() == VarLenType::BigVarBin =>
+            {
+                if let Some(bytes) = opt {
+                    dst.put_u16_le(bytes.len() as u16);
+                    dst.extend(bytes.into_owned());
+                } else {
+                    dst.put_u16_le(0xffff);
+                }
+            }
+            (ColumnData::DateTime(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Datetimen =>
+            {
+                if let Some(dt) = opt {
+                    dst.put_u8(8);
+                    dt.encode(dst)?;
+                } else {
+                    dst.put_u8(0);
+                }
+            }
+            (ColumnData::DateTime(Some(dt)), TypeInfoInner::FixedLen(FixedLenType::Datetime)) => {
+                dt.encode(dst)?;
+            }
+            (ColumnData::SmallDateTime(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Datetimen =>
+            {
+                if let Some(dt) = opt {
+                    dst.put_u8(4);
+                    dt.encode(dst)?;
+                } else {
+                    dst.put_u8(0);
+                }
+            }
+            (
+                ColumnData::SmallDateTime(Some(dt)),
+                TypeInfoInner::FixedLen(FixedLenType::Datetime4),
+            ) => {
+                dt.encode(dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            (ColumnData::Date(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Daten =>
+            {
+                if let Some(dt) = opt {
+                    dst.put_u8(3);
+                    dt.encode(dst)?;
+                } else {
+                    dst.put_u8(0);
+                }
+            }
+            #[cfg(feature = "tds73")]
+            (ColumnData::Time(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Timen =>
+            {
+                if let Some(time) = opt {
+                    dst.put_u8(time.len()?);
+                    time.encode(dst)?;
+                } else {
+                    dst.put_u8(0);
+                }
+            }
             // #[cfg(feature = "tds73")]
             // ColumnData::Time(Some(time)) => {
             //     if dst.write_headers {
@@ -346,14 +367,6 @@ impl<'a> ColumnData<'a> {
             //     }
             //
             //     time.encode(&mut *dst)?;
-            // }
-            // #[cfg(feature = "tds73")]
-            // ColumnData::Date(Some(date)) => {
-            //     if dst.write_headers {
-            //         dst.extend_from_slice(&[VarLenType::Daten as u8, 3]);
-            //     }
-            //
-            //     date.encode(&mut *dst)?;
             // }
             // #[cfg(feature = "tds73")]
             // ColumnData::DateTime2(Some(dt)) => {
@@ -643,12 +656,10 @@ impl<'a> Encode<BufColumnData<'a>> for ColumnData<'a> {
 mod tests {
     use super::*;
     use crate::tds::{Collation, Context};
-    use crate::TypeInfoInner::FixedLen;
     use crate::{Error, VarLenContext};
     use bytes::BytesMut;
     use futures::AsyncRead;
     use std::io;
-    use std::io::Cursor;
     use std::pin::Pin;
     use std::task::Poll;
 
@@ -659,11 +670,10 @@ mod tests {
     impl AsyncRead for Reader {
         fn poll_read(
             self: Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
+            _cx: &mut std::task::Context<'_>,
             buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
             let this = self.get_mut();
-            let cursor = Cursor::new(&mut this.buf);
             let size = buf.len();
 
             // Got EOF before having all the data.
@@ -869,6 +879,66 @@ mod tests {
                     Some(Collation::new(13632521, 52)),
                 )),
                 ColumnData::String(None),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 40, None)),
+                ColumnData::Binary(Some(b"aaa".as_slice().into())),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 40, None)),
+                ColumnData::Binary(None),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 40, None)),
+                ColumnData::Binary(Some(b"aaa".as_slice().into())),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 40, None)),
+                ColumnData::Binary(None),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 8, None)),
+                ColumnData::DateTime(Some(DateTime::new(200, 3000))),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 8, None)),
+                ColumnData::SmallDateTime(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Datetime),
+                ColumnData::DateTime(Some(DateTime::new(200, 3000))),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 4, None)),
+                ColumnData::SmallDateTime(Some(SmallDateTime::new(200, 3000))),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 4, None)),
+                ColumnData::SmallDateTime(None),
+            ),
+            (
+                TypeInfoInner::FixedLen(FixedLenType::Datetime4),
+                ColumnData::SmallDateTime(Some(SmallDateTime::new(200, 3000))),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None)),
+                ColumnData::Date(Some(Date::new(200))),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None)),
+                ColumnData::Date(None),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
+                ColumnData::Time(Some(Time::new(55, 7))),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
+                ColumnData::Time(None),
             ),
         ];
 

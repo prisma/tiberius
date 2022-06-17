@@ -2,9 +2,8 @@ use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
 use std::env;
 use tiberius::numeric::Numeric;
-use tiberius::{
-    BulkLoadMetadata, Client, ColumnFlag, Config, IntoSql, TokenRow, TypeInfo, TypeLength,
-};
+use tiberius::time::{Date, DateTime, SmallDateTime, Time};
+use tiberius::{Client, ColumnData, Config, IntoSql, TokenRow};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use tracing::log::info;
@@ -56,6 +55,10 @@ async fn main() -> anyhow::Result<()> {
                         varchar40 varchar(40) NULL,
                         wvarchar40 nvarchar(40) NULL,
                         binary40 binary(40) NULL,
+                        varbinary40 varbinary(40) NULL,
+                        null_datetime datetime NULL,
+                        nonnull_datetime datetime NOT NULL,
+                        null_time time NULL,
                         null_numeric numeric NULL,
                         nonnull_numeric numeric NOT NULL)"#,
             &[],
@@ -135,6 +138,18 @@ async fn main() -> anyhow::Result<()> {
 
         let binary40 = [Some(b"fffff".as_slice()), None][i % 2];
         row.push(binary40.into_sql());
+
+        let varbinary40 = [Some(b"fffff".as_slice()), None][i % 2];
+        row.push(varbinary40.into_sql());
+
+        let null_datetime = [Some(DateTime::new(200, 3000)), None][i % 2];
+        row.push(ColumnData::DateTime(null_datetime));
+
+        let nonnull_datetime = DateTime::new(300, 2000);
+        row.push(ColumnData::DateTime(Some(nonnull_datetime)));
+
+        let null_time = [Some(Time::new(55, 7)), None][i % 2];
+        row.push(ColumnData::Time(null_time));
 
         let null_numeric = [Some(Numeric::new_with_scale(12, 0)), None][i % 2];
         row.push(null_numeric.into_sql());

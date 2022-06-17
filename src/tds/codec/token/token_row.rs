@@ -1,6 +1,6 @@
 mod into_row;
 use crate::{
-    tds::codec::{BufColumnData, ColumnData, Encode},
+    tds::codec::{BufColumnData, ColumnData},
     MetaDataColumn, SqlReadBytes, TokenType, TypeInfoInner,
 };
 use asynchronous_codec::BytesMut;

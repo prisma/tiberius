@@ -134,7 +134,7 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
         }
 
         dst.put_u8(self.flags.bits());
-        Encode::<BufColumnData>::encode(self.value, &mut BufColumnData::with_headers(dst))?;
+        Encode::encode(self.value, &mut BufColumnData::with_headers(dst))?;
 
         let dst: &mut [u8] = dst.borrow_mut();
         dst[len_pos] = length;
