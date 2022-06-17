@@ -19,9 +19,7 @@ where
         Floatn => super::float::decode(src, len).await?,
         Guid => super::guid::decode(src).await?,
         BigChar | BigVarChar | NChar | NVarchar => {
-            dbg!(ColumnData::String(
-                super::string::decode(src, ty, len, collation).await?
-            ))
+            ColumnData::String(super::string::decode(src, ty, len, collation).await?)
         }
         Money => {
             let len = src.read_u8().await?;

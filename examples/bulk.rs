@@ -53,6 +53,9 @@ async fn main() -> anyhow::Result<()> {
                         nonnull_guid uniqueidentifier NOT NULL,
                         null_char40 char(40) NULL,
                         nonnull_char40 char(40) NOT NULL,
+                        varchar40 varchar(40) NULL,
+                        wvarchar40 nvarchar(40) NULL,
+                        binary40 binary(40) NULL,
                         null_numeric numeric NULL,
                         nonnull_numeric numeric NOT NULL)"#,
             &[],
@@ -123,6 +126,15 @@ async fn main() -> anyhow::Result<()> {
 
         let nonnull_char40 = "ddddddddddddddddddd";
         row.push(nonnull_char40.into_sql());
+
+        let varchar40 = [Some("fffff"), None][i % 2];
+        row.push(varchar40.into_sql());
+
+        let wvarchar40 = [Some("fffff"), None][i % 2];
+        row.push(wvarchar40.into_sql());
+
+        let binary40 = [Some(b"fffff".as_slice()), None][i % 2];
+        row.push(binary40.into_sql());
 
         let null_numeric = [Some(Numeric::new_with_scale(12, 0)), None][i % 2];
         row.push(null_numeric.into_sql());

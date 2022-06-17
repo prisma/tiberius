@@ -17,7 +17,6 @@ where
     use VarLenType::*;
 
     let data = super::plp::decode(src, len).await?;
-    dbg!(&data);
 
     match (data, ty) {
         // Codepages other than UTF
@@ -28,7 +27,6 @@ where
             let s: String = encoder
                 .decode(buf.as_ref(), DecoderTrap::Strict)
                 .map_err(Error::Encoding)?;
-            dbg!(&s);
 
             Ok(Some(s.into()))
         }

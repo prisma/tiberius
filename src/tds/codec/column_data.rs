@@ -251,7 +251,8 @@ impl<'a> ColumnData<'a> {
                 }
             }
             (ColumnData::String(opt), TypeInfoInner::VarLenSized(vlc))
-                if vlc.r#type() == VarLenType::BigChar =>
+                if vlc.r#type() == VarLenType::BigChar
+                    || vlc.r#type() == VarLenType::BigVarChar =>
             {
                 if let Some(str) = opt {
                     let len_pos = dst.len();
@@ -276,63 +277,29 @@ impl<'a> ColumnData<'a> {
                     dst.put_u16_le(0xffff);
                 }
             }
-            // ColumnData::String(Some(ref s)) if s.len() <= 4000 => {
-            //     if dst.write_headers {
-            //         dst.put_u8(VarLenType::NVarchar as u8);
-            //         dst.put_u16_le(8000);
-            //         dst.extend_from_slice(&[0u8; 5][..]);
-            //     }
-            //
-            //     let mut length = 0u16;
-            //     let len_pos = dst.len();
-            //
-            //     dst.put_u16_le(length);
-            //
-            //     for chr in s.encode_utf16() {
-            //         length += 1;
-            //         dst.put_u16_le(chr);
-            //     }
-            //
-            //     let dst: &mut [u8] = dst.borrow_mut();
-            //     let bytes = (length * 2).to_le_bytes(); // u16, two bytes
-            //
-            //     for (i, byte) in bytes.iter().enumerate() {
-            //         dst[len_pos + i] = *byte;
-            //     }
-            // }
-            // ColumnData::String(Some(ref s)) => {
-            //     if dst.write_headers {
-            //         // length: 0xffff and raw collation
-            //         dst.put_u8(VarLenType::NVarchar as u8);
-            //         dst.extend_from_slice(&[0xff_u8; 2][..]);
-            //         dst.extend_from_slice(&[0u8; 5][..]);
-            //
-            //         // we cannot cheaply predetermine the length of the UCS2 string beforehand
-            //         // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
-            //         dst.put_u64_le(0xfffffffffffffffe_u64);
-            //     }
-            //
-            //     // Write the varchar length
-            //     let mut length = 0u32;
-            //     let len_pos = dst.len();
-            //
-            //     dst.put_u32_le(length);
-            //
-            //     for chr in s.encode_utf16() {
-            //         length += 1;
-            //         dst.put_u16_le(chr);
-            //     }
-            //
-            //     // PLP_TERMINATOR
-            //     dst.put_u32_le(0);
-            //
-            //     let dst: &mut [u8] = dst.borrow_mut();
-            //     let bytes = (length * 2).to_le_bytes(); // u32, four bytes
-            //
-            //     for (i, byte) in bytes.iter().enumerate() {
-            //         dst[len_pos + i] = *byte;
-            //     }
-            // }
+            (ColumnData::String(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::NVarchar || vlc.r#type() == VarLenType::NChar =>
+            {
+                if let Some(str) = opt {
+                    let len_pos = dst.len();
+
+                    dst.put_u16_le(0u16);
+
+                    for chr in str.encode_utf16() {
+                        dst.put_u16_le(chr);
+                    }
+                    let length = (dst.len() - len_pos - 2) as u16;
+
+                    let dst: &mut [u8] = dst.borrow_mut();
+                    let len_bytes = length.to_le_bytes();
+
+                    for (i, byte) in len_bytes.iter().enumerate() {
+                        dst[len_pos + i] = *byte;
+                    }
+                } else {
+                    dst.put_u16_le(0xffff);
+                }
+            }
             // ColumnData::Binary(Some(bytes)) if bytes.len() <= 8000 => {
             //     if dst.write_headers {
             //         dst.put_u8(VarLenType::BigVarBin as u8);
@@ -850,6 +817,54 @@ mod tests {
             (
                 TypeInfoInner::VarLenSized(VarLenContext::new(
                     VarLenType::BigChar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(None),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::BigVarChar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(Some("aaa".into())),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::BigVarChar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(None),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::NVarchar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(Some("hhh".into())),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::NVarchar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(None),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::NChar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(Some("hhh".into())),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::NChar,
                     40,
                     Some(Collation::new(13632521, 52)),
                 )),
