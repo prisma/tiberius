@@ -360,23 +360,28 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            // #[cfg(feature = "tds73")]
-            // ColumnData::Time(Some(time)) => {
-            //     if dst.write_headers {
-            //         dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale(), time.len()?]);
-            //     }
-            //
-            //     time.encode(&mut *dst)?;
-            // }
-            // #[cfg(feature = "tds73")]
-            // ColumnData::DateTime2(Some(dt)) => {
-            //     if dst.write_headers {
-            //         let len = dt.time().len()? + 3;
-            //         dst.extend_from_slice(&[VarLenType::Datetime2 as u8, dt.time().scale(), len]);
-            //     }
-            //
-            //     dt.encode(&mut *dst)?;
-            // }
+            #[cfg(feature = "tds73")]
+            (ColumnData::DateTime2(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Datetime2 =>
+            {
+                if let Some(dt2) = opt {
+                    dst.put_u8(dt2.time().len()? + 3);
+                    dt2.encode(dst)?;
+                } else {
+                    dst.put_u8(0);
+                }
+            }
+            #[cfg(feature = "tds73")]
+            (ColumnData::DateTimeOffset(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::DatetimeOffsetn =>
+            {
+                if let Some(dto) = opt {
+                    dst.put_u8(dto.datetime2().time().len()? + 5);
+                    dto.encode(dst)?;
+                } else {
+                    dst.put_u8(0);
+                }
+            }
             // #[cfg(feature = "tds73")]
             // ColumnData::DateTimeOffset(Some(dto)) => {
             //     if dst.write_headers {
@@ -939,6 +944,37 @@ mod tests {
             (
                 TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
                 ColumnData::Time(None),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetime2, 7, None)),
+                ColumnData::DateTime2(Some(DateTime2::new(Date::new(55), Time::new(222, 7)))),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetime2, 7, None)),
+                ColumnData::DateTime2(None),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::DatetimeOffsetn,
+                    7,
+                    None,
+                )),
+                ColumnData::DateTimeOffset(Some(DateTimeOffset::new(
+                    DateTime2::new(Date::new(55), Time::new(222, 7)),
+                    -8,
+                ))),
+            ),
+            #[cfg(feature = "tds73")]
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::DatetimeOffsetn,
+                    7,
+                    None,
+                )),
+                ColumnData::DateTimeOffset(None),
             ),
         ];
 

@@ -2,7 +2,7 @@ use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
 use std::env;
 use tiberius::numeric::Numeric;
-use tiberius::time::{Date, DateTime, SmallDateTime, Time};
+use tiberius::time::{Date, DateTime, DateTime2, DateTimeOffset, SmallDateTime, Time};
 use tiberius::{Client, ColumnData, Config, IntoSql, TokenRow};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
@@ -59,6 +59,8 @@ async fn main() -> anyhow::Result<()> {
                         null_datetime datetime NULL,
                         nonnull_datetime datetime NOT NULL,
                         null_time time NULL,
+                        null_datetime2 datetime2 NULL,
+                        null_datetimeoffset datetimeoffset NULL,
                         null_numeric numeric NULL,
                         nonnull_numeric numeric NOT NULL)"#,
             &[],
@@ -150,6 +152,18 @@ async fn main() -> anyhow::Result<()> {
 
         let null_time = [Some(Time::new(55, 7)), None][i % 2];
         row.push(ColumnData::Time(null_time));
+
+        let null_datetime2 = [Some(DateTime2::new(Date::new(55), Time::new(44, 7))), None][i % 2];
+        row.push(ColumnData::DateTime2(null_datetime2));
+
+        let null_datetimeoffset = [
+            Some(DateTimeOffset::new(
+                DateTime2::new(Date::new(55), Time::new(44, 7)),
+                -9,
+            )),
+            None,
+        ][i % 2];
+        row.push(ColumnData::DateTimeOffset(null_datetimeoffset));
 
         let null_numeric = [Some(Numeric::new_with_scale(12, 0)), None][i % 2];
         row.push(null_numeric.into_sql());
