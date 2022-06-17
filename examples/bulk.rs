@@ -8,6 +8,7 @@ use tiberius::{
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 use tracing::log::info;
+use uuid::Uuid;
 
 static CONN_STR: Lazy<String> = Lazy::new(|| {
     env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
@@ -48,6 +49,10 @@ async fn main() -> anyhow::Result<()> {
                         nonnull_float real NOT NULL,
                         null_double float NULL,
                         nonnull_double float NOT NULL,
+                        null_guid uniqueidentifier NULL,
+                        nonnull_guid uniqueidentifier NOT NULL,
+                        null_char40 char(40) NULL,
+                        nonnull_char40 char(40) NOT NULL,
                         null_numeric numeric NULL,
                         nonnull_numeric numeric NOT NULL)"#,
             &[],
@@ -106,6 +111,18 @@ async fn main() -> anyhow::Result<()> {
 
         let nonnull_double = 32f64;
         row.push(nonnull_double.into_sql());
+
+        let null_guid = [Some(Uuid::new_v4()), None][i % 2];
+        row.push(null_guid.into_sql());
+
+        let nonnull_guid = Uuid::new_v4();
+        row.push(nonnull_guid.into_sql());
+
+        let null_char40 = [Some("aaa"), None][i % 2];
+        row.push(null_char40.into_sql());
+
+        let nonnull_char40 = "ddddddddddddddddddd";
+        row.push(nonnull_char40.into_sql());
 
         let null_numeric = [Some(Numeric::new_with_scale(12, 0)), None][i % 2];
         row.push(null_numeric.into_sql());

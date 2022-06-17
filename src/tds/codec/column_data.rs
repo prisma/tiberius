@@ -30,8 +30,11 @@ use crate::{
     SqlReadBytes, VarLenContext,
 };
 pub(crate) use buf::BufColumnData;
+use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
+use encoding::EncoderTrap;
 use std::borrow::{BorrowMut, Cow};
+use std::io::Cursor;
 use uuid::Uuid;
 
 const MAX_NVARCHAR_SIZE: usize = 1 << 30;
@@ -234,16 +237,45 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            // ColumnData::Guid(Some(uuid)) => {
-            //     if dst.write_headers {
-            //         let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
-            //         dst.extend_from_slice(&header);
-            //     }
-            //
-            //     let mut data = *uuid.as_bytes();
-            //     super::guid::reorder_bytes(&mut data);
-            //     dst.extend_from_slice(&data);
-            // }
+            (ColumnData::Guid(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::Guid =>
+            {
+                if let Some(uuid) = opt {
+                    dst.put_u8(16);
+
+                    let mut data = *uuid.as_bytes();
+                    super::guid::reorder_bytes(&mut data);
+                    dst.extend_from_slice(&data);
+                } else {
+                    dst.put_u8(0);
+                }
+            }
+            (ColumnData::String(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::BigChar =>
+            {
+                if let Some(str) = opt {
+                    let len_pos = dst.len();
+
+                    dst.put_u16_le(0u16);
+
+                    let encoder = vlc.collation().as_ref().unwrap().encoding()?;
+
+                    let bytes = encoder
+                        .encode(str.as_ref(), EncoderTrap::Strict)
+                        .map_err(crate::Error::Encoding)?;
+                    dst.extend_from_slice(bytes.as_slice());
+                    let length = (dst.len() - len_pos - 2) as u16;
+
+                    let dst: &mut [u8] = dst.borrow_mut();
+                    let len_bytes = length.to_le_bytes();
+
+                    for (i, byte) in len_bytes.iter().enumerate() {
+                        dst[len_pos + i] = *byte;
+                    }
+                } else {
+                    dst.put_u16_le(0xffff);
+                }
+            }
             // ColumnData::String(Some(ref s)) if s.len() <= 4000 => {
             //     if dst.write_headers {
             //         dst.put_u8(VarLenType::NVarchar as u8);
@@ -643,7 +675,7 @@ impl<'a> Encode<BufColumnData<'a>> for ColumnData<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tds::Context;
+    use crate::tds::{Collation, Context};
     use crate::TypeInfoInner::FixedLen;
     use crate::{Error, VarLenContext};
     use bytes::BytesMut;
@@ -663,8 +695,8 @@ mod tests {
             cx: &mut std::task::Context<'_>,
             buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
-            let mut this = self.get_mut();
-            let mut cursor = Cursor::new(&mut this.buf);
+            let this = self.get_mut();
+            let cursor = Cursor::new(&mut this.buf);
             let size = buf.len();
 
             // Got EOF before having all the data.
@@ -782,6 +814,14 @@ mod tests {
                 ColumnData::F64(Some(8f64)),
             ),
             (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
+                ColumnData::Guid(Some(Uuid::new_v4())),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
+                ColumnData::Guid(None),
+            ),
+            (
                 TypeInfoInner::VarLenSizedPrecision {
                     ty: VarLenType::Numericn,
                     size: 17,
@@ -798,6 +838,22 @@ mod tests {
                     scale: 0,
                 },
                 ColumnData::Numeric(None),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::BigChar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(Some("aaa".into())),
+            ),
+            (
+                TypeInfoInner::VarLenSized(VarLenContext::new(
+                    VarLenType::BigChar,
+                    40,
+                    Some(Collation::new(13632521, 52)),
+                )),
+                ColumnData::String(None),
             ),
         ];
 
