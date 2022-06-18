@@ -60,10 +60,6 @@ impl Context {
         self.collation = Some(collation);
     }
 
-    pub fn collation(&self) -> Option<Collation> {
-        self.collation
-    }
-
     pub fn version(&self) -> FeatureLevel {
         self.version
     }

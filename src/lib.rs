@@ -277,9 +277,7 @@ pub use result::*;
 pub use row::{Column, ColumnType, Row};
 pub use sql_browser::SqlBrowser;
 pub use tds::{
-    codec::{
-        BulkLoadMetadata, BulkLoadRequest, ColumnData, ColumnFlag, TokenRow, TypeInfo, TypeLength,
-    },
+    codec::{BulkLoadRequest, ColumnData, ColumnFlag, TokenRow, TypeInfo, TypeLength},
     numeric,
     stream::QueryStream,
     time, xml, EncryptionLevel,

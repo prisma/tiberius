@@ -17,7 +17,7 @@ use crate::{
         codec::{self, IteratorJoin},
         stream::{QueryStream, TokenStream},
     },
-    BulkLoadMetadata, BulkLoadRequest, ColumnFlag, SqlReadBytes, ToSql,
+    BulkLoadRequest, ColumnFlag, SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use enumflags2::BitFlags;
@@ -299,28 +299,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     pub async fn bulk_insert<'a>(
         &'a mut self,
         table: &str,
-        meta: BulkLoadMetadata<'a>,
-    ) -> crate::Result<BulkLoadRequest<'a, S>> {
-        // Start the bulk request
-        self.connection.flush_stream().await?;
-
-        let col_data = meta.column_descriptions().join(", ");
-        let query = format!("INSERT BULK {} ({})", table, col_data);
-
-        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
-        let id = self.connection.context_mut().next_packet_id();
-
-        self.connection.send(PacketHeader::batch(id), req).await?;
-
-        let ts = TokenStream::new(&mut self.connection);
-        ts.flush_done().await?;
-
-        BulkLoadRequest::new(&mut self.connection, meta)
-    }
-
-    pub async fn bulk_insert_1<'a>(
-        &'a mut self,
-        table: &str,
     ) -> crate::Result<BulkLoadRequest<'a, S>> {
         // Start the bulk request
         self.connection.flush_stream().await?;
@@ -348,20 +326,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             .await?;
 
         // now start bulk upload
-        let columns = columns
+        let columns: Vec<_> = columns
             .ok_or(crate::Error::Protocol(
                 "expecting column metadata from query but not found".into(),
             ))?
             .into_iter()
             .filter(|column| column.base.flags.contains(ColumnFlag::Updateable))
             .collect();
-        dbg!(&columns);
-        let meta = BulkLoadMetadata { columns };
 
         self.connection.flush_stream().await?;
-        let col_data = meta.column_descriptions().join(", ");
+        let col_data = columns.iter().map(|c| format!("{}", c)).join(", ");
         let query = format!("INSERT BULK {} ({})", table, col_data);
-        dbg!(&query);
 
         let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
         let id = self.connection.context_mut().next_packet_id();
@@ -371,7 +346,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         let ts = TokenStream::new(&mut self.connection);
         ts.flush_done().await?;
 
-        BulkLoadRequest::new(&mut self.connection, meta)
+        BulkLoadRequest::new(&mut self.connection, columns)
     }
 
     pub(crate) fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {

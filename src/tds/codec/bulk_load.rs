@@ -1,56 +1,13 @@
 use asynchronous_codec::BytesMut;
-use enumflags2::BitFlags;
 use futures::{AsyncRead, AsyncWrite};
 use tracing::{event, Level};
 
 use crate::{client::Connection, sql_read_bytes::SqlReadBytes, ExecuteResult};
 
 use super::{
-    BaseMetaDataColumn, ColumnFlag, Encode, MetaDataColumn, PacketHeader, PacketStatus,
-    TokenColMetaData, TokenDone, TokenRow, TypeInfo, HEADER_BYTES,
+    Encode, MetaDataColumn, PacketHeader, PacketStatus, TokenColMetaData, TokenDone, TokenRow,
+    HEADER_BYTES,
 };
-
-/// Column metadata for a bulk load request.
-#[derive(Debug, Default, Clone)]
-pub struct BulkLoadMetadata<'a> {
-    pub columns: Vec<MetaDataColumn<'a>>,
-}
-
-impl<'a> BulkLoadMetadata<'a> {
-    /// Creates a metadata with no columns specified.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Add a column to the request. Order should be same as the order of data
-    /// in the rows.
-    pub fn add_column<C>(&mut self, name: &'a str, ty: TypeInfo, flags: C)
-    where
-        C: Into<BitFlags<ColumnFlag>>,
-    {
-        self.columns.push(MetaDataColumn {
-            base: BaseMetaDataColumn {
-                flags: flags.into(),
-                ty,
-            },
-            col_name: name.into(),
-        });
-    }
-
-    pub(crate) fn column_descriptions(&self) -> impl Iterator<Item = String> + '_ {
-        self.columns.iter().map(|c| format!("{}", c))
-    }
-}
-
-impl<'a> Encode<BytesMut> for BulkLoadMetadata<'a> {
-    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        let cmd = TokenColMetaData {
-            columns: self.columns,
-        };
-
-        cmd.encode(dst)
-    }
-}
 
 /// A handler for a bulk insert data flow.
 #[derive(Debug)]
@@ -70,13 +27,16 @@ where
 {
     pub(crate) fn new(
         connection: &'a mut Connection<S>,
-        meta: BulkLoadMetadata<'a>,
+        columns: Vec<MetaDataColumn<'a>>,
     ) -> crate::Result<Self> {
         let packet_id = connection.context_mut().next_packet_id();
         let mut buf = BytesMut::new();
-        let columns = meta.columns.clone();
 
-        meta.encode(&mut buf)?;
+        let cmd = TokenColMetaData {
+            columns: columns.clone(),
+        };
+
+        cmd.encode(&mut buf)?;
 
         let this = Self {
             connection,

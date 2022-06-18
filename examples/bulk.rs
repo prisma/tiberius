@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     info!("create table done");
 
-    let mut req = client.bulk_insert_1("bulk_test1").await?;
+    let mut req = client.bulk_insert("bulk_test1").await?;
 
     let count = 1000i32;
 
