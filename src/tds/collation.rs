@@ -11,7 +11,7 @@ use encoding::{self, Encoding};
 
 use crate::error::Error;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Collation {
     /// LCID ColFlags Version
     pub(crate) info: u32,

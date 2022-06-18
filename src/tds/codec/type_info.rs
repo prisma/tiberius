@@ -7,7 +7,7 @@ use std::{convert::TryFrom, sync::Arc, usize};
 use super::Encode;
 
 /// Describes a type of a column.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypeInfo {
     pub(crate) inner: TypeInfoInner,
 }
@@ -21,7 +21,7 @@ pub enum TypeLength {
     Max,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TypeInfoInner {
     FixedLen(FixedLenType),
     VarLenSized(VarLenContext),
@@ -37,7 +37,7 @@ pub(crate) enum TypeInfoInner {
     },
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct VarLenContext {
     r#type: VarLenType,
     len: usize,
@@ -228,8 +228,32 @@ impl Encode<BytesMut> for TypeInfo {
                 dst.put_u8(precision as u8);
                 dst.put_u8(scale as u8);
             }
-            TypeInfoInner::Xml { .. } => {
-                unreachable!()
+            TypeInfoInner::Xml { schema, .. } => {
+                dst.put_u8(VarLenType::Xml as u8);
+
+                if let Some(xs) = schema {
+                    dst.put_u8(1);
+
+                    let db_name_encoded: Vec<u16> = xs.db_name().encode_utf16().collect();
+                    dst.put_u8(db_name_encoded.len() as u8);
+                    for chr in db_name_encoded {
+                        dst.put_u16_le(chr);
+                    }
+
+                    let owner_encoded: Vec<u16> = xs.owner().encode_utf16().collect();
+                    dst.put_u8(owner_encoded.len() as u8);
+                    for chr in owner_encoded {
+                        dst.put_u16_le(chr);
+                    }
+
+                    let collection_encoded: Vec<u16> = xs.collection().encode_utf16().collect();
+                    dst.put_u16_le(collection_encoded.len() as u16);
+                    for chr in collection_encoded {
+                        dst.put_u16_le(chr);
+                    }
+                } else {
+                    dst.put_u8(0);
+                }
             }
         }
 
@@ -550,5 +574,35 @@ impl TypeInfo {
                 Ok(vty)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::BytesMutReader;
+
+    #[tokio::test]
+    async fn round_trip() {
+        let mut buf = BytesMut::new();
+        let ti = TypeInfo {
+            inner: TypeInfoInner::Xml {
+                schema: Some(
+                    XmlSchema::new("fake-db-name", "fake-owner", "fake-collection").into(),
+                ),
+                size: 0xfffffffffffffffe_usize,
+            },
+        };
+
+        ti.clone()
+            .encode(&mut buf)
+            .expect("encode should be successful");
+
+        let mut reader = BytesMutReader { buf };
+        let nti = TypeInfo::decode(&mut reader)
+            .await
+            .expect("decode must succeed");
+
+        assert_eq!(nti, ti)
     }
 }

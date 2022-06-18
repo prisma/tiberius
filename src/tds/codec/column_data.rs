@@ -382,26 +382,13 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            // #[cfg(feature = "tds73")]
-            // ColumnData::DateTimeOffset(Some(dto)) => {
-            //     if dst.write_headers {
-            //         let headers = &[
-            //             VarLenType::DatetimeOffsetn as u8,
-            //             dto.datetime2().time().scale(),
-            //             dto.datetime2().time().len()? + 5,
-            //         ];
-            //
-            //         dst.extend_from_slice(headers);
-            //     }
-            //
-            //     dto.encode(&mut *dst)?;
-            // }
-            // ColumnData::Xml(Some(xml)) => {
-            //     if dst.write_headers {
-            //         dst.put_u8(VarLenType::Xml as u8);
-            //     }
-            //     xml.into_owned().encode(&mut *dst)?;
-            // }
+            (ColumnData::Xml(opt), TypeInfoInner::Xml { .. }) => {
+                if let Some(xml) = opt {
+                    xml.into_owned().encode(dst)?;
+                } else {
+                    dst.put_u64_le(0xffffffffffffffff_u64);
+                }
+            }
             (ColumnData::Numeric(opt), TypeInfoInner::VarLenSizedPrecision { ty, scale, .. })
                 if ty == &VarLenType::Numericn || ty == &VarLenType::Decimaln =>
             {
@@ -630,6 +617,7 @@ impl<'a> Encode<BufColumnData<'a>> for ColumnData<'a> {
             ColumnData::Xml(Some(xml)) => {
                 if dst.write_headers {
                     dst.put_u8(VarLenType::Xml as u8);
+                    dst.put_u8(0);
                 }
                 xml.into_owned().encode(&mut *dst)?;
             }
@@ -660,53 +648,10 @@ impl<'a> Encode<BufColumnData<'a>> for ColumnData<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tds::{Collation, Context};
+    use crate::sql_read_bytes::test_utils::BytesMutReader;
+    use crate::tds::Collation;
     use crate::{Error, VarLenContext};
     use bytes::BytesMut;
-    use futures::AsyncRead;
-    use std::io;
-    use std::pin::Pin;
-    use std::task::Poll;
-
-    struct Reader {
-        buf: BytesMut,
-    }
-
-    impl AsyncRead for Reader {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-            buf: &mut [u8],
-        ) -> Poll<std::io::Result<usize>> {
-            let this = self.get_mut();
-            let size = buf.len();
-
-            // Got EOF before having all the data.
-            if this.buf.len() < size {
-                return Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "No more packets in the wire",
-                )));
-            }
-
-            buf.copy_from_slice(this.buf.split_to(size).as_ref());
-            Poll::Ready(Ok(size))
-        }
-    }
-
-    impl SqlReadBytes for Reader {
-        fn debug_buffer(&self) {
-            todo!()
-        }
-
-        fn context(&self) -> &Context {
-            todo!()
-        }
-
-        fn context_mut(&mut self) -> &mut Context {
-            todo!()
-        }
-    }
 
     #[tokio::test]
     async fn round_trip() {
@@ -976,6 +921,20 @@ mod tests {
                 )),
                 ColumnData::DateTimeOffset(None),
             ),
+            (
+                TypeInfoInner::Xml {
+                    schema: None,
+                    size: 0xfffffffffffffffe_usize,
+                },
+                ColumnData::Xml(Some(Cow::Owned(XmlData::new("<a>ddd</a>")))),
+            ),
+            (
+                TypeInfoInner::Xml {
+                    schema: None,
+                    size: 0xfffffffffffffffe_usize,
+                },
+                ColumnData::Xml(None),
+            ),
         ];
 
         for (inner, d) in data {
@@ -986,7 +945,7 @@ mod tests {
                 .encode(&mut buf, &ti)
                 .expect("encode must succeed");
 
-            let mut reader = Reader { buf };
+            let mut reader = BytesMutReader { buf };
             let nd = ColumnData::decode(&mut reader, &ti)
                 .await
                 .expect("decode must succeed");

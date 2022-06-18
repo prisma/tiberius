@@ -1,8 +1,10 @@
 use indicatif::ProgressBar;
 use once_cell::sync::Lazy;
+use std::borrow::Cow;
 use std::env;
 use tiberius::numeric::Numeric;
 use tiberius::time::{Date, DateTime, DateTime2, DateTimeOffset, SmallDateTime, Time};
+use tiberius::xml::XmlData;
 use tiberius::{Client, ColumnData, Config, IntoSql, TokenRow};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;

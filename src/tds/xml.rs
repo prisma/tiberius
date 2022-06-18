@@ -90,7 +90,6 @@ impl AsRef<str> for XmlData {
 
 impl Encode<BytesMut> for XmlData {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        dst.put_u8(0);
         dst.put_u64_le(0xfffffffffffffffe_u64);
 
         let mut length = 0u32;
