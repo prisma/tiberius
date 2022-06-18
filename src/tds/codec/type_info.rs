@@ -584,25 +584,39 @@ mod tests {
 
     #[tokio::test]
     async fn round_trip() {
-        let mut buf = BytesMut::new();
-        let ti = TypeInfo {
-            inner: TypeInfoInner::Xml {
+        let types = vec![
+            TypeInfoInner::Xml {
                 schema: Some(
                     XmlSchema::new("fake-db-name", "fake-owner", "fake-collection").into(),
                 ),
                 size: 0xfffffffffffffffe_usize,
             },
-        };
+            TypeInfoInner::Xml {
+                schema: None,
+                size: 0xfffffffffffffffe_usize,
+            },
+            TypeInfoInner::FixedLen(FixedLenType::Int4),
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::NChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+        ];
 
-        ti.clone()
-            .encode(&mut buf)
-            .expect("encode should be successful");
+        for inner in types {
+            let mut buf = BytesMut::new();
+            let ti = TypeInfo { inner };
 
-        let mut reader = BytesMutReader { buf };
-        let nti = TypeInfo::decode(&mut reader)
-            .await
-            .expect("decode must succeed");
+            ti.clone()
+                .encode(&mut buf)
+                .expect("encode should be successful");
 
-        assert_eq!(nti, ti)
+            let mut reader = BytesMutReader { buf };
+            let nti = TypeInfo::decode(&mut reader)
+                .await
+                .expect("decode must succeed");
+
+            assert_eq!(nti, ti)
+        }
     }
 }
