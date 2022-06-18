@@ -253,7 +253,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # Example
     ///
     /// ```
-    /// # use tiberius::{Config, BulkLoadMetadata, TypeInfo, TokenRow, IntoSql};
+    /// # use tiberius::{Config, IntoRow};
     /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
     /// # #[tokio::main]
@@ -274,16 +274,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     ///
     /// client.simple_query(create_table).await?;
     ///
-    /// // The request must have correct typing.
-    /// let mut meta = BulkLoadMetadata::new();
-    /// meta.add_column("val", TypeInfo::int());
-    ///
     /// // Start the bulk insert with the client.
-    /// let mut req = client.bulk_insert("##bulk_test", meta).await?;
+    /// let mut req = client.bulk_insert("##bulk_test").await?;
     ///
     /// for i in [0i32, 1i32, 2i32] {
-    ///     let mut row = TokenRow::new();
-    ///     row.push(i.into_sql());
+    ///     let row = (i).into_row();
     ///
     ///     // The request will handle flushing to the wire in an optimal way,
     ///     // balancing between memory usage and IO performance.
@@ -298,7 +293,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// ```
     pub async fn bulk_insert<'a>(
         &'a mut self,
-        table: &str,
+        table: &'a str,
     ) -> crate::Result<BulkLoadRequest<'a, S>> {
         // Start the bulk request
         self.connection.flush_stream().await?;

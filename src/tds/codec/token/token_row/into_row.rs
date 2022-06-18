@@ -1,6 +1,8 @@
 use crate::{IntoSql, TokenRow};
 
+/// create a TokenRow from list of values
 pub trait IntoRow<'a> {
+    /// create a TokenRow from list of values which implements IntoSQL
     fn into_row(self) -> TokenRow<'a>;
 }
 

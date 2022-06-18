@@ -1,8 +1,5 @@
 mod into_row;
-use crate::{
-    tds::codec::{BufColumnData, ColumnData},
-    MetaDataColumn, SqlReadBytes, TokenType, TypeInfoInner,
-};
+use crate::{tds::codec::ColumnData, MetaDataColumn, SqlReadBytes, TokenType};
 use asynchronous_codec::BytesMut;
 use bytes::BufMut;
 use futures::io::AsyncReadExt;
@@ -43,13 +40,7 @@ impl<'a> TokenRow<'a> {
         }
 
         for (value, column) in self.data.into_iter().zip(meta) {
-            let mut col_buf = match &column.base.ty.inner {
-                TypeInfoInner::FixedLen(_) => BufColumnData::without_headers(dst),
-                _ => BufColumnData::with_headers(dst),
-            };
-
-            // dbg!(&col_buf.write_headers);
-            value.encode(&mut col_buf, &column.base.ty)?
+            value.encode(dst, &column.base.ty)?
         }
 
         Ok(())

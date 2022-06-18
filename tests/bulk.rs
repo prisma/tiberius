@@ -1,10 +1,9 @@
-use enumflags2::BitFlags;
 use futures::{lock::Mutex, AsyncRead, AsyncWrite};
 use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
-use tiberius::{BulkLoadMetadata, ColumnFlag, IntoSql, Result, TokenRow, TypeInfo, TypeLength};
+use tiberius::{IntoSql, Result, TokenRow};
 
 use runtimes_macro::test_on_runtimes;
 
@@ -26,7 +25,7 @@ async fn random_table() -> String {
 }
 
 macro_rules! test_bulk_type {
-    ($name:ident($sql_type:literal, $type_info:expr, $total_generated:expr, $generator:expr)) => {
+    ($name:ident($sql_type:literal, $total_generated:expr, $generator:expr)) => {
         paste::item! {
             #[test_on_runtimes]
             async fn [< bulk_load_optional_ $name >]<S>(mut conn: tiberius::Client<S>) -> Result<()>
@@ -45,10 +44,7 @@ macro_rules! test_bulk_type {
                 )
                     .await?;
 
-                let mut meta = BulkLoadMetadata::new();
-                meta.add_column("content", $type_info, ColumnFlag::Nullable);
-
-                let mut req = conn.bulk_insert(&table, meta).await?;
+                let mut req = conn.bulk_insert(&table).await?;
 
                 for i in $generator {
                     let mut row = TokenRow::new();
@@ -80,10 +76,7 @@ macro_rules! test_bulk_type {
                 )
                     .await?;
 
-                let mut meta = BulkLoadMetadata::new();
-                meta.add_column("content", $type_info, BitFlags::empty());
-
-                let mut req = conn.bulk_insert(&table, meta).await?;
+                let mut req = conn.bulk_insert(&table).await?;
 
                 for i in $generator {
                     let mut row = TokenRow::new();
@@ -101,28 +94,17 @@ macro_rules! test_bulk_type {
     };
 }
 
-test_bulk_type!(tinyint("TINYINT", TypeInfo::tinyint(), 256, 0..=255u8));
-test_bulk_type!(smallint("SMALLINT", TypeInfo::smallint(), 2000, 0..2000i16));
-test_bulk_type!(int("INT", TypeInfo::int(), 2000, 0..2000i32));
-test_bulk_type!(bigint("BIGINT", TypeInfo::bigint(), 2000, 0..2000i64));
+test_bulk_type!(tinyint("TINYINT", 256, 0..=255u8));
+test_bulk_type!(smallint("SMALLINT", 2000, 0..2000i16));
+test_bulk_type!(int("INT", 2000, 0..2000i32));
+test_bulk_type!(bigint("BIGINT", 2000, 0..2000i64));
 
-test_bulk_type!(real(
-    "REAL",
-    TypeInfo::real(),
-    1000,
-    vec![3.14f32; 1000].into_iter()
-));
+test_bulk_type!(real("REAL", 1000, vec![3.14f32; 1000].into_iter()));
 
-test_bulk_type!(float(
-    "FLOAT",
-    TypeInfo::float(),
-    1000,
-    vec![3.14f64; 1000].into_iter()
-));
+test_bulk_type!(float("FLOAT", 1000, vec![3.14f64; 1000].into_iter()));
 
 test_bulk_type!(varchar_limited(
     "VARCHAR(255)",
-    TypeInfo::varchar(TypeLength::Limited(255)),
     1000,
     vec!["aaaaaaaaaaaaaaaaaaaaaaa"; 1000].into_iter()
 ));
