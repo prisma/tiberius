@@ -334,8 +334,21 @@ pub(crate) mod test_utils {
     use std::pin::Pin;
     use std::task::Poll;
 
+    pub(crate) trait IntoSqlReadBytes {
+        type T: SqlReadBytes;
+        fn into_sql_read_bytes(self) -> Self::T;
+    }
+
+    impl IntoSqlReadBytes for BytesMut {
+        type T = BytesMutReader;
+
+        fn into_sql_read_bytes(self) -> Self::T {
+            BytesMutReader { buf: self }
+        }
+    }
+
     pub(crate) struct BytesMutReader {
-        pub(crate) buf: BytesMut,
+        buf: BytesMut,
     }
 
     impl AsyncRead for BytesMutReader {

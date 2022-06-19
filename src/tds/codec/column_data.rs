@@ -411,7 +411,7 @@ impl<'a> ColumnData<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql_read_bytes::test_utils::BytesMutReader;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
     use crate::tds::Collation;
     use crate::{Error, VarLenContext};
     use bytes::BytesMut;
@@ -708,8 +708,7 @@ mod tests {
                 .encode(&mut buf, &ti)
                 .expect("encode must succeed");
 
-            let mut reader = BytesMutReader { buf };
-            let nd = ColumnData::decode(&mut reader, &ti)
+            let nd = ColumnData::decode(&mut buf.into_sql_read_bytes(), &ti)
                 .await
                 .expect("decode must succeed");
 

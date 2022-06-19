@@ -580,7 +580,7 @@ impl TypeInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql_read_bytes::test_utils::BytesMutReader;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
 
     #[tokio::test]
     async fn round_trip() {
@@ -611,8 +611,7 @@ mod tests {
                 .encode(&mut buf)
                 .expect("encode should be successful");
 
-            let mut reader = BytesMutReader { buf };
-            let nti = TypeInfo::decode(&mut reader)
+            let nti = TypeInfo::decode(&mut buf.into_sql_read_bytes())
                 .await
                 .expect("decode must succeed");
 
