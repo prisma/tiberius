@@ -158,6 +158,7 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
             }
             ColumnData::I64(Some(val)) => {
                 let header = [&[VarLenType::Intn as u8, 8, 8][..]].concat();
+                // let header = [VarLenType::Intn as u8, 8, 8];
                 dst.extend_from_slice(&header);
                 dst.put_i64_le(val);
             }

@@ -90,8 +90,10 @@ impl AsRef<str> for XmlData {
 
 impl Encode<BytesMut> for XmlData {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        // unknown size
         dst.put_u64_le(0xfffffffffffffffe_u64);
 
+        // first blob
         let mut length = 0u32;
         let len_pos = dst.len();
 
@@ -103,16 +105,12 @@ impl Encode<BytesMut> for XmlData {
             dst.put_u16_le(chr);
         }
 
-        // PLP_TERMINATOR
+        // PLP_TERMINATOR, no next blobs
         dst.put_u32_le(0);
 
         let dst: &mut [u8] = dst.borrow_mut();
-        let bytes = (length * 2).to_le_bytes(); // u32, four bytes
-
-        // writing the length
-        for (i, byte) in bytes.iter().enumerate() {
-            dst[len_pos + i] = *byte;
-        }
+        let mut dst = &mut dst[len_pos..];
+        dst.put_u32_le(length * 2);
 
         Ok(())
     }
