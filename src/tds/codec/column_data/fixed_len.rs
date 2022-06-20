@@ -16,8 +16,8 @@ where
         FixedLenType::Int8 => ColumnData::I64(Some(src.read_i64_le().await?)),
         FixedLenType::Float4 => ColumnData::F32(Some(src.read_f32_le().await?)),
         FixedLenType::Float8 => ColumnData::F64(Some(src.read_f64_le().await?)),
-        FixedLenType::Datetime => super::datetimen::decode(src, 8).await?,
-        FixedLenType::Datetime4 => super::datetimen::decode(src, 4).await?,
+        FixedLenType::Datetime => super::datetimen::decode(src, 8, 8).await?,
+        FixedLenType::Datetime4 => super::datetimen::decode(src, 4, 8).await?,
         FixedLenType::Money4 => super::money::decode(src, 4).await?,
         FixedLenType::Money => super::money::decode(src, 8).await?,
     };

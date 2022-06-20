@@ -502,159 +502,298 @@ mod tests {
         .await;
     }
 
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Bitn, 1, None)),
-    //     ColumnData::Bit(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Bit),
-    //     ColumnData::Bit(Some(true)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
-    //     ColumnData::U8(Some(8u8)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
-    //     ColumnData::U8(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Int1),
-    //     ColumnData::U8(Some(8u8)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
-    //     ColumnData::I16(Some(8i16)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
-    //     ColumnData::I16(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Int2),
-    //     ColumnData::I16(Some(8i16)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
-    //     ColumnData::I64(Some(8i64)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
-    //     ColumnData::I64(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Int8),
-    //     ColumnData::I64(Some(8i64)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
-    //     ColumnData::F32(Some(8f32)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
-    //     ColumnData::F32(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Float4),
-    //     ColumnData::F32(Some(8f32)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
-    //     ColumnData::F64(Some(8f64)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
-    //     ColumnData::F64(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Float8),
-    //     ColumnData::F64(Some(8f64)),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
-    //     ColumnData::Guid(Some(Uuid::new_v4())),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
-    //     ColumnData::Guid(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSizedPrecision {
-    //         ty: VarLenType::Numericn,
-    //         size: 17,
-    //         precision: 18,
-    //         scale: 0,
-    //     },
-    //     ColumnData::Numeric(Some(Numeric::new_with_scale(23, 0))),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSizedPrecision {
-    //         ty: VarLenType::Numericn,
-    //         size: 17,
-    //         precision: 18,
-    //         scale: 0,
-    //     },
-    //     ColumnData::Numeric(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::BigChar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(Some("aaa".into())),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::BigChar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::BigVarChar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(Some("aaa".into())),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::BigVarChar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::NVarchar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(Some("hhh".into())),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::NVarchar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::NChar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(Some("hhh".into())),
-    // ),
+    #[tokio::test]
+    async fn none_with_varlen_bit() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Bitn, 1, None)),
+            ColumnData::Bit(None),
+        )
+        .await;
+    }
 
     #[tokio::test]
-    async fn long_string_with_nchar() {
+    async fn bit_with_fixedlen_bit() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Bit),
+            ColumnData::Bit(Some(true)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn u8_with_varlen_int() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
+            ColumnData::U8(Some(8u8)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_u8_with_varlen_int() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
+            ColumnData::U8(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn u8_with_fixedlen_int() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Int1),
+            ColumnData::U8(Some(8u8)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn i16_with_varlen_intn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
+            ColumnData::I16(Some(8i16)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_i16_with_varlen_intn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
+            ColumnData::I16(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_with_varlen_intn() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Int2),
+            ColumnData::I16(Some(8i16)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn i64_with_varlen_intn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
+            ColumnData::I64(Some(8i64)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn i64_none_with_varlen_intn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
+            ColumnData::I64(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn i64_with_fixedlen_int8() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Int8),
+            ColumnData::I64(Some(8i64)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn f32_with_varlen_floatn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+            ColumnData::F32(Some(8f32)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn null_f32_with_varlen_floatn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+            ColumnData::F32(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn f32_with_fixedlen_float4() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Float4),
+            ColumnData::F32(Some(8f32)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn f64_with_varlen_floatn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
+            ColumnData::F64(Some(8f64)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_f64_with_varlen_floatn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
+            ColumnData::F64(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn f64_with_fixedlen_float8() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Float8),
+            ColumnData::F64(Some(8f64)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn guid_with_varlen_guid() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
+            ColumnData::Guid(Some(Uuid::new_v4())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_guid_with_varlen_guid() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
+            ColumnData::Guid(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn numeric_with_varlen_sized_precision() {
+        test_round_trip(
+            TypeInfoInner::VarLenSizedPrecision {
+                ty: VarLenType::Numericn,
+                size: 17,
+                precision: 18,
+                scale: 0,
+            },
+            ColumnData::Numeric(Some(Numeric::new_with_scale(23, 0))),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_numeric_with_varlen_sized_precision() {
+        test_round_trip(
+            TypeInfoInner::VarLenSizedPrecision {
+                ty: VarLenType::Numericn,
+                size: 17,
+                precision: 18,
+                scale: 0,
+            },
+            ColumnData::Numeric(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn string_with_varlen_bigchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::BigChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(Some("aaa".into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_string_with_varlen_bigchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::BigChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn string_with_varlen_bigvarchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::BigVarChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(Some("aaa".into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_string_with_varlen_bigvarchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::BigVarChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn string_with_varlen_nvarchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::NVarchar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(Some("hhh".into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_string_with_varlen_nvarchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::NVarchar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn string_with_varlen_nchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::NChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(Some("hhh".into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn long_string_with_varlen_nchar() {
         test_round_trip(
             TypeInfoInner::VarLenSized(VarLenContext::new(
                 VarLenType::NChar,
@@ -665,121 +804,220 @@ mod tests {
         )
         .await;
     }
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::NChar,
-    //         40,
-    //         Some(Collation::new(13632521, 52)),
-    //     )),
-    //     ColumnData::String(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 40, None)),
-    //     ColumnData::Binary(Some(b"aaa".as_slice().into())),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 40, None)),
-    //     ColumnData::Binary(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 40, None)),
-    //     ColumnData::Binary(Some(b"aaa".as_slice().into())),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 40, None)),
-    //     ColumnData::Binary(None),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 8, None)),
-    //     ColumnData::DateTime(Some(DateTime::new(200, 3000))),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 8, None)),
-    //     ColumnData::SmallDateTime(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Datetime),
-    //     ColumnData::DateTime(Some(DateTime::new(200, 3000))),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 4, None)),
-    //     ColumnData::SmallDateTime(Some(SmallDateTime::new(200, 3000))),
-    // ),
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 4, None)),
-    //     ColumnData::SmallDateTime(None),
-    // ),
-    // (
-    //     TypeInfoInner::FixedLen(FixedLenType::Datetime4),
-    //     ColumnData::SmallDateTime(Some(SmallDateTime::new(200, 3000))),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None)),
-    //     ColumnData::Date(Some(Date::new(200))),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None)),
-    //     ColumnData::Date(None),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
-    //     ColumnData::Time(Some(Time::new(55, 7))),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
-    //     ColumnData::Time(None),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetime2, 7, None)),
-    //     ColumnData::DateTime2(Some(DateTime2::new(Date::new(55), Time::new(222, 7)))),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetime2, 7, None)),
-    //     ColumnData::DateTime2(None),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::DatetimeOffsetn,
-    //         7,
-    //         None,
-    //     )),
-    //     ColumnData::DateTimeOffset(Some(DateTimeOffset::new(
-    //         DateTime2::new(Date::new(55), Time::new(222, 7)),
-    //         -8,
-    //     ))),
-    // ),
-    // #[cfg(feature = "tds73")]
-    // (
-    //     TypeInfoInner::VarLenSized(VarLenContext::new(
-    //         VarLenType::DatetimeOffsetn,
-    //         7,
-    //         None,
-    //     )),
-    //     ColumnData::DateTimeOffset(None),
-    // ),
-    // (
-    //     TypeInfoInner::Xml {
-    //         schema: None,
-    //         size: 0xfffffffffffffffe_usize,
-    //     },
-    //     ColumnData::Xml(Some(Cow::Owned(XmlData::new("<a>ddd</a>")))),
-    // ),
-    // (
-    //     TypeInfoInner::Xml {
-    //         schema: None,
-    //         size: 0xfffffffffffffffe_usize,
-    //     },
-    //     ColumnData::Xml(None),
-    // ),
-    //     ];
-    // }
+
+    #[tokio::test]
+    async fn none_string_with_varlen_nchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::NChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn binary_with_varlen_bigbinary() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 40, None)),
+            ColumnData::Binary(Some(b"aaa".as_slice().into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_binary_with_varlen_bigbinary() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 40, None)),
+            ColumnData::Binary(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn binary_with_varlen_bigvarbin() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 40, None)),
+            ColumnData::Binary(Some(b"aaa".as_slice().into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_binary_with_varlen_bigvarbin() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 40, None)),
+            ColumnData::Binary(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn datetime_with_varlen_datetimen() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 8, None)),
+            ColumnData::DateTime(Some(DateTime::new(200, 3000))),
+        )
+        .await;
+    }
+
+    // this is inconsistent: decode will decode any None datetime to smalldatetime, ignoring size
+    // but it's non-critical, so let it be here
+    #[tokio::test]
+    async fn none_datetime_with_varlen_datetimen() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 8, None)),
+            ColumnData::DateTime(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn datetime_with_fixedlen_datetime() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Datetime),
+            ColumnData::DateTime(Some(DateTime::new(200, 3000))),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn smalldatetime_with_varlen_datetimen() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 4, None)),
+            ColumnData::SmallDateTime(Some(SmallDateTime::new(200, 3000))),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_smalldatetime_with_varlen_datetimen() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetimen, 4, None)),
+            ColumnData::SmallDateTime(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn smalldatetime_with_fixedlen_datetime4() {
+        test_round_trip(
+            TypeInfoInner::FixedLen(FixedLenType::Datetime4),
+            ColumnData::SmallDateTime(Some(SmallDateTime::new(200, 3000))),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn date_with_varlen_daten() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None)),
+            ColumnData::Date(Some(Date::new(200))),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn none_date_with_varlen_daten() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Daten, 3, None)),
+            ColumnData::Date(None),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn time_with_varlen_timen() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
+            ColumnData::Time(Some(Time::new(55, 7))),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn none_time_with_varlen_timen() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Timen, 7, None)),
+            ColumnData::Time(None),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn datetime2_with_varlen_datetime2() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetime2, 7, None)),
+            ColumnData::DateTime2(Some(DateTime2::new(Date::new(55), Time::new(222, 7)))),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn none_datetime2_with_varlen_datetime2() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::Datetime2, 7, None)),
+            ColumnData::DateTime2(None),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn datetimeoffset_with_varlen_datetimeoffsetn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::DatetimeOffsetn, 7, None)),
+            ColumnData::DateTimeOffset(Some(DateTimeOffset::new(
+                DateTime2::new(Date::new(55), Time::new(222, 7)),
+                -8,
+            ))),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn none_datetimeoffset_with_varlen_datetimeoffsetn() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::DatetimeOffsetn, 7, None)),
+            ColumnData::DateTimeOffset(None),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn xml_with_xml() {
+        test_round_trip(
+            TypeInfoInner::Xml {
+                schema: None,
+                size: 0xfffffffffffffffe_usize,
+            },
+            ColumnData::Xml(Some(Cow::Owned(XmlData::new("<a>ddd</a>")))),
+        )
+        .await;
+    }
+
+    #[cfg(feature = "tds73")]
+    #[tokio::test]
+    async fn none_xml_with_xml() {
+        test_round_trip(
+            TypeInfoInner::Xml {
+                schema: None,
+                size: 0xfffffffffffffffe_usize,
+            },
+            ColumnData::Xml(None),
+        )
+        .await;
+    }
 
     #[tokio::test]
     async fn invalid_type_fails() {

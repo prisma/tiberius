@@ -26,8 +26,8 @@ where
             super::money::decode(src, len).await?
         }
         Datetimen => {
-            let len = src.read_u8().await?;
-            super::datetimen::decode(src, len).await?
+            let rlen = src.read_u8().await?;
+            super::datetimen::decode(src, rlen, len as u8).await?
         }
         #[cfg(feature = "tds73")]
         Daten => super::date::decode(src).await?,
