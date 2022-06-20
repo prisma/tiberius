@@ -251,40 +251,52 @@ impl<'a> ColumnData<'a> {
                     || vlc.r#type() == VarLenType::BigVarChar =>
             {
                 if let Some(str) = opt {
-                    let len_pos = dst.len();
-
-                    dst.put_u16_le(0u16);
-
                     let encoder = vlc.collation().as_ref().unwrap().encoding()?;
-
                     let bytes = encoder
                         .encode(str.as_ref(), EncoderTrap::Strict)
                         .map_err(crate::Error::Encoding)?;
-                    dst.extend_from_slice(bytes.as_slice());
-                    let length = (dst.len() - len_pos - 2) as u16;
 
-                    let dst: &mut [u8] = dst.borrow_mut();
-                    let mut dst = &mut dst[len_pos..];
-                    dst.put_u16_le(length);
-                } else {
-                    dst.put_u16_le(0xffff);
-                }
-            }
-            (ColumnData::String(opt), TypeInfoInner::VarLenSized(vlc))
-                if vlc.r#type() == VarLenType::NVarchar || vlc.r#type() == VarLenType::NChar =>
-            {
-                if let Some(str) = opt {
-                    if str.len() > vlc.len() {
+                    if bytes.len() > vlc.len() {
                         Err(crate::Error::BulkInput(
                             format!(
-                                "String length {} exceed column limit {}",
-                                str.len(),
+                                "Encoded string length {} exceed column limit {}",
+                                bytes.len(),
                                 vlc.len()
                             )
                             .into(),
                         ))?;
                     }
 
+                    if vlc.len() < 0xffff {
+                        dst.put_u16_le(bytes.len() as u16);
+                        dst.extend_from_slice(bytes.as_slice());
+                    } else {
+                        // unknown size
+                        dst.put_u64_le(0xfffffffffffffffe);
+
+                        assert!(
+                            str.len() < 0xffffffff,
+                            "if str longer than this, need to implement multiple blobs"
+                        );
+
+                        dst.put_u32_le(bytes.len() as u32);
+                        dst.extend_from_slice(bytes.as_slice());
+
+                        // no next blob
+                        dst.put_u32_le(0u32);
+                    }
+                } else {
+                    if vlc.len() < 0xffff {
+                        dst.put_u16_le(0xffff);
+                    } else {
+                        dst.put_u64_le(0xffffffffffffffff)
+                    }
+                }
+            }
+            (ColumnData::String(opt), TypeInfoInner::VarLenSized(vlc))
+                if vlc.r#type() == VarLenType::NVarchar || vlc.r#type() == VarLenType::NChar =>
+            {
+                if let Some(str) = opt {
                     if vlc.len() < 0xffff {
                         let len_pos = dst.len();
                         dst.put_u16_le(0u16);
@@ -293,11 +305,22 @@ impl<'a> ColumnData<'a> {
                             dst.put_u16_le(chr);
                         }
 
-                        let length = (dst.len() - len_pos - 2) as u16;
+                        let length = dst.len() - len_pos - 2;
+
+                        if length > vlc.len() {
+                            Err(crate::Error::BulkInput(
+                                format!(
+                                    "Encoded string length {} exceed column limit {}",
+                                    length,
+                                    vlc.len()
+                                )
+                                .into(),
+                            ))?;
+                        }
 
                         let dst: &mut [u8] = dst.borrow_mut();
                         let mut dst = &mut dst[len_pos..];
-                        dst.put_u16_le(length);
+                        dst.put_u16_le(length as u16);
                     } else {
                         // unknown size
                         dst.put_u64_le(0xfffffffffffffffe);
@@ -314,14 +337,25 @@ impl<'a> ColumnData<'a> {
                             dst.put_u16_le(chr);
                         }
 
-                        let length = (dst.len() - len_pos - 4) as u32;
+                        let length = dst.len() - len_pos - 4;
+
+                        if length > vlc.len() {
+                            Err(crate::Error::BulkInput(
+                                format!(
+                                    "Encoded string length {} exceed column limit {}",
+                                    length,
+                                    vlc.len()
+                                )
+                                .into(),
+                            ))?;
+                        }
 
                         // no next blob
                         dst.put_u32_le(0u32);
 
                         let dst: &mut [u8] = dst.borrow_mut();
                         let mut dst = &mut dst[len_pos..];
-                        dst.put_u32_le(length);
+                        dst.put_u32_le(length as u32);
                     }
                 } else {
                     if vlc.len() < 0xffff {
@@ -336,10 +370,33 @@ impl<'a> ColumnData<'a> {
                     || vlc.r#type() == VarLenType::BigVarBin =>
             {
                 if let Some(bytes) = opt {
-                    dst.put_u16_le(bytes.len() as u16);
-                    dst.extend(bytes.into_owned());
+                    if bytes.len() > vlc.len() {
+                        Err(crate::Error::BulkInput(
+                            format!(
+                                "Binary length {} exceed column limit {}",
+                                bytes.len(),
+                                vlc.len()
+                            )
+                            .into(),
+                        ))?;
+                    }
+
+                    if vlc.len() < 0xffff {
+                        dst.put_u16_le(bytes.len() as u16);
+                        dst.extend(bytes.into_owned());
+                    } else {
+                        // unknown size
+                        dst.put_u64_le(0xfffffffffffffffe);
+                        dst.put_u32_le(bytes.len() as u32);
+                        dst.extend(bytes.into_owned());
+                        dst.put_u32_le(0);
+                    }
                 } else {
-                    dst.put_u16_le(0xffff);
+                    if vlc.len() < 0xffff {
+                        dst.put_u16_le(0xffff);
+                    } else {
+                        dst.put_u64_le(0xffffffffffffffff)
+                    }
                 }
             }
             (ColumnData::DateTime(opt), TypeInfoInner::VarLenSized(vlc))
@@ -715,6 +772,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn long_string_with_varlen_bigchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::BigChar,
+                0x8ffff,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(Some("aaa".into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_long_string_with_varlen_bigchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::BigChar,
+                0x8ffff,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn none_string_with_varlen_bigchar() {
         test_round_trip(
             TypeInfoInner::VarLenSized(VarLenContext::new(
@@ -806,6 +889,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn none_long_string_with_varlen_nchar() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(
+                VarLenType::NChar,
+                0x8ffff,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn none_string_with_varlen_nchar() {
         test_round_trip(
             TypeInfoInner::VarLenSized(VarLenContext::new(
@@ -828,9 +924,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn long_binary_with_varlen_bigbinary() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 0x8ffff, None)),
+            ColumnData::Binary(Some(b"aaa".as_slice().into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn none_binary_with_varlen_bigbinary() {
         test_round_trip(
             TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 40, None)),
+            ColumnData::Binary(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn none_long_binary_with_varlen_bigbinary() {
+        test_round_trip(
+            TypeInfoInner::VarLenSized(VarLenContext::new(VarLenType::BigBinary, 0x8ffff, None)),
             ColumnData::Binary(None),
         )
         .await;
