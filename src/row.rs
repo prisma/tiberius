@@ -1,6 +1,6 @@
 use crate::{
     error::Error,
-    tds::codec::{ColumnData, FixedLenType, TokenRow, TypeInfo, TypeInfoInner, VarLenType},
+    tds::codec::{ColumnData, FixedLenType, TokenRow, TypeInfo, VarLenType},
     FromSql,
 };
 use std::{fmt::Display, sync::Arc};
@@ -101,8 +101,8 @@ pub enum ColumnType {
 
 impl From<&TypeInfo> for ColumnType {
     fn from(ti: &TypeInfo) -> Self {
-        match &ti.inner {
-            TypeInfoInner::FixedLen(flt) => match flt {
+        match ti {
+            TypeInfo::FixedLen(flt) => match flt {
                 FixedLenType::Int1 => Self::Int1,
                 FixedLenType::Bit => Self::Bit,
                 FixedLenType::Int2 => Self::Int2,
@@ -116,7 +116,7 @@ impl From<&TypeInfo> for ColumnType {
                 FixedLenType::Int8 => Self::Int8,
                 FixedLenType::Null => Self::Null,
             },
-            TypeInfoInner::VarLenSized(cx) => match cx.r#type() {
+            TypeInfo::VarLenSized(cx) => match cx.r#type() {
                 VarLenType::Guid => Self::Guid,
                 VarLenType::Intn => Self::Intn,
                 VarLenType::Bitn => Self::Bitn,
@@ -146,7 +146,7 @@ impl From<&TypeInfo> for ColumnType {
                 VarLenType::NText => Self::NText,
                 VarLenType::SSVariant => Self::SSVariant,
             },
-            TypeInfoInner::VarLenSizedPrecision { ty, .. } => match ty {
+            TypeInfo::VarLenSizedPrecision { ty, .. } => match ty {
                 VarLenType::Guid => Self::Guid,
                 VarLenType::Intn => Self::Intn,
                 VarLenType::Bitn => Self::Bitn,
@@ -176,7 +176,7 @@ impl From<&TypeInfo> for ColumnType {
                 VarLenType::NText => Self::NText,
                 VarLenType::SSVariant => Self::SSVariant,
             },
-            TypeInfoInner::Xml { .. } => Self::Xml,
+            TypeInfo::Xml { .. } => Self::Xml,
         }
     }
 }

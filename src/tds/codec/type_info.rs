@@ -6,12 +6,6 @@ use std::{convert::TryFrom, sync::Arc, usize};
 
 use super::Encode;
 
-/// Describes a type of a column.
-#[derive(Debug, Clone, PartialEq)]
-pub struct TypeInfo {
-    pub(crate) inner: TypeInfoInner,
-}
-
 /// A length of a column in bytes or characters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeLength {
@@ -21,8 +15,9 @@ pub enum TypeLength {
     Max,
 }
 
+/// Describes a type of a column.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum TypeInfoInner {
+pub enum TypeInfo {
     FixedLen(FixedLenType),
     VarLenSized(VarLenContext),
     VarLenSizedPrecision {
@@ -212,12 +207,12 @@ uint_enum! {
 
 impl Encode<BytesMut> for TypeInfo {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
-        match self.inner {
-            TypeInfoInner::FixedLen(ty) => {
+        match self {
+            TypeInfo::FixedLen(ty) => {
                 dst.put_u8(ty as u8);
             }
-            TypeInfoInner::VarLenSized(ctx) => ctx.encode(dst)?,
-            TypeInfoInner::VarLenSizedPrecision {
+            TypeInfo::VarLenSized(ctx) => ctx.encode(dst)?,
+            TypeInfo::VarLenSizedPrecision {
                 ty,
                 size,
                 precision,
@@ -228,7 +223,7 @@ impl Encode<BytesMut> for TypeInfo {
                 dst.put_u8(precision as u8);
                 dst.put_u8(scale as u8);
             }
-            TypeInfoInner::Xml { schema, .. } => {
+            TypeInfo::Xml { schema, .. } => {
                 dst.put_u8(VarLenType::Xml as u8);
 
                 if let Some(xs) = schema {
@@ -262,213 +257,211 @@ impl Encode<BytesMut> for TypeInfo {
 }
 
 impl TypeInfo {
-    /// A bit, either zero or one.
-    pub fn bit() -> Self {
-        Self::fixed(FixedLenType::Bit)
-    }
-
-    /// 8-bit integer, unsigned.
-    pub fn tinyint() -> Self {
-        Self::fixed(FixedLenType::Int1)
-    }
-
-    /// 16-bit integer, signed.
-    pub fn smallint() -> Self {
-        Self::fixed(FixedLenType::Int2)
-    }
-
-    /// 32-bit integer, signed.
-    pub fn int() -> Self {
-        Self::fixed(FixedLenType::Int4)
-    }
-
-    /// 64-bit integer, signed.
-    pub fn bigint() -> Self {
-        Self::fixed(FixedLenType::Int8)
-    }
-
-    /// 32-bit floating point number.
-    pub fn real() -> Self {
-        Self::fixed(FixedLenType::Float4)
-    }
-
-    /// 64-bit floating point number.
-    pub fn float() -> Self {
-        Self::fixed(FixedLenType::Float8)
-    }
-
-    /// 32-bit money type.
-    pub fn smallmoney() -> Self {
-        Self::fixed(FixedLenType::Money4)
-    }
-
-    /// 64-bit money type.
-    pub fn money() -> Self {
-        Self::fixed(FixedLenType::Money)
-    }
-
-    /// A small DateTime value.
-    pub fn smalldatetime() -> Self {
-        Self::fixed(FixedLenType::Datetime4)
-    }
-
-    /// A datetime value.
-    pub fn datetime() -> Self {
-        Self::fixed(FixedLenType::Datetime)
-    }
-
-    /// A datetime2 value.
-    #[cfg(feature = "tds73")]
-    pub fn datetime2() -> Self {
-        Self::varlen(VarLenType::Datetime2, 8)
-    }
-
-    /// A uniqueidentifier value.
-    pub fn guid() -> Self {
-        Self::varlen(VarLenType::Guid, 16)
-    }
-
-    /// A date value.
-    #[cfg(feature = "tds73")]
-    pub fn date() -> Self {
-        Self::varlen(VarLenType::Daten, 3)
-    }
-
-    /// A time value.
-    #[cfg(feature = "tds73")]
-    pub fn time() -> Self {
-        Self::varlen(VarLenType::Timen, 5)
-    }
-
-    /// A time value.
-    #[cfg(feature = "tds73")]
-    pub fn datetimeoffset() -> Self {
-        Self::varlen(VarLenType::DatetimeOffsetn, 10)
-    }
-
-    /// A variable binary value. If length is limited and larger than 8000
-    /// bytes, the `MAX` variant is used instead.
-    pub fn varbinary(length: TypeLength) -> Self {
-        let length = match length {
-            TypeLength::Limited(n) if n <= 8000 => n,
-            _ => u16::MAX,
-        };
-
-        Self::varlen(VarLenType::BigVarBin, length as usize)
-    }
-
-    /// A binary value.
-    ///
-    /// # Panics
-    ///
-    /// - If length is more than 8000 bytes.
-    pub fn binary(length: u16) -> Self {
-        assert!(length <= 8000);
-        Self::varlen(VarLenType::BigBinary, length as usize)
-    }
-
-    /// A variable string value. If length is limited and larger than 8000
-    /// characters, the `MAX` variant is used instead.
-    pub fn varchar(length: TypeLength) -> Self {
-        let length = match length {
-            TypeLength::Limited(n) if n <= 8000 => n,
-            _ => u16::MAX,
-        };
-
-        Self::varlen(VarLenType::BigVarChar, length as usize)
-    }
-
-    /// A variable UTF-16 string value. If length is limited and larger than
-    /// 4000 characters, the `MAX` variant is used instead.
-    pub fn nvarchar(length: TypeLength) -> Self {
-        let length = match length {
-            TypeLength::Limited(n) if n <= 4000 => n,
-            _ => u16::MAX,
-        };
-
-        Self::varlen(VarLenType::BigVarChar, length as usize)
-    }
-
-    /// A constant-size string value.
-    ///
-    /// # Panics
-    ///
-    /// - If length is more than 8000 characters.
-    pub fn char(length: u16) -> Self {
-        assert!(length <= 8000);
-        Self::varlen(VarLenType::BigChar, length as usize)
-    }
-
-    /// A constant-size UTF-16 string value.
-    ///
-    /// # Panics
-    ///
-    /// - If length is more than 4000 characters.
-    pub fn nchar(length: u16) -> Self {
-        assert!(length <= 4000);
-        Self::varlen(VarLenType::NChar, length as usize)
-    }
-
-    /// A (deprecated) heap-allocated text storage.
-    pub fn text() -> Self {
-        Self::varlen(VarLenType::Text, u32::MAX as usize)
-    }
-
-    /// A (deprecated) heap-allocated UTF-16 text storage.
-    pub fn ntext() -> Self {
-        Self::varlen(VarLenType::NText, u32::MAX as usize)
-    }
-
-    /// A (deprecated) heap-allocated binary storage.
-    pub fn image() -> Self {
-        Self::varlen(VarLenType::Image, u32::MAX as usize)
-    }
-
-    /// Numeric data types that have fixed precision and scale. Decimal and
-    /// numeric are synonyms and can be used interchangeably.
-    pub fn decimal(precision: u8, scale: u8) -> Self {
-        Self::varlen_precision(VarLenType::Decimaln, precision, scale)
-    }
-
-    /// Numeric data types that have fixed precision and scale. Decimal and
-    /// numeric are synonyms and can be used interchangeably.
-    pub fn numeric(precision: u8, scale: u8) -> Self {
-        Self::varlen_precision(VarLenType::Numericn, precision, scale)
-    }
-
-    fn varlen_precision(ty: VarLenType, precision: u8, scale: u8) -> Self {
-        let size = if precision <= 9 {
-            5
-        } else if precision <= 19 {
-            9
-        } else if precision <= 28 {
-            13
-        } else {
-            17
-        };
-
-        let inner = TypeInfoInner::VarLenSizedPrecision {
-            ty,
-            size,
-            precision,
-            scale,
-        };
-
-        Self { inner }
-    }
-
-    fn varlen(ty: VarLenType, len: usize) -> Self {
-        let cx = VarLenContext::new(ty, len, None);
-        let inner = TypeInfoInner::VarLenSized(cx);
-
-        Self { inner }
-    }
-
-    fn fixed(ty: FixedLenType) -> Self {
-        let inner = TypeInfoInner::FixedLen(ty);
-        Self { inner }
-    }
-
+    //     /// A bit, either zero or one.
+    //     pub fn bit() -> Self {
+    //         Self::fixed(FixedLenType::Bit)
+    //     }
+    //
+    //     /// 8-bit integer, unsigned.
+    //     pub fn tinyint() -> Self {
+    //         Self::fixed(FixedLenType::Int1)
+    //     }
+    //
+    //     /// 16-bit integer, signed.
+    //     pub fn smallint() -> Self {
+    //         Self::fixed(FixedLenType::Int2)
+    //     }
+    //
+    //     /// 32-bit integer, signed.
+    //     pub fn int() -> Self {
+    //         Self::fixed(FixedLenType::Int4)
+    //     }
+    //
+    //     /// 64-bit integer, signed.
+    //     pub fn bigint() -> Self {
+    //         Self::fixed(FixedLenType::Int8)
+    //     }
+    //
+    //     /// 32-bit floating point number.
+    //     pub fn real() -> Self {
+    //         Self::fixed(FixedLenType::Float4)
+    //     }
+    //
+    //     /// 64-bit floating point number.
+    //     pub fn float() -> Self {
+    //         Self::fixed(FixedLenType::Float8)
+    //     }
+    //
+    //     /// 32-bit money type.
+    //     pub fn smallmoney() -> Self {
+    //         Self::fixed(FixedLenType::Money4)
+    //     }
+    //
+    //     /// 64-bit money type.
+    //     pub fn money() -> Self {
+    //         Self::fixed(FixedLenType::Money)
+    //     }
+    //
+    //     /// A small DateTime value.
+    //     pub fn smalldatetime() -> Self {
+    //         Self::fixed(FixedLenType::Datetime4)
+    //     }
+    //
+    //     /// A datetime value.
+    //     pub fn datetime() -> Self {
+    //         Self::fixed(FixedLenType::Datetime)
+    //     }
+    //
+    //     /// A datetime2 value.
+    //     #[cfg(feature = "tds73")]
+    //     pub fn datetime2() -> Self {
+    //         Self::varlen(VarLenType::Datetime2, 8)
+    //     }
+    //
+    //     /// A uniqueidentifier value.
+    //     pub fn guid() -> Self {
+    //         Self::varlen(VarLenType::Guid, 16)
+    //     }
+    //
+    //     /// A date value.
+    //     #[cfg(feature = "tds73")]
+    //     pub fn date() -> Self {
+    //         Self::varlen(VarLenType::Daten, 3)
+    //     }
+    //
+    //     /// A time value.
+    //     #[cfg(feature = "tds73")]
+    //     pub fn time() -> Self {
+    //         Self::varlen(VarLenType::Timen, 5)
+    //     }
+    //
+    //     /// A time value.
+    //     #[cfg(feature = "tds73")]
+    //     pub fn datetimeoffset() -> Self {
+    //         Self::varlen(VarLenType::DatetimeOffsetn, 10)
+    //     }
+    //
+    //     /// A variable binary value. If length is limited and larger than 8000
+    //     /// bytes, the `MAX` variant is used instead.
+    //     pub fn varbinary(length: TypeLength) -> Self {
+    //         let length = match length {
+    //             TypeLength::Limited(n) if n <= 8000 => n,
+    //             _ => u16::MAX,
+    //         };
+    //
+    //         Self::varlen(VarLenType::BigVarBin, length as usize)
+    //     }
+    //
+    //     /// A binary value.
+    //     ///
+    //     /// # Panics
+    //     ///
+    //     /// - If length is more than 8000 bytes.
+    //     pub fn binary(length: u16) -> Self {
+    //         assert!(length <= 8000);
+    //         Self::varlen(VarLenType::BigBinary, length as usize)
+    //     }
+    //
+    //     /// A variable string value. If length is limited and larger than 8000
+    //     /// characters, the `MAX` variant is used instead.
+    //     pub fn varchar(length: TypeLength) -> Self {
+    //         let length = match length {
+    //             TypeLength::Limited(n) if n <= 8000 => n,
+    //             _ => u16::MAX,
+    //         };
+    //
+    //         Self::varlen(VarLenType::BigVarChar, length as usize)
+    //     }
+    //
+    //     /// A variable UTF-16 string value. If length is limited and larger than
+    //     /// 4000 characters, the `MAX` variant is used instead.
+    //     pub fn nvarchar(length: TypeLength) -> Self {
+    //         let length = match length {
+    //             TypeLength::Limited(n) if n <= 4000 => n,
+    //             _ => u16::MAX,
+    //         };
+    //
+    //         Self::varlen(VarLenType::BigVarChar, length as usize)
+    //     }
+    //
+    //     /// A constant-size string value.
+    //     ///
+    //     /// # Panics
+    //     ///
+    //     /// - If length is more than 8000 characters.
+    //     pub fn char(length: u16) -> Self {
+    //         assert!(length <= 8000);
+    //         Self::varlen(VarLenType::BigChar, length as usize)
+    //     }
+    //
+    //     /// A constant-size UTF-16 string value.
+    //     ///
+    //     /// # Panics
+    //     ///
+    //     /// - If length is more than 4000 characters.
+    //     pub fn nchar(length: u16) -> Self {
+    //         assert!(length <= 4000);
+    //         Self::varlen(VarLenType::NChar, length as usize)
+    //     }
+    //
+    //     /// A (deprecated) heap-allocated text storage.
+    //     pub fn text() -> Self {
+    //         Self::varlen(VarLenType::Text, u32::MAX as usize)
+    //     }
+    //
+    //     /// A (deprecated) heap-allocated UTF-16 text storage.
+    //     pub fn ntext() -> Self {
+    //         Self::varlen(VarLenType::NText, u32::MAX as usize)
+    //     }
+    //
+    //     /// A (deprecated) heap-allocated binary storage.
+    //     pub fn image() -> Self {
+    //         Self::varlen(VarLenType::Image, u32::MAX as usize)
+    //     }
+    //
+    //     /// Numeric data types that have fixed precision and scale. Decimal and
+    //     /// numeric are synonyms and can be used interchangeably.
+    //     pub fn decimal(precision: u8, scale: u8) -> Self {
+    //         Self::varlen_precision(VarLenType::Decimaln, precision, scale)
+    //     }
+    //
+    //     /// Numeric data types that have fixed precision and scale. Decimal and
+    //     /// numeric are synonyms and can be used interchangeably.
+    //     pub fn numeric(precision: u8, scale: u8) -> Self {
+    //         Self::varlen_precision(VarLenType::Numericn, precision, scale)
+    //     }
+    //
+    //     fn varlen_precision(ty: VarLenType, precision: u8, scale: u8) -> Self {
+    //         let size = if precision <= 9 {
+    //             5
+    //         } else if precision <= 19 {
+    //             9
+    //         } else if precision <= 28 {
+    //             13
+    //         } else {
+    //             17
+    //         };
+    //
+    //         TypeInfo::VarLenSizedPrecision {
+    //             ty,
+    //             size,
+    //             precision,
+    //             scale,
+    //         }
+    //     }
+    //
+    //     fn varlen(ty: VarLenType, len: usize) -> Self {
+    //         let cx = VarLenContext::new(ty, len, None);
+    //         TypeInfo::VarLenSized(cx)
+    //
+    //         Self { inner }
+    //     }
+    //
+    //     fn fixed(ty: FixedLenType) -> Self {
+    //         let inner = TypeInfo::FixedLen(ty);
+    //         Self { inner }
+    //     }
+    //
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
         R: SqlReadBytes + Unpin,
@@ -476,8 +469,7 @@ impl TypeInfo {
         let ty = src.read_u8().await?;
 
         if let Ok(ty) = FixedLenType::try_from(ty) {
-            let inner = TypeInfoInner::FixedLen(ty);
-            return Ok(TypeInfo { inner });
+            return Ok(TypeInfo::FixedLen(ty));
         }
 
         match VarLenType::try_from(ty) {
@@ -499,12 +491,10 @@ impl TypeInfo {
                     None
                 };
 
-                let inner = TypeInfoInner::Xml {
+                Ok(TypeInfo::Xml {
                     schema,
                     size: 0xfffffffffffffffe_usize,
-                };
-
-                Ok(TypeInfo { inner })
+                })
             }
             Ok(ty) => {
                 let len = match ty {
@@ -554,20 +544,16 @@ impl TypeInfo {
                         let precision = src.read_u8().await?;
                         let scale = src.read_u8().await?;
 
-                        let inner = TypeInfoInner::VarLenSizedPrecision {
+                        TypeInfo::VarLenSizedPrecision {
                             size: len,
                             ty,
                             precision,
                             scale,
-                        };
-
-                        TypeInfo { inner }
+                        }
                     }
                     _ => {
                         let cx = VarLenContext::new(ty, len, collation);
-                        let inner = TypeInfoInner::VarLenSized(cx);
-
-                        TypeInfo { inner }
+                        TypeInfo::VarLenSized(cx)
                     }
                 };
 
@@ -585,27 +571,26 @@ mod tests {
     #[tokio::test]
     async fn round_trip() {
         let types = vec![
-            TypeInfoInner::Xml {
+            TypeInfo::Xml {
                 schema: Some(
                     XmlSchema::new("fake-db-name", "fake-owner", "fake-collection").into(),
                 ),
                 size: 0xfffffffffffffffe_usize,
             },
-            TypeInfoInner::Xml {
+            TypeInfo::Xml {
                 schema: None,
                 size: 0xfffffffffffffffe_usize,
             },
-            TypeInfoInner::FixedLen(FixedLenType::Int4),
-            TypeInfoInner::VarLenSized(VarLenContext::new(
+            TypeInfo::FixedLen(FixedLenType::Int4),
+            TypeInfo::VarLenSized(VarLenContext::new(
                 VarLenType::NChar,
                 40,
                 Some(Collation::new(13632521, 52)),
             )),
         ];
 
-        for inner in types {
+        for ti in types {
             let mut buf = BytesMut::new();
-            let ti = TypeInfo { inner };
 
             ti.clone()
                 .encode(&mut buf)

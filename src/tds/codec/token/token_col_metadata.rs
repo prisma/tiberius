@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     error::Error,
-    tds::codec::{Encode, FixedLenType, TokenType, TypeInfo, TypeInfoInner, VarLenType},
+    tds::codec::{Encode, FixedLenType, TokenType, TypeInfo, VarLenType},
     Column, ColumnData, ColumnType, SqlReadBytes,
 };
 use asynchronous_codec::BytesMut;
@@ -27,8 +27,8 @@ impl<'a> Display for MetaDataColumn<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ", self.col_name)?;
 
-        match &self.base.ty.inner {
-            TypeInfoInner::FixedLen(fixed) => match fixed {
+        match &self.base.ty {
+            TypeInfo::FixedLen(fixed) => match fixed {
                 FixedLenType::Int1 => write!(f, "tinyint")?,
                 FixedLenType::Bit => write!(f, "bit")?,
                 FixedLenType::Int2 => write!(f, "smallint")?,
@@ -42,7 +42,7 @@ impl<'a> Display for MetaDataColumn<'a> {
                 FixedLenType::Int8 => write!(f, "bigint")?,
                 FixedLenType::Null => unreachable!(),
             },
-            TypeInfoInner::VarLenSized(ctx) => match ctx.r#type() {
+            TypeInfo::VarLenSized(ctx) => match ctx.r#type() {
                 VarLenType::Bitn => write!(f, "bit")?,
                 VarLenType::Guid => write!(f, "uniqueidentifier")?,
                 #[cfg(feature = "tds73")]
@@ -95,7 +95,7 @@ impl<'a> Display for MetaDataColumn<'a> {
                 },
                 _ => unreachable!(),
             },
-            TypeInfoInner::VarLenSizedPrecision {
+            TypeInfo::VarLenSizedPrecision {
                 ty,
                 size: _,
                 precision,
@@ -105,7 +105,7 @@ impl<'a> Display for MetaDataColumn<'a> {
                 VarLenType::Numericn => write!(f, "numeric({},{})", precision, scale)?,
                 _ => unreachable!(),
             },
-            TypeInfoInner::Xml { .. } => write!(f, "xml")?,
+            TypeInfo::Xml { .. } => write!(f, "xml")?,
         }
 
         Ok(())
@@ -120,8 +120,8 @@ pub struct BaseMetaDataColumn {
 
 impl BaseMetaDataColumn {
     pub(crate) fn null_value(&self) -> ColumnData<'static> {
-        match &self.ty.inner {
-            TypeInfoInner::FixedLen(ty) => match ty {
+        match &self.ty {
+            TypeInfo::FixedLen(ty) => match ty {
                 FixedLenType::Null => ColumnData::I32(None),
                 FixedLenType::Int1 => ColumnData::U8(None),
                 FixedLenType::Bit => ColumnData::Bit(None),
@@ -135,7 +135,7 @@ impl BaseMetaDataColumn {
                 FixedLenType::Money4 => ColumnData::F32(None),
                 FixedLenType::Int8 => ColumnData::I64(None),
             },
-            TypeInfoInner::VarLenSized(cx) => match cx.r#type() {
+            TypeInfo::VarLenSized(cx) => match cx.r#type() {
                 VarLenType::Guid => ColumnData::Guid(None),
                 VarLenType::Intn => ColumnData::I32(None),
                 VarLenType::Bitn => ColumnData::Bit(None),
@@ -165,7 +165,7 @@ impl BaseMetaDataColumn {
                 VarLenType::NText => ColumnData::String(None),
                 VarLenType::SSVariant => todo!(),
             },
-            TypeInfoInner::VarLenSizedPrecision { ty, .. } => match ty {
+            TypeInfo::VarLenSizedPrecision { ty, .. } => match ty {
                 VarLenType::Guid => ColumnData::Guid(None),
                 VarLenType::Intn => ColumnData::I32(None),
                 VarLenType::Bitn => ColumnData::Bit(None),
@@ -195,7 +195,7 @@ impl BaseMetaDataColumn {
                 VarLenType::NText => ColumnData::String(None),
                 VarLenType::SSVariant => todo!(),
             },
-            TypeInfoInner::Xml { .. } => ColumnData::Xml(None),
+            TypeInfo::Xml { .. } => ColumnData::Xml(None),
         }
     }
 }
@@ -325,7 +325,7 @@ impl BaseMetaDataColumn {
 
         let ty = TypeInfo::decode(src).await?;
 
-        if let TypeInfoInner::VarLenSized(cx) = ty.inner {
+        if let TypeInfo::VarLenSized(cx) = ty {
             if let Text | NText | Image = cx.r#type() {
                 let num_of_parts = src.read_u8().await?;
 
