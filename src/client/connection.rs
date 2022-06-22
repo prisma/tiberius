@@ -179,7 +179,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             self.write_to_wire(header, split_payload).await?;
         }
 
-        // self.transport.flush().await?;
         self.flush_sink().await?;
 
         Ok(())
@@ -206,7 +205,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Sends all pending packages to the wire.
     pub async fn flush_sink(&mut self) -> crate::Result<()> {
-        // SinkExt::<Packet>::flush(&mut self.transport).await
         self.transport.flush().await
     }
 

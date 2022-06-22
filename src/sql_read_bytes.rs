@@ -334,6 +334,7 @@ pub(crate) mod test_utils {
     use std::pin::Pin;
     use std::task::Poll;
 
+    // a test util to run decode logic on BytesMut, for testing loop back
     pub(crate) trait IntoSqlReadBytes {
         type T: SqlReadBytes;
         fn into_sql_read_bytes(self) -> Self::T;

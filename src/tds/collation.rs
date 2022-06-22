@@ -14,9 +14,9 @@ use crate::error::Error;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Collation {
     /// LCID ColFlags Version
-    pub(crate) info: u32,
+    info: u32,
     /// Sortid
-    pub(crate) sort_id: u8,
+    sort_id: u8,
 }
 
 impl Collation {
@@ -31,6 +31,10 @@ impl Collation {
 
     pub fn sort_id(&self) -> u8 {
         self.sort_id
+    }
+
+    pub fn info(&self) -> u32 {
+        self.info
     }
 
     /// return an encoding for a given collation

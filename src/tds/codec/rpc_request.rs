@@ -136,44 +136,44 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
 
         match self.value {
             ColumnData::Bit(Some(val)) => {
-                let header = [&[VarLenType::Bitn as u8, 1, 1][..]].concat();
+                let header = [VarLenType::Bitn as u8, 1, 1];
                 dst.extend_from_slice(&header);
                 dst.put_u8(val as u8);
             }
             ColumnData::U8(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 1, 1][..]].concat();
+                let header = [VarLenType::Intn as u8, 1, 1];
                 dst.extend_from_slice(&header);
                 dst.put_u8(val);
             }
             ColumnData::I16(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 2, 2][..]].concat();
+                let header = [VarLenType::Intn as u8, 2, 2];
                 dst.extend_from_slice(&header);
 
                 dst.put_i16_le(val);
             }
             ColumnData::I32(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 4, 4][..]].concat();
+                let header = [VarLenType::Intn as u8, 4, 4];
                 dst.extend_from_slice(&header);
                 dst.put_i32_le(val);
             }
             ColumnData::I64(Some(val)) => {
-                let header = [&[VarLenType::Intn as u8, 8, 8][..]].concat();
+                let header = [VarLenType::Intn as u8, 8, 8];
                 // let header = [VarLenType::Intn as u8, 8, 8];
                 dst.extend_from_slice(&header);
                 dst.put_i64_le(val);
             }
             ColumnData::F32(Some(val)) => {
-                let header = [&[VarLenType::Floatn as u8, 4, 4][..]].concat();
+                let header = [VarLenType::Floatn as u8, 4, 4];
                 dst.extend_from_slice(&header);
                 dst.put_f32_le(val);
             }
             ColumnData::F64(Some(val)) => {
-                let header = [&[VarLenType::Floatn as u8, 8, 8][..]].concat();
+                let header = [VarLenType::Floatn as u8, 8, 8];
                 dst.extend_from_slice(&header);
                 dst.put_f64_le(val);
             }
             ColumnData::Guid(Some(uuid)) => {
-                let header = [&[VarLenType::Guid as u8, 16, 16][..]].concat();
+                let header = [VarLenType::Guid as u8, 16, 16];
                 dst.extend_from_slice(&header);
 
                 let mut data = *uuid.as_bytes();
@@ -205,8 +205,8 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
             ColumnData::String(Some(ref s)) => {
                 // length: 0xffff and raw collation
                 dst.put_u8(VarLenType::NVarchar as u8);
-                dst.extend_from_slice(&[0xff_u8; 2][..]);
-                dst.extend_from_slice(&[0u8; 5][..]);
+                dst.extend_from_slice(&[0xff_u8; 2]);
+                dst.extend_from_slice(&[0u8; 5]);
 
                 // we cannot cheaply predetermine the length of the UCS2 string beforehand
                 // (2 * bytes(UTF8) is not always right) - so just let the SQL server handle it
@@ -278,13 +278,13 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
             }
             #[cfg(feature = "tds73")]
             ColumnData::DateTimeOffset(Some(dto)) => {
-                let headers = &[
+                let headers = [
                     VarLenType::DatetimeOffsetn as u8,
                     dto.datetime2().time().scale(),
                     dto.datetime2().time().len()? + 5,
                 ];
 
-                dst.extend_from_slice(headers);
+                dst.extend_from_slice(&headers);
                 dto.encode(&mut *dst)?;
             }
             ColumnData::Xml(Some(xml)) => {

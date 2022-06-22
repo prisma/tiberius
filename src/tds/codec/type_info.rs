@@ -103,8 +103,8 @@ impl Encode<BytesMut> for VarLenContext {
         }
 
         if let Some(collation) = self.collation() {
-            dst.put_u32_le(collation.info);
-            dst.put_u8(collation.sort_id);
+            dst.put_u32_le(collation.info());
+            dst.put_u8(collation.sort_id());
         }
 
         Ok(())
