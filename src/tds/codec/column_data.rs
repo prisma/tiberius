@@ -1133,11 +1133,11 @@ mod tests {
     async fn invalid_type_fails() {
         let data = vec![
             (
-                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Daten, 4, None)),
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
                 ColumnData::I32(Some(42)),
             ),
             (
-                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Daten, 4, None)),
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
                 ColumnData::I32(None),
             ),
             (
