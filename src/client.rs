@@ -248,7 +248,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     }
 
     /// Execute a `BULK INSERT` statement, efficiantly storing a large number of
-    /// rows to a specified table.
+    /// rows to a specified table. Note: make sure the input row follows the same
+    /// scema as the table, otherwise lib will complain with send()
     ///
     /// # Example
     ///
