@@ -37,6 +37,8 @@ fn get_port_from_sql_browser_reply(
     len: usize,
     instance_name: &str,
 ) -> crate::Result<u16> {
+    const DELIMITER: &'static [u8] = b"tcp;";
+
     buf.truncate(len);
 
     let err = crate::Error::Conversion(
@@ -47,13 +49,15 @@ fn get_port_from_sql_browser_reply(
         return Err(err);
     }
 
-    let response = std::str::from_utf8(&buf[3..len])?;
+    let rsp = &buf[3..len];
 
-    let port: u16 = response
-        .find("tcp;")
-        .and_then(|pos| response[pos..].split(';').nth(1))
+    let port: u16 = rsp
+        .windows(DELIMITER.len())
+        .rev()
+        .position(|window| window == DELIMITER)
+        .and_then(|pos| rsp[(pos + DELIMITER.len())..].split(|item|*item==b';').next())
         .ok_or(err)
-        .and_then(|val| Ok(val.parse()?))?;
+        .and_then(|val| Ok(std::str::from_utf8(val)?.parse()?))?;
 
     Ok(port)
 }
