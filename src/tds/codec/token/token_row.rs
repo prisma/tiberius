@@ -1,9 +1,9 @@
+mod bytes_mut_with_data_columns;
 mod into_row;
-use crate::tds::codec::bytes_mut_with_type_info::BytesMutWithTypeInfo;
 use crate::tds::codec::encode::Encode;
-use crate::{tds::codec::ColumnData, MetaDataColumn, SqlReadBytes, TokenType};
-use asynchronous_codec::BytesMut;
+use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, SqlReadBytes, TokenType};
 use bytes::BufMut;
+pub(crate) use bytes_mut_with_data_columns::BytesMutWithDataColumns;
 use futures::io::AsyncReadExt;
 pub use into_row::IntoRow;
 
@@ -22,26 +22,22 @@ impl<'a> IntoIterator for TokenRow<'a> {
     }
 }
 
-impl<'a> TokenRow<'a> {
-    pub(crate) fn encode(
-        self,
-        dst: &mut BytesMut,
-        meta: &'a Vec<MetaDataColumn<'a>>,
-    ) -> crate::Result<()> {
+impl<'a> Encode<BytesMutWithDataColumns<'a>> for TokenRow<'a> {
+    fn encode(self, dst: &mut BytesMutWithDataColumns<'a>) -> crate::Result<()> {
         dst.put_u8(TokenType::Row as u8);
 
-        if self.data.len() != meta.len() {
+        if self.data.len() != dst.data_columns().len() {
             Err(crate::Error::BulkInput(
                 format!(
                     "Expecting {} columns but {} were given",
-                    meta.len(),
+                    dst.data_columns().len(),
                     self.data.len()
                 )
                 .into(),
             ))?;
         }
 
-        for (value, column) in self.data.into_iter().zip(meta) {
+        for (value, column) in self.data.into_iter().zip(dst.data_columns()) {
             let mut dst_ti = BytesMutWithTypeInfo::new(dst).with_type_info(&column.base.ty);
             value.encode(&mut dst_ti)?
         }

@@ -1,6 +1,5 @@
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
-use crate::tds::codec::bytes_mut_with_type_info::BytesMutWithTypeInfo;
-use crate::{tds::codec::ColumnData, Result};
+use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, Result};
 use bytes::{BufMut, BytesMut};
 use enumflags2::{bitflags, BitFlags};
 use std::borrow::BorrowMut;

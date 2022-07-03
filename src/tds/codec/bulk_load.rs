@@ -2,7 +2,9 @@ use asynchronous_codec::BytesMut;
 use futures::{AsyncRead, AsyncWrite};
 use tracing::{event, Level};
 
-use crate::{client::Connection, sql_read_bytes::SqlReadBytes, ExecuteResult};
+use crate::{
+    client::Connection, sql_read_bytes::SqlReadBytes, BytesMutWithDataColumns, ExecuteResult,
+};
 
 use super::{
     Encode, MetaDataColumn, PacketHeader, PacketStatus, TokenColMetaData, TokenDone, TokenRow,
@@ -58,8 +60,9 @@ where
     /// [`finalize`]: #method.finalize
     pub async fn send(&mut self, row: TokenRow<'a>) -> crate::Result<()> {
         let packet_size = (self.connection.context().packet_size() as usize) - HEADER_BYTES;
+        let mut buf_with_columns = BytesMutWithDataColumns::new(&mut self.buf, &self.columns);
 
-        row.encode(&mut self.buf, &self.columns)?;
+        row.encode(&mut buf_with_columns)?;
 
         while self.buf.len() >= packet_size {
             let header = PacketHeader::bulk_load(self.packet_id);

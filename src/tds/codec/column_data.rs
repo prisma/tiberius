@@ -1,5 +1,6 @@
 mod binary;
 mod bit;
+mod bytes_mut_with_type_info;
 #[cfg(feature = "tds73")]
 mod date;
 #[cfg(feature = "tds73")]
@@ -22,7 +23,6 @@ mod var_len;
 mod xml;
 
 use super::{Encode, FixedLenType, TypeInfo, VarLenType};
-use crate::tds::codec::bytes_mut_with_type_info::BytesMutWithTypeInfo;
 #[cfg(feature = "tds73")]
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
@@ -30,6 +30,7 @@ use crate::{
     SqlReadBytes,
 };
 use bytes::BufMut;
+pub(crate) use bytes_mut_with_type_info::BytesMutWithTypeInfo;
 use encoding::EncoderTrap;
 use std::borrow::{BorrowMut, Cow};
 use uuid::Uuid;
