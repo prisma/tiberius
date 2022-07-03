@@ -190,7 +190,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     ///
     /// Please be sure the packet size doesn't exceed the largest allowed size
     /// dictaded by the server.
-    pub async fn write_to_wire(
+    pub(crate) async fn write_to_wire(
         &mut self,
         header: PacketHeader,
         data: BytesMut,
@@ -204,7 +204,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     /// Sends all pending packages to the wire.
-    pub async fn flush_sink(&mut self) -> crate::Result<()> {
+    pub(crate) async fn flush_sink(&mut self) -> crate::Result<()> {
         self.transport.flush().await
     }
 

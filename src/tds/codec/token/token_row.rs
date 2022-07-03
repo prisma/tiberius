@@ -1,4 +1,6 @@
 mod into_row;
+use crate::tds::codec::bytes_mut_with_type_info::BytesMutWithTypeInfo;
+use crate::tds::codec::encode::Encode;
 use crate::{tds::codec::ColumnData, MetaDataColumn, SqlReadBytes, TokenType};
 use asynchronous_codec::BytesMut;
 use bytes::BufMut;
@@ -40,7 +42,8 @@ impl<'a> TokenRow<'a> {
         }
 
         for (value, column) in self.data.into_iter().zip(meta) {
-            value.encode(dst, &column.base.ty)?
+            let mut dst_ti = BytesMutWithTypeInfo::new(dst).with_type_info(&column.base.ty);
+            value.encode(&mut dst_ti)?
         }
 
         Ok(())

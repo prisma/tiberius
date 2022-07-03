@@ -1,5 +1,6 @@
 mod batch_request;
 mod bulk_load;
+mod bytes_mut_with_type_info;
 mod column_data;
 mod decode;
 mod encode;

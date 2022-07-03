@@ -22,13 +22,14 @@ mod var_len;
 mod xml;
 
 use super::{Encode, FixedLenType, TypeInfo, VarLenType};
+use crate::tds::codec::bytes_mut_with_type_info::BytesMutWithTypeInfo;
 #[cfg(feature = "tds73")]
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
     tds::{time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
     SqlReadBytes,
 };
-use bytes::{BufMut, BytesMut};
+use bytes::BufMut;
 use encoding::EncoderTrap;
 use std::borrow::{BorrowMut, Cow};
 use uuid::Uuid;
@@ -139,10 +140,12 @@ impl<'a> ColumnData<'a> {
 
         Ok(res)
     }
+}
 
-    pub(crate) fn encode(self, dst: &mut BytesMut, ctx: &TypeInfo) -> crate::Result<()> {
-        match (self, ctx) {
-            (ColumnData::Bit(opt), TypeInfo::VarLenSized(vlc))
+impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
+    fn encode(self, dst: &mut BytesMutWithTypeInfo<'a>) -> crate::Result<()> {
+        match (self, dst.type_info()) {
+            (ColumnData::Bit(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Bitn =>
             {
                 if let Some(val) = opt {
@@ -152,10 +155,10 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::Bit(Some(val)), TypeInfo::FixedLen(FixedLenType::Bit)) => {
+            (ColumnData::Bit(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Bit))) => {
                 dst.put_u8(val as u8);
             }
-            (ColumnData::U8(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::U8(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Intn =>
             {
                 if let Some(val) = opt {
@@ -165,13 +168,13 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::U8(Some(val)), TypeInfo::FixedLen(FixedLenType::Int1)) => {
+            (ColumnData::U8(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int1))) => {
                 dst.put_u8(val);
             }
-            (ColumnData::I16(Some(val)), TypeInfo::FixedLen(FixedLenType::Int2)) => {
+            (ColumnData::I16(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int2))) => {
                 dst.put_i16_le(val);
             }
-            (ColumnData::I16(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::I16(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Intn =>
             {
                 if let Some(val) = opt {
@@ -181,10 +184,10 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::I32(Some(val)), TypeInfo::FixedLen(FixedLenType::Int4)) => {
+            (ColumnData::I32(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int4))) => {
                 dst.put_i32_le(val);
             }
-            (ColumnData::I32(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::I32(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Intn =>
             {
                 if let Some(val) = opt {
@@ -194,10 +197,10 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::I64(Some(val)), TypeInfo::FixedLen(FixedLenType::Int8)) => {
+            (ColumnData::I64(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int8))) => {
                 dst.put_i64_le(val);
             }
-            (ColumnData::I64(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::I64(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Intn =>
             {
                 if let Some(val) = opt {
@@ -207,10 +210,10 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::F32(Some(val)), TypeInfo::FixedLen(FixedLenType::Float4)) => {
+            (ColumnData::F32(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Float4))) => {
                 dst.put_f32_le(val);
             }
-            (ColumnData::F32(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::F32(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Floatn =>
             {
                 if let Some(val) = opt {
@@ -220,10 +223,10 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::F64(Some(val)), TypeInfo::FixedLen(FixedLenType::Float8)) => {
+            (ColumnData::F64(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Float8))) => {
                 dst.put_f64_le(val);
             }
-            (ColumnData::F64(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::F64(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Floatn =>
             {
                 if let Some(val) = opt {
@@ -233,7 +236,7 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::Guid(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::Guid(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Guid =>
             {
                 if let Some(uuid) = opt {
@@ -246,7 +249,7 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::String(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::String(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::BigChar
                     || vlc.r#type() == VarLenType::BigVarChar =>
             {
@@ -293,7 +296,7 @@ impl<'a> ColumnData<'a> {
                     }
                 }
             }
-            (ColumnData::String(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::String(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::NVarchar || vlc.r#type() == VarLenType::NChar =>
             {
                 if let Some(str) = opt {
@@ -365,7 +368,7 @@ impl<'a> ColumnData<'a> {
                     }
                 }
             }
-            (ColumnData::Binary(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::Binary(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::BigBinary
                     || vlc.r#type() == VarLenType::BigVarBin =>
             {
@@ -399,7 +402,7 @@ impl<'a> ColumnData<'a> {
                     }
                 }
             }
-            (ColumnData::DateTime(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::DateTime(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Datetimen =>
             {
                 if let Some(dt) = opt {
@@ -409,10 +412,10 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::DateTime(Some(dt)), TypeInfo::FixedLen(FixedLenType::Datetime)) => {
+            (ColumnData::DateTime(Some(dt)), Some(TypeInfo::FixedLen(FixedLenType::Datetime))) => {
                 dt.encode(dst)?;
             }
-            (ColumnData::SmallDateTime(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::SmallDateTime(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Datetimen =>
             {
                 if let Some(dt) = opt {
@@ -422,11 +425,14 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::SmallDateTime(Some(dt)), TypeInfo::FixedLen(FixedLenType::Datetime4)) => {
+            (
+                ColumnData::SmallDateTime(Some(dt)),
+                Some(TypeInfo::FixedLen(FixedLenType::Datetime4)),
+            ) => {
                 dt.encode(dst)?;
             }
             #[cfg(feature = "tds73")]
-            (ColumnData::Date(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::Date(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Daten =>
             {
                 if let Some(dt) = opt {
@@ -437,7 +443,7 @@ impl<'a> ColumnData<'a> {
                 }
             }
             #[cfg(feature = "tds73")]
-            (ColumnData::Time(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::Time(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Timen =>
             {
                 if let Some(time) = opt {
@@ -448,7 +454,7 @@ impl<'a> ColumnData<'a> {
                 }
             }
             #[cfg(feature = "tds73")]
-            (ColumnData::DateTime2(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::DateTime2(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Datetime2 =>
             {
                 if let Some(dt2) = opt {
@@ -459,7 +465,7 @@ impl<'a> ColumnData<'a> {
                 }
             }
             #[cfg(feature = "tds73")]
-            (ColumnData::DateTimeOffset(opt), TypeInfo::VarLenSized(vlc))
+            (ColumnData::DateTimeOffset(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::DatetimeOffsetn =>
             {
                 if let Some(dto) = opt {
@@ -469,14 +475,14 @@ impl<'a> ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::Xml(opt), TypeInfo::Xml { .. }) => {
+            (ColumnData::Xml(opt), Some(TypeInfo::Xml { .. })) => {
                 if let Some(xml) = opt {
                     xml.into_owned().encode(dst)?;
                 } else {
                     dst.put_u64_le(0xffffffffffffffff_u64);
                 }
             }
-            (ColumnData::Numeric(opt), TypeInfo::VarLenSizedPrecision { ty, scale, .. })
+            (ColumnData::Numeric(opt), Some(TypeInfo::VarLenSizedPrecision { ty, scale, .. }))
                 if ty == &VarLenType::Numericn || ty == &VarLenType::Decimaln =>
             {
                 if let Some(num) = opt {
@@ -507,9 +513,10 @@ mod tests {
 
     async fn test_round_trip<'a>(ti: TypeInfo, d: ColumnData<'a>) {
         let mut buf = BytesMut::new();
+        let mut buf_with_ti = BytesMutWithTypeInfo::new(&mut buf).with_type_info(&ti);
 
         d.clone()
-            .encode(&mut buf, &ti)
+            .encode(&mut buf_with_ti)
             .expect("encode must succeed");
 
         let nd = ColumnData::decode(&mut buf.into_sql_read_bytes(), &ti)
@@ -1148,8 +1155,9 @@ mod tests {
 
         for (ti, d) in data {
             let mut buf = BytesMut::new();
+            let mut buf_ti = BytesMutWithTypeInfo::new(&mut buf).with_type_info(&ti);
 
-            let err = d.encode(&mut buf, &ti).expect_err("encode should fail");
+            let err = d.encode(&mut buf_ti).expect_err("encode should fail");
 
             if let Error::BulkInput(_) = err {
             } else {
