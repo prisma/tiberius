@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.9.4
+
+- Fix SQL Browser response parsing error (#229)
+- Bulk uploads (#227)
+
 ## Version 0.9.3
 
 - Enable SSL if using vendored-openssl feature (#225)
