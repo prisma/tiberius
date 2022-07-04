@@ -172,3 +172,27 @@ impl RowBitmap {
         Ok(Self { data })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BaseMetaDataColumn, ColumnFlag, FixedLenType, MetaDataColumn, TypeInfo};
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn wrong_number_of_columns_will_fail() {
+        let row = (true, 5).into_row();
+        let columns = vec![MetaDataColumn {
+            base: BaseMetaDataColumn {
+                flags: ColumnFlag::Nullable.into(),
+                ty: TypeInfo::FixedLen(FixedLenType::Bit),
+            },
+            col_name: Default::default(),
+        }];
+        let mut buf = BytesMut::new();
+        let mut buf_with_columns = BytesMutWithDataColumns::new(&mut buf, &columns);
+
+        row.encode(&mut buf_with_columns)
+            .expect_err("wrong number of columns");
+    }
+}
