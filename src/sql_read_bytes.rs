@@ -323,3 +323,68 @@ bytes_reader!(ReadF64, f64, get_f64);
 
 bytes_reader!(ReadF32Le, f32, get_f32_le);
 bytes_reader!(ReadF64Le, f64, get_f64_le);
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use crate::tds::Context;
+    use crate::SqlReadBytes;
+    use bytes::BytesMut;
+    use futures::AsyncRead;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::Poll;
+
+    // a test util to run decode logic on BytesMut, for testing loop back
+    pub(crate) trait IntoSqlReadBytes {
+        type T: SqlReadBytes;
+        fn into_sql_read_bytes(self) -> Self::T;
+    }
+
+    impl IntoSqlReadBytes for BytesMut {
+        type T = BytesMutReader;
+
+        fn into_sql_read_bytes(self) -> Self::T {
+            BytesMutReader { buf: self }
+        }
+    }
+
+    pub(crate) struct BytesMutReader {
+        buf: BytesMut,
+    }
+
+    impl AsyncRead for BytesMutReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let this = self.get_mut();
+            let size = buf.len();
+
+            // Got EOF before having all the data.
+            if this.buf.len() < size {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "No more packets in the wire",
+                )));
+            }
+
+            buf.copy_from_slice(this.buf.split_to(size).as_ref());
+            Poll::Ready(Ok(size))
+        }
+    }
+
+    impl SqlReadBytes for BytesMutReader {
+        fn debug_buffer(&self) {
+            todo!()
+        }
+
+        fn context(&self) -> &Context {
+            todo!()
+        }
+
+        fn context_mut(&mut self) -> &mut Context {
+            todo!()
+        }
+    }
+}

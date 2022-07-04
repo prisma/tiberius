@@ -8,7 +8,7 @@ pub(crate) struct Context {
     packet_size: u32,
     packet_id: u8,
     transaction_desc: [u8; 8],
-    last_meta: Option<Arc<TokenColMetaData>>,
+    last_meta: Option<Arc<TokenColMetaData<'static>>>,
     spn: Option<String>,
 }
 
@@ -30,11 +30,11 @@ impl Context {
         id
     }
 
-    pub fn set_last_meta(&mut self, meta: Arc<TokenColMetaData>) {
+    pub fn set_last_meta(&mut self, meta: Arc<TokenColMetaData<'static>>) {
         self.last_meta.replace(meta);
     }
 
-    pub fn last_meta(&self) -> Option<Arc<TokenColMetaData>> {
+    pub fn last_meta(&self) -> Option<Arc<TokenColMetaData<'static>>> {
         self.last_meta.as_ref().map(Arc::clone)
     }
 

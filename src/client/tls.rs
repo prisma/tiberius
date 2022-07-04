@@ -182,10 +182,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
             // We only get pre-login packets in the handshake process.
-            assert_eq!(header.ty, PacketType::PreLogin);
+            assert_eq!(header.r#type(), PacketType::PreLogin);
 
             // And we know from this point on how much data we should expect
-            inner.read_remaining = header.length as usize - HEADER_BYTES;
+            inner.read_remaining = header.length() as usize - HEADER_BYTES;
 
             event!(
                 Level::TRACE,
@@ -238,8 +238,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsPreloginWrapper
             if !inner.header_written {
                 let mut header = PacketHeader::new(inner.wr_buf.len(), 0);
 
-                header.ty = PacketType::PreLogin;
-                header.status = PacketStatus::EndOfMessage;
+                header.set_type(PacketType::PreLogin);
+                header.set_status(PacketStatus::EndOfMessage);
 
                 header
                     .encode(&mut &mut inner.wr_buf[0..HEADER_BYTES])

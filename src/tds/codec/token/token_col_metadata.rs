@@ -1,22 +1,118 @@
+use std::{
+    borrow::{BorrowMut, Cow},
+    fmt::Display,
+};
+
 use crate::{
     error::Error,
-    tds::codec::{FixedLenType, TypeInfo, VarLenType},
+    tds::codec::{Encode, FixedLenType, TokenType, TypeInfo, VarLenType},
     Column, ColumnData, ColumnType, SqlReadBytes,
 };
+use asynchronous_codec::BytesMut;
+use bytes::BufMut;
 use enumflags2::{bitflags, BitFlags};
 
-#[derive(Debug)]
-pub struct TokenColMetaData {
-    pub columns: Vec<MetaDataColumn>,
+#[derive(Debug, Clone)]
+pub struct TokenColMetaData<'a> {
+    pub columns: Vec<MetaDataColumn<'a>>,
 }
 
-#[derive(Debug)]
-pub struct MetaDataColumn {
+#[derive(Debug, Clone)]
+pub struct MetaDataColumn<'a> {
     pub base: BaseMetaDataColumn,
-    pub col_name: String,
+    pub col_name: Cow<'a, str>,
 }
 
-#[derive(Debug)]
+impl<'a> Display for MetaDataColumn<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ", self.col_name)?;
+
+        match &self.base.ty {
+            TypeInfo::FixedLen(fixed) => match fixed {
+                FixedLenType::Int1 => write!(f, "tinyint")?,
+                FixedLenType::Bit => write!(f, "bit")?,
+                FixedLenType::Int2 => write!(f, "smallint")?,
+                FixedLenType::Int4 => write!(f, "int")?,
+                FixedLenType::Datetime4 => write!(f, "smalldatetime")?,
+                FixedLenType::Float4 => write!(f, "real")?,
+                FixedLenType::Money => write!(f, "money")?,
+                FixedLenType::Datetime => write!(f, "datetime")?,
+                FixedLenType::Float8 => write!(f, "float")?,
+                FixedLenType::Money4 => write!(f, "smallmoney")?,
+                FixedLenType::Int8 => write!(f, "bigint")?,
+                FixedLenType::Null => unreachable!(),
+            },
+            TypeInfo::VarLenSized(ctx) => match ctx.r#type() {
+                VarLenType::Bitn => write!(f, "bit")?,
+                VarLenType::Guid => write!(f, "uniqueidentifier")?,
+                #[cfg(feature = "tds73")]
+                VarLenType::Daten => write!(f, "date")?,
+                #[cfg(feature = "tds73")]
+                VarLenType::Timen => write!(f, "time")?,
+                #[cfg(feature = "tds73")]
+                VarLenType::Datetime2 => write!(f, "datetime2")?,
+                VarLenType::Datetimen => write!(f, "datetime")?,
+                #[cfg(feature = "tds73")]
+                VarLenType::DatetimeOffsetn => write!(f, "datetimeoffset")?,
+                VarLenType::BigVarBin => {
+                    if ctx.len() <= 8000 {
+                        write!(f, "varbinary({})", ctx.len())?
+                    } else {
+                        write!(f, "varbinary(max)")?
+                    }
+                }
+                VarLenType::BigVarChar => {
+                    if ctx.len() <= 8000 {
+                        write!(f, "varchar({})", ctx.len())?
+                    } else {
+                        write!(f, "varchar(max)")?
+                    }
+                }
+                VarLenType::BigBinary => write!(f, "binary({})", ctx.len())?,
+                VarLenType::BigChar => write!(f, "char({})", ctx.len())?,
+                VarLenType::NVarchar => {
+                    if ctx.len() <= 4000 {
+                        write!(f, "nvarchar({})", ctx.len())?
+                    } else {
+                        write!(f, "nvarchar(max)")?
+                    }
+                }
+                VarLenType::NChar => write!(f, "nchar({})", ctx.len())?,
+                VarLenType::Text => write!(f, "text")?,
+                VarLenType::Image => write!(f, "image")?,
+                VarLenType::NText => write!(f, "ntext")?,
+                VarLenType::Intn => match ctx.len() {
+                    1 => write!(f, "tinyint")?,
+                    2 => write!(f, "smallint")?,
+                    4 => write!(f, "int")?,
+                    8 => write!(f, "bigint")?,
+                    _ => unreachable!(),
+                },
+                VarLenType::Floatn => match ctx.len() {
+                    4 => write!(f, "real")?,
+                    8 => write!(f, "float")?,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+            TypeInfo::VarLenSizedPrecision {
+                ty,
+                size: _,
+                precision,
+                scale,
+            } => match ty {
+                VarLenType::Decimaln => write!(f, "decimal({},{})", precision, scale)?,
+                VarLenType::Numericn => write!(f, "numeric({},{})", precision, scale)?,
+                _ => unreachable!(),
+            },
+            TypeInfo::Xml { .. } => write!(f, "xml")?,
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct BaseMetaDataColumn {
     pub flags: BitFlags<ColumnFlag>,
     pub ty: TypeInfo,
@@ -24,7 +120,7 @@ pub struct BaseMetaDataColumn {
 
 impl BaseMetaDataColumn {
     pub(crate) fn null_value(&self) -> ColumnData<'static> {
-        match self.ty {
+        match &self.ty {
             TypeInfo::FixedLen(ty) => match ty {
                 FixedLenType::Null => ColumnData::I32(None),
                 FixedLenType::Int1 => ColumnData::U8(None),
@@ -104,6 +200,51 @@ impl BaseMetaDataColumn {
     }
 }
 
+impl<'a> Encode<BytesMut> for TokenColMetaData<'a> {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u8(TokenType::ColMetaData as u8);
+        dst.put_u16_le(self.columns.len() as u16);
+
+        for col in self.columns.into_iter() {
+            col.encode(dst)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> Encode<BytesMut> for MetaDataColumn<'a> {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u32_le(0);
+        self.base.encode(dst)?;
+
+        let len_pos = dst.len();
+        let mut length = 0u8;
+
+        dst.put_u8(length);
+
+        for chr in self.col_name.encode_utf16() {
+            length += 1;
+            dst.put_u16_le(chr);
+        }
+
+        let dst: &mut [u8] = dst.borrow_mut();
+        dst[len_pos] = length;
+
+        Ok(())
+    }
+}
+
+impl Encode<BytesMut> for BaseMetaDataColumn {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u16_le(BitFlags::bits(self.flags));
+        self.ty.encode(dst)?;
+
+        Ok(())
+    }
+}
+
+/// A setting a column can hold.
 #[bitflags]
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -140,8 +281,7 @@ pub enum ColumnFlag {
     NullableUnknown = 1 << 15,
 }
 
-#[allow(dead_code)]
-impl TokenColMetaData {
+impl TokenColMetaData<'static> {
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
     where
         R: SqlReadBytes + Unpin,
@@ -152,7 +292,7 @@ impl TokenColMetaData {
         if column_count > 0 && column_count < 0xffff {
             for _ in 0..column_count {
                 let base = BaseMetaDataColumn::decode(src).await?;
-                let col_name = src.read_b_varchar().await?;
+                let col_name = Cow::from(src.read_b_varchar().await?);
 
                 columns.push(MetaDataColumn { base, col_name });
             }
@@ -160,10 +300,12 @@ impl TokenColMetaData {
 
         Ok(TokenColMetaData { columns })
     }
+}
 
+impl<'a> TokenColMetaData<'a> {
     pub(crate) fn columns(&self) -> impl Iterator<Item = Column> + '_ {
         self.columns.iter().map(|x| Column {
-            name: x.col_name.clone(),
+            name: x.col_name.to_string(),
             column_type: ColumnType::from(&x.base.ty),
         })
     }

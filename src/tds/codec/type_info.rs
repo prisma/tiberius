@@ -1,7 +1,22 @@
-use crate::{tds::Collation, xml::XmlSchema, Error, SqlReadBytes};
-use std::{convert::TryFrom, sync::Arc};
+use asynchronous_codec::BytesMut;
+use bytes::BufMut;
 
-#[derive(Debug)]
+use crate::{tds::Collation, xml::XmlSchema, Error, SqlReadBytes};
+use std::{convert::TryFrom, sync::Arc, usize};
+
+use super::Encode;
+
+/// A length of a column in bytes or characters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeLength {
+    /// The number of bytes (or characters) reserved in the column.
+    Limited(u16),
+    /// Unlimited, stored in the heap outside of the row.
+    Max,
+}
+
+/// Describes a type of a column.
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeInfo {
     FixedLen(FixedLenType),
     VarLenSized(VarLenContext),
@@ -17,7 +32,7 @@ pub enum TypeInfo {
     },
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct VarLenContext {
     r#type: VarLenType,
     len: usize,
@@ -46,6 +61,53 @@ impl VarLenContext {
     /// Get the var len context's collation.
     pub fn collation(&self) -> Option<Collation> {
         self.collation
+    }
+}
+
+impl Encode<BytesMut> for VarLenContext {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        dst.put_u8(self.r#type() as u8);
+
+        // length
+        match self.r#type {
+            #[cfg(feature = "tds73")]
+            VarLenType::Daten
+            | VarLenType::Timen
+            | VarLenType::DatetimeOffsetn
+            | VarLenType::Datetime2 => {
+                dst.put_u8(self.len() as u8);
+            }
+            VarLenType::Bitn
+            | VarLenType::Intn
+            | VarLenType::Floatn
+            | VarLenType::Decimaln
+            | VarLenType::Numericn
+            | VarLenType::Guid
+            | VarLenType::Money
+            | VarLenType::Datetimen => {
+                dst.put_u8(self.len() as u8);
+            }
+            VarLenType::NChar
+            | VarLenType::BigChar
+            | VarLenType::NVarchar
+            | VarLenType::BigVarChar
+            | VarLenType::BigBinary
+            | VarLenType::BigVarBin => {
+                dst.put_u16_le(self.len() as u16);
+            }
+            VarLenType::Image | VarLenType::Text | VarLenType::NText => {
+                dst.put_u32_le(self.len() as u32);
+            }
+            VarLenType::Xml => (),
+            typ => todo!("encoding {:?} is not supported yet", typ),
+        }
+
+        if let Some(collation) = self.collation() {
+            dst.put_u32_le(collation.info());
+            dst.put_u8(collation.sort_id());
+        }
+
+        Ok(())
     }
 }
 
@@ -140,6 +202,57 @@ uint_enum! {
                           // VarChar = 0x27,
                           // Numeric = 0x3F,
                           // Decimal = 0x37
+    }
+}
+
+impl Encode<BytesMut> for TypeInfo {
+    fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
+        match self {
+            TypeInfo::FixedLen(ty) => {
+                dst.put_u8(ty as u8);
+            }
+            TypeInfo::VarLenSized(ctx) => ctx.encode(dst)?,
+            TypeInfo::VarLenSizedPrecision {
+                ty,
+                size,
+                precision,
+                scale,
+            } => {
+                dst.put_u8(ty as u8);
+                dst.put_u8(size as u8);
+                dst.put_u8(precision as u8);
+                dst.put_u8(scale as u8);
+            }
+            TypeInfo::Xml { schema, .. } => {
+                dst.put_u8(VarLenType::Xml as u8);
+
+                if let Some(xs) = schema {
+                    dst.put_u8(1);
+
+                    let db_name_encoded: Vec<u16> = xs.db_name().encode_utf16().collect();
+                    dst.put_u8(db_name_encoded.len() as u8);
+                    for chr in db_name_encoded {
+                        dst.put_u16_le(chr);
+                    }
+
+                    let owner_encoded: Vec<u16> = xs.owner().encode_utf16().collect();
+                    dst.put_u8(owner_encoded.len() as u8);
+                    for chr in owner_encoded {
+                        dst.put_u16_le(chr);
+                    }
+
+                    let collection_encoded: Vec<u16> = xs.collection().encode_utf16().collect();
+                    dst.put_u16_le(collection_encoded.len() as u16);
+                    for chr in collection_encoded {
+                        dst.put_u16_le(chr);
+                    }
+                } else {
+                    dst.put_u8(0);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -241,6 +354,48 @@ impl TypeInfo {
 
                 Ok(vty)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+    #[tokio::test]
+    async fn round_trip() {
+        let types = vec![
+            TypeInfo::Xml {
+                schema: Some(
+                    XmlSchema::new("fake-db-name", "fake-owner", "fake-collection").into(),
+                ),
+                size: 0xfffffffffffffffe_usize,
+            },
+            TypeInfo::Xml {
+                schema: None,
+                size: 0xfffffffffffffffe_usize,
+            },
+            TypeInfo::FixedLen(FixedLenType::Int4),
+            TypeInfo::VarLenSized(VarLenContext::new(
+                VarLenType::NChar,
+                40,
+                Some(Collation::new(13632521, 52)),
+            )),
+        ];
+
+        for ti in types {
+            let mut buf = BytesMut::new();
+
+            ti.clone()
+                .encode(&mut buf)
+                .expect("encode should be successful");
+
+            let nti = TypeInfo::decode(&mut buf.into_sql_read_bytes())
+                .await
+                .expect("decode must succeed");
+
+            assert_eq!(nti, ti)
         }
     }
 }

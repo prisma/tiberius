@@ -233,7 +233,7 @@ impl From<&TypeInfo> for ColumnType {
 #[derive(Debug)]
 pub struct Row {
     pub(crate) columns: Arc<Vec<Column>>,
-    pub(crate) data: TokenRow,
+    pub(crate) data: TokenRow<'static>,
     pub(crate) result_index: usize,
 }
 

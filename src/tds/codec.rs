@@ -1,9 +1,11 @@
 mod batch_request;
+mod bulk_load;
 mod column_data;
 mod decode;
 mod encode;
 mod guid;
 mod header;
+mod iterator_ext;
 mod login;
 mod packet;
 mod pre_login;
@@ -12,12 +14,14 @@ mod token;
 mod type_info;
 
 pub use batch_request::*;
+pub use bulk_load::*;
 use bytes::BytesMut;
 pub use column_data::*;
 pub use decode::*;
 pub(crate) use encode::*;
 use futures::{Stream, TryStreamExt};
 pub use header::*;
+pub(crate) use iterator_ext::*;
 pub use login::*;
 pub use packet::*;
 pub use pre_login::*;

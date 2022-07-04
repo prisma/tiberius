@@ -41,18 +41,18 @@ uint_enum! {
 /// packet header consisting of 8 bytes [2.2.3.1]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PacketHeader {
-    pub ty: PacketType,
-    pub status: PacketStatus,
+    ty: PacketType,
+    status: PacketStatus,
     /// [BE] the length of the packet (including the 8 header bytes)
     /// must match the negotiated size sending from client to server [since TDSv7.3] after login
     /// (only if not EndOfMessage)
-    pub length: u16,
+    length: u16,
     /// [BE] the process ID on the server, for debugging purposes only
-    pub spid: u16,
+    spid: u16,
     /// packet id
-    pub id: u8,
+    id: u8,
     /// currently unused
-    pub window: u8,
+    window: u8,
 }
 
 impl PacketHeader {
@@ -100,8 +100,32 @@ impl PacketHeader {
         }
     }
 
+    pub fn bulk_load(id: u8) -> Self {
+        Self {
+            ty: PacketType::BulkLoad,
+            status: PacketStatus::NormalMessage,
+            ..Self::new(0, id)
+        }
+    }
+
     pub fn set_status(&mut self, status: PacketStatus) {
         self.status = status;
+    }
+
+    pub fn set_type(&mut self, ty: PacketType) {
+        self.ty = ty;
+    }
+
+    pub fn status(&self) -> PacketStatus {
+        self.status
+    }
+
+    pub fn r#type(&self) -> PacketType {
+        self.ty
+    }
+
+    pub fn length(&self) -> u16 {
+        self.length
     }
 }
 

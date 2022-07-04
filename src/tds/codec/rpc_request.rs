@@ -1,5 +1,5 @@
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
-use crate::{tds::codec::ColumnData, Result};
+use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, Result};
 use bytes::{BufMut, BytesMut};
 use enumflags2::{bitflags, BitFlags};
 use std::borrow::BorrowMut;
@@ -133,7 +133,9 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
         }
 
         dst.put_u8(self.flags.bits());
-        self.value.encode(dst)?;
+
+        let mut dst_fi = BytesMutWithTypeInfo::new(dst);
+        self.value.encode(&mut dst_fi)?;
 
         let dst: &mut [u8] = dst.borrow_mut();
         dst[len_pos] = length;

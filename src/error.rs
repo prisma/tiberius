@@ -60,6 +60,9 @@ pub enum Error {
         /// The requested port.
         port: u16,
     },
+    #[error("BULK UPLOAD input failure: {0}")]
+    /// Invalid input in Bulk Upload
+    BulkInput(Cow<'static, str>),
 }
 
 impl From<uuid::Error> for Error {

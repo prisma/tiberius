@@ -1,13 +1,20 @@
-use crate::{tds::codec::ColumnData, SqlReadBytes};
+mod bytes_mut_with_data_columns;
+mod into_row;
+use crate::tds::codec::encode::Encode;
+use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, SqlReadBytes, TokenType};
+use bytes::BufMut;
+pub(crate) use bytes_mut_with_data_columns::BytesMutWithDataColumns;
 use futures::io::AsyncReadExt;
+pub use into_row::IntoRow;
 
-#[derive(Debug)]
-pub struct TokenRow {
-    data: Vec<ColumnData<'static>>,
+/// A row of data.
+#[derive(Debug, Default, Clone)]
+pub struct TokenRow<'a> {
+    data: Vec<ColumnData<'a>>,
 }
 
-impl IntoIterator for TokenRow {
-    type Item = ColumnData<'static>;
+impl<'a> IntoIterator for TokenRow<'a> {
+    type Item = ColumnData<'a>;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -15,7 +22,66 @@ impl IntoIterator for TokenRow {
     }
 }
 
-impl TokenRow {
+impl<'a> Encode<BytesMutWithDataColumns<'a>> for TokenRow<'a> {
+    fn encode(self, dst: &mut BytesMutWithDataColumns<'a>) -> crate::Result<()> {
+        dst.put_u8(TokenType::Row as u8);
+
+        if self.data.len() != dst.data_columns().len() {
+            Err(crate::Error::BulkInput(
+                format!(
+                    "Expecting {} columns but {} were given",
+                    dst.data_columns().len(),
+                    self.data.len()
+                )
+                .into(),
+            ))?;
+        }
+
+        for (value, column) in self.data.into_iter().zip(dst.data_columns()) {
+            let mut dst_ti = BytesMutWithTypeInfo::new(dst).with_type_info(&column.base.ty);
+            value.encode(&mut dst_ti)?
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a> TokenRow<'a> {
+    /// Creates a new empty row.
+    pub const fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+
+    /// Creates a new empty row with allocated capacity.
+    pub fn with_capacity(&self, capacity: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// The number of columns.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// True if row has no columns.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Gets the columnar data with the given index. `None` if index out of
+    /// bounds.
+    pub fn get(&self, index: usize) -> Option<&ColumnData<'a>> {
+        self.data.get(index)
+    }
+
+    /// Adds a new value to the row.
+    pub fn push(&mut self, value: ColumnData<'a>) {
+        self.data.push(value);
+    }
+}
+
+impl TokenRow<'static> {
     /// Normal row. We'll read the metadata what we've cached and parse columns
     /// based on that.
     pub(crate) async fn decode<R>(src: &mut R) -> crate::Result<Self>
@@ -61,17 +127,6 @@ impl TokenRow {
 
         Ok(row)
     }
-
-    /// The number of columns.
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    /// Gives the columnar data with the given index. `None` if index out of
-    /// bounds.
-    pub fn get(&self, index: usize) -> Option<&ColumnData<'static>> {
-        self.data.get(index)
-    }
 }
 
 /// A bitmap of null values in the row. Sometimes SQL Server decides to pack the
@@ -115,5 +170,29 @@ impl RowBitmap {
         src.read_exact(&mut data[0..size]).await?;
 
         Ok(Self { data })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BaseMetaDataColumn, ColumnFlag, FixedLenType, MetaDataColumn, TypeInfo};
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn wrong_number_of_columns_will_fail() {
+        let row = (true, 5).into_row();
+        let columns = vec![MetaDataColumn {
+            base: BaseMetaDataColumn {
+                flags: ColumnFlag::Nullable.into(),
+                ty: TypeInfo::FixedLen(FixedLenType::Bit),
+            },
+            col_name: Default::default(),
+        }];
+        let mut buf = BytesMut::new();
+        let mut buf_with_columns = BytesMutWithDataColumns::new(&mut buf, &columns);
+
+        row.encode(&mut buf_with_columns)
+            .expect_err("wrong number of columns");
     }
 }
