@@ -50,7 +50,7 @@ impl<'a> Display for MetaDataColumn<'a> {
                 #[cfg(feature = "tds73")]
                 VarLenType::Timen => write!(f, "time")?,
                 #[cfg(feature = "tds73")]
-                VarLenType::Datetime2 => write!(f, "datetime2")?,
+                VarLenType::Datetime2 => write!(f, "datetime2({})", ctx.len())?,
                 VarLenType::Datetimen => write!(f, "datetime")?,
                 #[cfg(feature = "tds73")]
                 VarLenType::DatetimeOffsetn => write!(f, "datetimeoffset")?,
