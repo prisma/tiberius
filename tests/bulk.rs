@@ -4,6 +4,8 @@ use once_cell::sync::Lazy;
 use std::env;
 use std::sync::Once;
 use tiberius::{IntoSql, Result, TokenRow};
+
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 use chrono::NaiveDateTime;
 
 use runtimes_macro::test_on_runtimes;
@@ -110,47 +112,56 @@ test_bulk_type!(varchar_limited(
     vec!["aaaaaaaaaaaaaaaaaaaaaaa"; 1000].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2(
     "DATETIME2",
     100,
     vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_0(
     "DATETIME2(0)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_1(
     "DATETIME2(1)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_2(
     "DATETIME2(2)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_3(
     "DATETIME2(3)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_4(
     "DATETIME2(4)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_5(
     "DATETIME2(5)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_6(
     "DATETIME2(6)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_7(
     "DATETIME2(7)",
     100, vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
