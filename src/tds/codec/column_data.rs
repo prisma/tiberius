@@ -595,7 +595,14 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
             (ColumnData::DateTime2(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Datetime2 =>
             {
-                if let Some(dt2) = opt {
+                if let Some(mut dt2) = opt {
+                    if dt2.time().scale() != vlc.len() as u8 {
+                        let time = dt2.time();
+                        let increments = (time.increments() as f64
+                            * 10_f64.powi(vlc.len() as i32 - time.scale() as i32))
+                            as u64;
+                        dt2 = DateTime2::new(dt2.date(), Time::new(increments, vlc.len() as u8));
+                    }
                     dst.put_u8(dt2.time().len()? + 3);
                     dt2.encode(dst)?;
                 } else {
