@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.10.0
+
+- BREAKING: uuid crate upgraded to 1.0 major and has to be of the same
+  major in other crates using Tiberius.
+
 ## Version 0.9.5
 
 - Add fractional seconds precision for datetime2 (#235)
