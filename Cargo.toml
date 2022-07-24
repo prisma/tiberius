@@ -51,7 +51,7 @@ futures-sink = "0.3"
 async-trait = "0.1"
 connection-string = "0.1.4"
 num-traits = "0.2"
-uuid = "0.8"
+uuid = "1.0"
 
 [target.'cfg(windows)'.dependencies]
 winauth = { version = "0.0.4", optional = true }
@@ -137,7 +137,7 @@ optional = true
 features = ["io-async-std", "vendored"]
 
 [dev-dependencies.uuid]
-version = "0.8"
+version = "1.0"
 features = ["v4"]
 
 [dev-dependencies.tokio-util]
