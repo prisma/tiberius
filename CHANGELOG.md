@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.9.5
+
+- Add fractional seconds precision for datetime2 (#235)
+
 ## Version 0.9.4
 
 - Fix SQL Browser response parsing error (#229)
