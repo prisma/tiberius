@@ -10,7 +10,7 @@
 //!   - SERVER: SQL server URI
 use azure_identity::client_credentials_flow;
 use oauth2::{ClientId, ClientSecret};
-use std::env;
+use std::{env, sync::Arc};
 use tiberius::{AuthMethod, Client, Config, Query};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let tenant_id = env::var("TENANT_ID").expect("Missing TENANT_ID environment variable.");
 
-    let client = reqwest::Client::new();
+    let client = Arc::new(reqwest::Client::new());
     // This will give you the final token to use in authorization.
     let token = client_credentials_flow::perform(
         client,
@@ -40,7 +40,9 @@ async fn main() -> anyhow::Result<()> {
     let server = env::var("SERVER").expect("Missing SERVER environment variable.");
     config.host(server);
     config.port(1433);
-    config.authentication(AuthMethod::AADToken(token.access_token().secret().clone()));
+    config.authentication(AuthMethod::AADToken(
+        token.access_token().secret().to_string(),
+    ));
     config.trust_cert();
 
     let tcp = TcpStream::connect(config.get_addr()).await?;

@@ -1,6 +1,7 @@
-use futures::{lock::Mutex, AsyncRead, AsyncWrite};
+use futures::{AsyncRead, AsyncWrite};
 use names::{Generator, Name};
 use once_cell::sync::Lazy;
+use std::cell::RefCell;
 use std::env;
 use std::sync::Once;
 use tiberius::{IntoSql, Result, TokenRow};
@@ -20,11 +21,20 @@ static CONN_STR: Lazy<String> = Lazy::new(|| {
     })
 });
 
-static NAMES: Lazy<Mutex<Generator>> =
-    Lazy::new(|| Mutex::new(Generator::with_naming(Name::Plain)));
+thread_local! {
+    static NAMES: RefCell<Option<Generator<'static>>> =
+    RefCell::new(None);
+}
 
 async fn random_table() -> String {
-    NAMES.lock().await.next().unwrap().replace('-', "")
+    NAMES.with(|maybe_generator| {
+        maybe_generator
+            .borrow_mut()
+            .get_or_insert_with(|| Generator::with_naming(Name::Plain))
+            .next()
+            .unwrap()
+            .replace('-', "")
+    })
 }
 
 macro_rules! test_bulk_type {
