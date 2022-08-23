@@ -31,6 +31,48 @@ pub struct Config {
     pub(crate) encryption: EncryptionLevel,
     pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
+    pub(crate) tls_choice: TlsChoice,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TlsChoice {
+    #[cfg(not(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    )))]
+    None,
+    #[cfg(feature = "rustls")]
+    Rustls,
+    #[cfg(feature = "native-tls")]
+    NativeTls,
+    #[cfg(feature = "vendored-openssl")]
+    Openssl,
+}
+
+impl Default for TlsChoice {
+    #[allow(unreachable_code, clippy::needless_return)]
+    fn default() -> TlsChoice {
+        #[cfg(feature = "rustls")]
+        {
+            return TlsChoice::Rustls;
+        }
+        #[cfg(feature = "native-tls")]
+        {
+            return TlsChoice::NativeTls;
+        }
+        #[cfg(feature = "vendored-openssl")]
+        {
+            return TlsChoice::Openssl;
+        }
+
+        #[cfg(not(any(
+            feature = "rustls",
+            feature = "native-tls",
+            feature = "vendored-openssl"
+        )))]
+        TlsChoice::None
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +104,7 @@ impl Default for Config {
             encryption: EncryptionLevel::NotSupported,
             trust: TrustConfig::Default,
             auth: AuthMethod::None,
+            tls_choice: TlsChoice::default(),
         }
     }
 }
@@ -118,6 +161,11 @@ impl Config {
     /// - Without `tls` feature, defaults to `NotSupported`.
     pub fn encryption(&mut self, encryption: EncryptionLevel) {
         self.encryption = encryption;
+    }
+
+    /// Set the choice of Tls
+    pub fn tls_choice(&mut self, tls_choice: TlsChoice) {
+        self.tls_choice = tls_choice;
     }
 
     /// If set, the server certificate will not be validated and it is accepted

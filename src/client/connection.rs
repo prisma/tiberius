@@ -3,7 +3,7 @@
     feature = "native-tls",
     feature = "vendored-openssl"
 ))]
-use crate::client::{tls::TlsPreloginWrapper, tls_stream::create_tls_stream};
+use crate::client::{config::TlsChoice, tls::TlsPreloginWrapper, tls_stream};
 use crate::{
     client::{tls::MaybeTlsStream, AuthMethod, Config},
     tds::{
@@ -442,10 +442,25 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             let Self {
                 transport, context, ..
             } = self;
-            let mut stream = match transport.into_inner() {
-                MaybeTlsStream::Raw(tcp) => {
-                    create_tls_stream(config, TlsPreloginWrapper::new(tcp)).await?
+
+            let mut stream = match (transport.into_inner(), config.tls_choice) {
+                #[cfg(feature = "rustls")]
+                (MaybeTlsStream::Raw(tcp), TlsChoice::Rustls) => {
+                    tls_stream::create_tls_stream_rustls(config, TlsPreloginWrapper::new(tcp))
+                        .await?
                 }
+                #[cfg(feature = "vendored-openssl")]
+                (MaybeTlsStream::Raw(tcp), TlsChoice::Openssl) => {
+                    tls_stream::create_tls_stream_openssl(config, TlsPreloginWrapper::new(tcp))
+                        .await?
+                }
+                #[cfg(feature = "native-tls")]
+                (MaybeTlsStream::Raw(tcp), TlsChoice::NativeTls) => {
+                    tls_stream::create_tls_stream_native_tls(config, TlsPreloginWrapper::new(tcp))
+                        .await?
+                }
+                // this should still be fine as the relevant TlsChoices are only
+                // enabled when the equivalent tls crate is enabled
                 _ => unreachable!(),
             };
 

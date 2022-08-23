@@ -33,7 +33,7 @@ impl From<tokio_rustls::webpki::Error> for Error {
 }
 
 pub(crate) struct TlsStream<S: AsyncRead + AsyncWrite + Unpin + Send>(
-    Compat<tokio_rustls::client::TlsStream<Compat<S>>>,
+    pub(super) Compat<tokio_rustls::client::TlsStream<Compat<S>>>,
 );
 
 struct NoCertVerifier;
