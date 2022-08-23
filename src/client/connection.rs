@@ -139,7 +139,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             );
 
             let Self { transport, .. } = self;
-            let tcp = transport.release().0.into_inner();
+            let tcp = transport.into_inner().into_inner();
             self.transport = Framed::new(MaybeTlsStream::Raw(tcp), PacketCodec);
         }
 
@@ -446,7 +446,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             let Self {
                 transport, context, ..
             } = self;
-            let mut stream = match transport.release().0 {
+            let mut stream = match transport.into_inner() {
                 MaybeTlsStream::Raw(tcp) => {
                     create_tls_stream(config, TlsPreloginWrapper::new(tcp)).await?
                 }
