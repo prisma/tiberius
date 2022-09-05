@@ -283,8 +283,14 @@ mod bigdecimal_ {
     to_sql!(self_,
             BigDecimal: (ColumnData::Numeric, {
                 let (int, exp) = self_.as_bigint_and_exponent();
-                let value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
-                let scale = u8::try_from(exp).expect("Given exponent overflowing the maximum accepted scale (255).");
+                let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
+
+                if exp < 0 {
+                    value = value * i128::from(10i64.pow(u32::try_from(exp.abs()).expect("BigDecimal exponent overflow")));
+                }
+
+                let scale = u8::try_from(std::cmp::max(exp, 0))
+                    .expect("Given exponent overflowing the maximum accepted scale (255).");
 
                 Numeric::new_with_scale(value, scale)
             });
@@ -294,8 +300,14 @@ mod bigdecimal_ {
     into_sql!(self_,
             BigDecimal: (ColumnData::Numeric, {
                 let (int, exp) = self_.as_bigint_and_exponent();
-                let value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
-                let scale = u8::try_from(exp).expect("Given exponent overflowing the maximum accepted scale (255).");
+                let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
+
+                if exp < 0 {
+                    value = value * i128::from(10i64.pow(u32::try_from(exp.abs()).expect("BigDecimal exponent overflow")));
+                }
+
+                let scale = u8::try_from(std::cmp::max(exp, 0))
+                    .expect("Given exponent overflowing the maximum accepted scale (255).");
 
                 Numeric::new_with_scale(value, scale)
             });
