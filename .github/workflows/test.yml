@@ -207,10 +207,16 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
 
-      - uses: docker-practice/actions-setup-docker@master
+      - name: Install and start Podman
+        run: |
+          brew update
+          brew install podman
+          brew install podman-compose
+          podman machine init
+          podman machine start
 
       - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+        run: podman-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
 
       - name: Run tests
         run: cargo test ${{matrix.features}}
