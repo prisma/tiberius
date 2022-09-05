@@ -315,21 +315,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
 
         let columns = token_stream
             .try_fold(None, |mut columns, token| async move {
-                match token {
-                    ReceivedToken::NewResultset(metadata) => {
-                        columns = Some(metadata.columns.clone());
-                    }
-                    _ => (),
-                }
+                if let ReceivedToken::NewResultset(metadata) = token {
+                    columns = Some(metadata.columns.clone());
+                };
+
                 Ok(columns)
             })
             .await?;
 
         // now start bulk upload
         let columns: Vec<_> = columns
-            .ok_or(crate::Error::Protocol(
-                "expecting column metadata from query but not found".into(),
-            ))?
+            .ok_or_else(|| {
+                crate::Error::Protocol("expecting column metadata from query but not found".into())
+            })?
             .into_iter()
             .filter(|column| column.base.flags.contains(ColumnFlag::Updateable))
             .collect();

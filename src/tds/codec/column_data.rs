@@ -308,14 +308,14 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         .map_err(crate::Error::Encoding)?;
 
                     if bytes.len() > vlc.len() {
-                        Err(crate::Error::BulkInput(
+                        return Err(crate::Error::BulkInput(
                             format!(
                                 "Encoded string length {} exceed column limit {}",
                                 bytes.len(),
                                 vlc.len()
                             )
                             .into(),
-                        ))?;
+                        ));
                     }
 
                     if vlc.len() < 0xffff {
@@ -336,12 +336,10 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         // no next blob
                         dst.put_u32_le(0u32);
                     }
+                } else if vlc.len() < 0xffff {
+                    dst.put_u16_le(0xffff);
                 } else {
-                    if vlc.len() < 0xffff {
-                        dst.put_u16_le(0xffff);
-                    } else {
-                        dst.put_u64_le(0xffffffffffffffff)
-                    }
+                    dst.put_u64_le(0xffffffffffffffff)
                 }
             }
             (ColumnData::String(opt), Some(TypeInfo::VarLenSized(vlc)))
@@ -359,14 +357,14 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         let length = dst.len() - len_pos - 2;
 
                         if length > vlc.len() {
-                            Err(crate::Error::BulkInput(
+                            return Err(crate::Error::BulkInput(
                                 format!(
                                     "Encoded string length {} exceed column limit {}",
                                     length,
                                     vlc.len()
                                 )
                                 .into(),
-                            ))?;
+                            ));
                         }
 
                         let dst: &mut [u8] = dst.borrow_mut();
@@ -391,14 +389,14 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         let length = dst.len() - len_pos - 4;
 
                         if length > vlc.len() {
-                            Err(crate::Error::BulkInput(
+                            return Err(crate::Error::BulkInput(
                                 format!(
                                     "Encoded string length {} exceed column limit {}",
                                     length,
                                     vlc.len()
                                 )
                                 .into(),
-                            ))?;
+                            ));
                         }
 
                         // no next blob
@@ -408,12 +406,10 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         let mut dst = &mut dst[len_pos..];
                         dst.put_u32_le(length as u32);
                     }
+                } else if vlc.len() < 0xffff {
+                    dst.put_u16_le(0xffff);
                 } else {
-                    if vlc.len() < 0xffff {
-                        dst.put_u16_le(0xffff);
-                    } else {
-                        dst.put_u64_le(0xffffffffffffffff)
-                    }
+                    dst.put_u64_le(0xffffffffffffffff)
                 }
             }
             (ColumnData::String(Some(ref s)), None) if s.len() <= 4000 => {
@@ -475,14 +471,14 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
             {
                 if let Some(bytes) = opt {
                     if bytes.len() > vlc.len() {
-                        Err(crate::Error::BulkInput(
+                        return Err(crate::Error::BulkInput(
                             format!(
                                 "Binary length {} exceed column limit {}",
                                 bytes.len(),
                                 vlc.len()
                             )
                             .into(),
-                        ))?;
+                        ));
                     }
 
                     if vlc.len() < 0xffff {
@@ -495,12 +491,10 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         dst.extend(bytes.into_owned());
                         dst.put_u32_le(0);
                     }
+                } else if vlc.len() < 0xffff {
+                    dst.put_u16_le(0xffff);
                 } else {
-                    if vlc.len() < 0xffff {
-                        dst.put_u16_le(0xffff);
-                    } else {
-                        dst.put_u64_le(0xffffffffffffffff)
-                    }
+                    dst.put_u64_le(0xffffffffffffffff);
                 }
             }
             (ColumnData::Binary(Some(bytes)), None) if bytes.len() <= 8000 => {
@@ -676,9 +670,11 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 // None/null
                 dst.put_u8(FixedLenType::Null as u8);
             }
-            (v, ref ti) => Err(crate::Error::BulkInput(
-                format!("invalid data type, expecting {:?} but found {:?}", ti, v).into(),
-            ))?,
+            (v, ref ti) => {
+                return Err(crate::Error::BulkInput(
+                    format!("invalid data type, expecting {:?} but found {:?}", ti, v).into(),
+                ));
+            }
         }
 
         Ok(())

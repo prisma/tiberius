@@ -37,7 +37,7 @@ fn get_port_from_sql_browser_reply(
     len: usize,
     instance_name: &str,
 ) -> crate::Result<u16> {
-    const DELIMITER: &'static [u8] = b"tcp;";
+    const DELIMITER: &[u8] = b"tcp;";
 
     buf.truncate(len);
 
