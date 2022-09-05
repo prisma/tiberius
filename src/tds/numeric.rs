@@ -286,11 +286,11 @@ mod bigdecimal_ {
                 let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
 
                 if exp < 0 {
-                    value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("BigDecimal exponent overflow")));
+                    value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("Given BigDecimal exponent underflowing the minimum accepted scale (-9223372036854775808).")));
                 }
 
                 let scale = u8::try_from(std::cmp::max(exp, 0))
-                    .expect("Given exponent overflowing the maximum accepted scale (255).");
+                    .expect("Given BigDecimal exponent overflowing the maximum accepted scale (255).");
 
                 Numeric::new_with_scale(value, scale)
             });
@@ -303,11 +303,11 @@ mod bigdecimal_ {
                 let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
 
                 if exp < 0 {
-                    value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("BigDecimal exponent overflow")));
+                    value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("Given BigDecimal exponent underflowing the minimum accepted scale (-9223372036854775808).")));
                 }
 
                 let scale = u8::try_from(std::cmp::max(exp, 0))
-                    .expect("Given exponent overflowing the maximum accepted scale (255).");
+                    .expect("Given BigDecimal exponent overflowing the maximum accepted scale (255).");
 
                 Numeric::new_with_scale(value, scale)
             });
