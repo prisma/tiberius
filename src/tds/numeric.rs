@@ -285,6 +285,12 @@ mod bigdecimal_ {
                 let (int, exp) = self_.as_bigint_and_exponent();
                 let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
 
+                // SQL Server cannot store negative scales, so we have
+                // to convert the number to the correct exponent
+                // before storing.
+                //
+                // E.g. `Decimal(9, -3)` would be stored as
+                // `Decimal(9000, 0)`.
                 if exp < 0 {
                     value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("Given BigDecimal exponent underflowing the minimum accepted scale (-9223372036854775808).")));
                 }
@@ -302,6 +308,12 @@ mod bigdecimal_ {
                 let (int, exp) = self_.as_bigint_and_exponent();
                 let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
 
+                // SQL Server cannot store negative scales, so we have
+                // to convert the number to the correct exponent
+                // before storing.
+                //
+                // E.g. `Decimal(9, -3)` would be stored as
+                // `Decimal(9000, 0)`.
                 if exp < 0 {
                     value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("Given BigDecimal exponent underflowing the minimum accepted scale (-9223372036854775808).")));
                 }
