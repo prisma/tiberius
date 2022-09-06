@@ -1,5 +1,11 @@
 # Changes
 
+## Version 0.11.0
+
+- BREAKING: bigdecimal crate upgraded to 0.3 major and has to be of
+  the same major in other crates using Tiberius.
+- Handle negative scale from a BigDecimal (#240)
+
 ## Version 0.10.0
 
 - BREAKING: uuid crate upgraded to 1.0 major and has to be of the same
