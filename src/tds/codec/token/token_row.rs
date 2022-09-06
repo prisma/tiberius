@@ -27,14 +27,14 @@ impl<'a> Encode<BytesMutWithDataColumns<'a>> for TokenRow<'a> {
         dst.put_u8(TokenType::Row as u8);
 
         if self.data.len() != dst.data_columns().len() {
-            Err(crate::Error::BulkInput(
+            return Err(crate::Error::BulkInput(
                 format!(
                     "Expecting {} columns but {} were given",
                     dst.data_columns().len(),
                     self.data.len()
                 )
                 .into(),
-            ))?;
+            ));
         }
 
         for (value, column) in self.data.into_iter().zip(dst.data_columns()) {

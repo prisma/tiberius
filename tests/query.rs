@@ -1569,6 +1569,30 @@ mod bigdecimal {
     }
 
     #[test_on_runtimes]
+    async fn handles_scale_underflow_with_bigdecimal<S>(mut conn: tiberius::Client<S>) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send,
+    {
+        use bigdecimal_::num_bigint::BigInt;
+        use num_traits::FromPrimitive;
+        use tiberius::numeric::BigDecimal;
+
+        let int = BigInt::from_i128(90).unwrap();
+        let num = BigDecimal::new(int, -1);
+
+        let row = conn
+            .query("SELECT @P1", &[&num])
+            .await?
+            .into_row()
+            .await?
+            .unwrap();
+
+        assert_eq!(Some(num), row.get(0));
+
+        Ok(())
+    }
+
+    #[test_on_runtimes]
     async fn bigdecimal_type_u64_presentation<S>(mut conn: tiberius::Client<S>) -> Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send,

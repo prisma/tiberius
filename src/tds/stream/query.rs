@@ -252,7 +252,7 @@ impl<'a> QueryStream<'a> {
     /// results.
     pub async fn into_first_result(self) -> crate::Result<Vec<Row>> {
         let mut results = self.into_results().await?.into_iter();
-        let rows = results.next().unwrap_or_else(Vec::new);
+        let rows = results.next().unwrap_or_default();
 
         Ok(rows)
     }

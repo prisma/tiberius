@@ -60,5 +60,5 @@ where
         }
     }
 
-    Ok(T::decode(&mut buf)?)
+    T::decode(&mut buf)
 }

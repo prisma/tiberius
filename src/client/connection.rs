@@ -85,11 +85,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             buf: BytesMut::new(),
         };
 
-        let fed_auth_required = if let AuthMethod::AADToken(_) = config.auth {
-            true
-        } else {
-            false
-        };
+        let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
 
         let prelogin = connection
             .prelogin(config.encryption, fed_auth_required)
