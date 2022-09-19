@@ -120,7 +120,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                     Level::WARN,
                     "Trusting the server certificate without validation."
                 );
-                let mut config = builder.with_native_roots().with_no_client_auth();
+                let mut config = builder
+                    .with_root_certificates(RootCertStore::empty())
+                    .with_no_client_auth();
                 config
                     .dangerous()
                     .set_certificate_verifier(Arc::new(NoCertVerifier {}));
