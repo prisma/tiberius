@@ -30,6 +30,7 @@ pub enum ReceivedToken {
 
 pub(crate) struct TokenStream<'a, S: AsyncRead + AsyncWrite + Unpin + Send> {
     conn: &'a mut Connection<S>,
+    error: Option<Error>,
 }
 
 impl<'a, S> TokenStream<'a, S>
@@ -37,7 +38,7 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     pub(crate) fn new(conn: &'a mut Connection<S>) -> Self {
-        Self { conn }
+        Self { conn, error: None }
     }
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
@@ -107,10 +108,10 @@ where
         Ok(ReceivedToken::ReturnStatus(status))
     }
 
-    async fn get_error(&mut self) -> crate::Result<ReceivedToken> {
+    async fn get_error(&mut self) -> crate::Result<Error> {
         let err = TokenError::decode(self.conn).await?;
         event!(Level::ERROR, message = %err.message, code = err.code);
-        Err(Error::Server(err))
+        Ok(Error::Server(err))
     }
 
     async fn get_order(&mut self) -> crate::Result<ReceivedToken> {
@@ -191,31 +192,40 @@ where
     pub fn try_unfold(self) -> BoxStream<'a, crate::Result<ReceivedToken>> {
         let stream = futures::stream::try_unfold(self, |mut this| async move {
             if this.conn.is_eof() {
+                if let Some(err) = this.error {
+                    return Err(err);
+                }
                 return Ok(None);
             }
 
-            let ty_byte = this.conn.read_u8().await?;
+            let token = loop {
+                let ty_byte = this.conn.read_u8().await?;
 
-            let ty = TokenType::try_from(ty_byte)
-                .map_err(|_| Error::Protocol(format!("invalid token type {:x}", ty_byte).into()))?;
+                let ty = TokenType::try_from(ty_byte).map_err(|_| {
+                    Error::Protocol(format!("invalid token type {:x}", ty_byte).into())
+                })?;
 
-            let token = match ty {
-                TokenType::ReturnStatus => this.get_return_status().await?,
-                TokenType::ColMetaData => this.get_col_metadata().await?,
-                TokenType::Row => this.get_row().await?,
-                TokenType::NbcRow => this.get_nbc_row().await?,
-                TokenType::Done => this.get_done_value().await?,
-                TokenType::DoneProc => this.get_done_proc_value().await?,
-                TokenType::DoneInProc => this.get_done_in_proc_value().await?,
-                TokenType::ReturnValue => this.get_return_value().await?,
-                TokenType::Error => this.get_error().await?,
-                TokenType::Order => this.get_order().await?,
-                TokenType::EnvChange => this.get_env_change().await?,
-                TokenType::Info => this.get_info().await?,
-                TokenType::LoginAck => this.get_login_ack().await?,
-                TokenType::Sspi => this.get_sspi().await?,
-                TokenType::FeatureExtAck => this.get_feature_ext_ack().await?,
-                _ => panic!("Token {:?} unimplemented!", ty),
+                match ty {
+                    TokenType::ReturnStatus => break this.get_return_status().await?,
+                    TokenType::ColMetaData => break this.get_col_metadata().await?,
+                    TokenType::Row => break this.get_row().await?,
+                    TokenType::NbcRow => break this.get_nbc_row().await?,
+                    TokenType::Done => break this.get_done_value().await?,
+                    TokenType::DoneProc => break this.get_done_proc_value().await?,
+                    TokenType::DoneInProc => break this.get_done_in_proc_value().await?,
+                    TokenType::ReturnValue => break this.get_return_value().await?,
+                    TokenType::Error => {
+                        let error = this.get_error().await?;
+                        this.error = Some(error);
+                    }
+                    TokenType::Order => break this.get_order().await?,
+                    TokenType::EnvChange => break this.get_env_change().await?,
+                    TokenType::Info => break this.get_info().await?,
+                    TokenType::LoginAck => break this.get_login_ack().await?,
+                    TokenType::Sspi => break this.get_sspi().await?,
+                    TokenType::FeatureExtAck => break this.get_feature_ext_ack().await?,
+                    _ => panic!("Token {:?} unimplemented!", ty),
+                }
             };
 
             Ok(Some((token, this)))
