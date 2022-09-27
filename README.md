@@ -23,6 +23,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 
 | Version | Support level | Notes                               |
 |---------|---------------|-------------------------------------|
+|    2022 | Tested on CI  |                                     |
 |    2019 | Tested on CI  |                                     |
 |    2017 | Tested on CI  |                                     |
 |    2016 | Should work   |                                     |
