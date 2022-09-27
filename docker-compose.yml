@@ -1,5 +1,16 @@
 version: "3"
 services:
+  mssql-2022:
+    build:
+      context: docker/
+      dockerfile: docker-mssql-2022.dockerfile
+    restart: always
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "<YourStrong@Passw0rd>"
+    ports:
+      - "1433:1433"
+
   mssql-2019:
     build:
       context: docker/
