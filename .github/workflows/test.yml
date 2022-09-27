@@ -42,6 +42,7 @@ jobs:
         database:
           - 2017
           - 2019
+          - 2022
           - azure-sql-edge
         features:
           - "--features=all"
@@ -135,14 +136,14 @@ jobs:
             Set-PSRepository PSGallery -InstallationPolicy Trusted
             Install-Module SqlServer
 
-      - name: Install SQL Server 2019
+      - name: Install SQL Server ${{matrix.database}}
         shell: powershell
         run: |
           choco feature disable --name="'exitOnRebootDetected'"
           $ErrorActionPreference = 'SilentlyContinue'
-          choco install sql-server-2019 --params="'/IgnorePendingReboot'"
+          choco install sql-server-${{matrix.database}} --params="'/IgnorePendingReboot'"
 
-      - name: Setup SQL Server 2019
+      - name: Setup SQL Server ${{matrix.database}}
         shell: powershell
         run: |
           Import-Module 'sqlps'
