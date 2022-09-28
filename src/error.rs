@@ -65,6 +65,16 @@ pub enum Error {
     BulkInput(Cow<'static, str>),
 }
 
+impl Error {
+    /// True, if the error was caused by a deadlock.
+    pub fn is_deadlock(&self) -> bool {
+        match self {
+            Error::Server(e) => e.code() == 1205,
+            _ => false,
+        }
+    }
+}
+
 impl From<uuid::Error> for Error {
     fn from(e: uuid::Error) -> Self {
         Self::Conversion(format!("Error convertiong a Guid value {}", e).into())

@@ -26,10 +26,12 @@ pub enum ReceivedToken {
     LoginAck(TokenLoginAck),
     Sspi(TokenSspi),
     FeatureExtAck(TokenFeatureExtAck),
+    Error(TokenError),
 }
 
 pub(crate) struct TokenStream<'a, S: AsyncRead + AsyncWrite + Unpin + Send> {
     conn: &'a mut Connection<S>,
+    last_error: Option<Error>,
 }
 
 impl<'a, S> TokenStream<'a, S>
@@ -37,7 +39,10 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     pub(crate) fn new(conn: &'a mut Connection<S>) -> Self {
-        Self { conn }
+        Self {
+            conn,
+            last_error: None,
+        }
     }
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
@@ -109,8 +114,10 @@ where
 
     async fn get_error(&mut self) -> crate::Result<ReceivedToken> {
         let err = TokenError::decode(self.conn).await?;
+        self.last_error = Some(Error::Server(err.clone()));
+
         event!(Level::ERROR, message = %err.message, code = err.code);
-        Err(Error::Server(err))
+        Ok(ReceivedToken::Error(err))
     }
 
     async fn get_order(&mut self) -> crate::Result<ReceivedToken> {
@@ -191,7 +198,10 @@ where
     pub fn try_unfold(self) -> BoxStream<'a, crate::Result<ReceivedToken>> {
         let stream = futures::stream::try_unfold(self, |mut this| async move {
             if this.conn.is_eof() {
-                return Ok(None);
+                match this.last_error {
+                    None => return Ok(None),
+                    Some(error) => return Err(error),
+                }
             }
 
             let ty_byte = this.conn.read_u8().await?;
