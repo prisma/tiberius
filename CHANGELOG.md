@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.11.1
+
+- Don't load native roots for trust-all config (#243)
+- Propagate errors correctly (#247)
+
 ## Version 0.11.0
 
 - BREAKING: bigdecimal crate upgraded to 0.3 major and has to be of
