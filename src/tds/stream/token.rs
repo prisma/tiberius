@@ -53,7 +53,9 @@ where
         loop {
             match stream.try_next().await? {
                 Some(ReceivedToken::Error(error)) => {
-                    last_error = Some(error);
+                    if last_error.is_none() {
+                        last_error = Some(error);
+                    }
                 }
                 Some(ReceivedToken::Done(token)) => match (last_error, routing) {
                     (Some(error), _) => return Err(Error::Server(error)),
@@ -77,7 +79,9 @@ where
         loop {
             match stream.try_next().await? {
                 Some(ReceivedToken::Error(error)) => {
-                    last_error = Some(error);
+                    if last_error.is_none() {
+                        last_error = Some(error);
+                    }
                 }
                 Some(ReceivedToken::Sspi(token)) => return Ok(token),
                 Some(_) => (),
@@ -125,7 +129,10 @@ where
 
     async fn get_error(&mut self) -> crate::Result<ReceivedToken> {
         let err = TokenError::decode(self.conn).await?;
-        self.last_error = Some(Error::Server(err.clone()));
+
+        if self.last_error.is_none() {
+            self.last_error = Some(Error::Server(err.clone()));
+        }
 
         event!(Level::ERROR, message = %err.message, code = err.code);
         Ok(ReceivedToken::Error(err))
