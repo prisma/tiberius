@@ -16,7 +16,7 @@ pub enum TypeLength {
 }
 
 /// Describes a type of a column.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeInfo {
     FixedLen(FixedLenType),
     VarLenSized(VarLenContext),
@@ -32,7 +32,7 @@ pub enum TypeInfo {
     },
 }
 
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub struct VarLenContext {
     r#type: VarLenType,
     len: usize,
@@ -268,11 +268,9 @@ impl TypeInfo {
         }
 
         match VarLenType::try_from(ty) {
-            Err(()) => {
-                return Err(Error::Protocol(
-                    format!("invalid or unsupported column type: {:?}", ty).into(),
-                ))
-            }
+            Err(()) => Err(Error::Protocol(
+                format!("invalid or unsupported column type: {:?}", ty).into(),
+            )),
             Ok(ty) if ty == VarLenType::Xml => {
                 let has_schema = src.read_u8().await?;
 

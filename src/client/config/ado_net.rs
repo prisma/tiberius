@@ -21,7 +21,7 @@ impl ConfigString for AdoNetConfig {
 
     fn server(&self) -> crate::Result<ServerDefinition> {
         fn parse_port(parts: &[&str]) -> crate::Result<Option<u16>> {
-            Ok(match parts.get(0) {
+            Ok(match parts.first() {
                 Some(s) => Some(s.parse()?),
                 None => None,
             })

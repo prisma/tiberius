@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SqlServerAuth {
     user: String,
     password: String,
@@ -25,7 +25,7 @@ impl Debug for SqlServerAuth {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 #[cfg(any(all(windows, feature = "winauth"), doc))]
 #[cfg_attr(feature = "docs", doc(all(windows, feature = "winauth")))]
 pub struct WindowsAuth {
@@ -47,7 +47,7 @@ impl Debug for WindowsAuth {
 }
 
 /// Defines the method of authentication to the server.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AuthMethod {
     /// Authenticate directly with SQL Server.
     SqlServer(SqlServerAuth),

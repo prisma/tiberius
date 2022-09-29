@@ -26,10 +26,12 @@ pub enum ReceivedToken {
     LoginAck(TokenLoginAck),
     Sspi(TokenSspi),
     FeatureExtAck(TokenFeatureExtAck),
+    Error(TokenError),
 }
 
 pub(crate) struct TokenStream<'a, S: AsyncRead + AsyncWrite + Unpin + Send> {
     conn: &'a mut Connection<S>,
+    last_error: Option<Error>,
 }
 
 impl<'a, S> TokenStream<'a, S>
@@ -37,19 +39,26 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     pub(crate) fn new(conn: &'a mut Connection<S>) -> Self {
-        Self { conn }
+        Self {
+            conn,
+            last_error: None,
+        }
     }
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
         let mut stream = self.try_unfold();
-
+        let mut last_error = None;
         let mut routing = None;
 
         loop {
             match stream.try_next().await? {
-                Some(ReceivedToken::Done(token)) => match routing {
-                    Some(routing) => return Err(routing),
-                    None => return Ok(token),
+                Some(ReceivedToken::Error(error)) => {
+                    last_error = Some(error);
+                }
+                Some(ReceivedToken::Done(token)) => match (last_error, routing) {
+                    (Some(error), _) => return Err(Error::Server(error)),
+                    (_, Some(routing)) => return Err(routing),
+                    (_, _) => return Ok(token),
                 },
                 Some(ReceivedToken::EnvChange(TokenEnvChange::Routing { host, port })) => {
                     routing = Some(Error::Routing { host, port });
@@ -63,12 +72,19 @@ where
     #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
     pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSspi> {
         let mut stream = self.try_unfold();
+        let mut last_error = None;
 
         loop {
             match stream.try_next().await? {
+                Some(ReceivedToken::Error(error)) => {
+                    last_error = Some(error);
+                }
                 Some(ReceivedToken::Sspi(token)) => return Ok(token),
                 Some(_) => (),
-                None => return Err(crate::Error::Protocol("Never got SSPI token.".into())),
+                None => match last_error {
+                    Some(err) => return Err(crate::Error::Server(err)),
+                    None => return Err(crate::Error::Protocol("Never got SSPI token.".into())),
+                },
             }
         }
     }
@@ -109,8 +125,10 @@ where
 
     async fn get_error(&mut self) -> crate::Result<ReceivedToken> {
         let err = TokenError::decode(self.conn).await?;
+        self.last_error = Some(Error::Server(err.clone()));
+
         event!(Level::ERROR, message = %err.message, code = err.code);
-        Err(Error::Server(err))
+        Ok(ReceivedToken::Error(err))
     }
 
     async fn get_order(&mut self) -> crate::Result<ReceivedToken> {
@@ -191,7 +209,10 @@ where
     pub fn try_unfold(self) -> BoxStream<'a, crate::Result<ReceivedToken>> {
         let stream = futures::stream::try_unfold(self, |mut this| async move {
             if this.conn.is_eof() {
-                return Ok(None);
+                match this.last_error {
+                    None => return Ok(None),
+                    Some(error) => return Err(error),
+                }
             }
 
             let ty_byte = this.conn.read_u8().await?;

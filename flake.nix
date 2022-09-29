@@ -30,7 +30,7 @@
             pkg-config
             clangStdenv
             llvmPackages.libclang.lib
-            kerberos
+            libkrb5
             rust-bin.stable.latest.default
           ];
           shellHook = with pkgs; ''

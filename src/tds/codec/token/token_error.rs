@@ -1,7 +1,7 @@
 use crate::{tds::codec::FeatureLevel, SqlReadBytes};
 use std::fmt;
 
-#[derive(Clone, Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 /// An error token returned from the server.
 pub struct TokenError {
     /// ErrorCode

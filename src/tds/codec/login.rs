@@ -29,7 +29,7 @@ impl Default for FeatureLevel {
 
 impl FeatureLevel {
     pub fn done_row_count_bytes(self) -> u8 {
-        if self as u8 >= FeatureLevel::SqlServer2005 as u8 {
+        if self as u32 >= FeatureLevel::SqlServer2005 as u32 {
             8
         } else {
             4
@@ -39,7 +39,7 @@ impl FeatureLevel {
 
 #[bitflags]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionFlag1 {
     /// The byte order used by client for numeric and datetime data types.
     /// (default: little-endian)
@@ -68,7 +68,7 @@ pub enum OptionFlag1 {
 
 #[bitflags]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionFlag2 {
     /// Set if the change to initial language needs to succeed if the connect is
     /// to succeed.
@@ -94,7 +94,7 @@ pub enum OptionFlag2 {
 
 #[bitflags]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionFlag3 {
     /// Request to change login's password.
     RequestChangePassword = 1 << 0,
@@ -113,7 +113,7 @@ pub enum OptionFlag3 {
 
 #[bitflags]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginTypeFlag {
     /// Use T-SQL syntax.
     UseTSQL = 1 << 0,
@@ -135,7 +135,7 @@ pub(crate) const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
 
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 #[derive(Debug, Clone, Default)]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 struct FedAuthExt<'a> {
     fed_auth_echo: bool,
     fed_auth_token: Cow<'a, str>,
@@ -144,7 +144,7 @@ struct FedAuthExt<'a> {
 
 /// the login packet
 #[derive(Debug, Clone, Default)]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct LoginMessage<'a> {
     /// the highest TDS version the client supports
     tds_version: FeatureLevel,

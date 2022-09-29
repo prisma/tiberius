@@ -247,7 +247,7 @@ impl Encode<BytesMut> for BaseMetaDataColumn {
 /// A setting a column can hold.
 #[bitflags]
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnFlag {
     /// The column can be null.
     Nullable = 1 << 0,

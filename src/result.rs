@@ -50,20 +50,18 @@ impl<'a> ExecuteResult {
     pub(crate) async fn new<S: AsyncRead + AsyncWrite + Unpin + Send>(
         connection: &'a mut Connection<S>,
     ) -> crate::Result<Self> {
-        let token_stream = TokenStream::new(connection).try_unfold();
+        let mut token_stream = TokenStream::new(connection).try_unfold();
+        let mut rows_affected = Vec::new();
 
-        let rows_affected = token_stream
-            .try_fold(Vec::new(), |mut acc, token| async move {
-                match token {
-                    ReceivedToken::DoneProc(done) if done.is_final() => (),
-                    ReceivedToken::DoneProc(done) => acc.push(done.rows()),
-                    ReceivedToken::DoneInProc(done) => acc.push(done.rows()),
-                    ReceivedToken::Done(done) => acc.push(done.rows()),
-                    _ => (),
-                }
-                Ok(acc)
-            })
-            .await?;
+        while let Some(token) = token_stream.try_next().await? {
+            match token {
+                ReceivedToken::DoneProc(done) if done.is_final() => (),
+                ReceivedToken::DoneProc(done) => rows_affected.push(done.rows()),
+                ReceivedToken::DoneInProc(done) => rows_affected.push(done.rows()),
+                ReceivedToken::Done(done) => rows_affected.push(done.rows()),
+                _ => (),
+            }
+        }
 
         Ok(Self { rows_affected })
     }

@@ -6,7 +6,7 @@ use thiserror::Error;
 
 /// A unified error enum that contains several errors that might occurr during
 /// the lifecycle of this driver
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum Error {
     #[error("An error occured during the attempt of performing I/O: {}", message)]
     /// An error occured when performing I/O to the server.
@@ -63,6 +63,22 @@ pub enum Error {
     #[error("BULK UPLOAD input failure: {0}")]
     /// Invalid input in Bulk Upload
     BulkInput(Cow<'static, str>),
+}
+
+impl Error {
+    /// True, if the error was caused by a deadlock.
+    pub fn is_deadlock(&self) -> bool {
+        self.code().map(|c| c == 1205).unwrap_or(false)
+    }
+
+    /// Returns the error code, if the error originates from the
+    /// server.
+    pub fn code(&self) -> Option<u32> {
+        match self {
+            Error::Server(e) => Some(e.code()),
+            _ => None,
+        }
+    }
 }
 
 impl From<uuid::Error> for Error {
