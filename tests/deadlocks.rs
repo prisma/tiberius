@@ -125,7 +125,7 @@ async fn deadlocks_should_not_prevent_further_queries() -> anyhow::Result<()> {
     let (res1, res2) = (receiver1.recv().await, receiver2.recv().await);
 
     match (res1, res2) {
-        (Some(Err(e)), _) if e.is_deadlock() => {
+        (Some(Err(e)), Some(Ok(_))) if e.is_deadlock() => {
             // Preventing further locks in the other connection, we
             // close the transaction in the connection that did not
             // throw a deadlock error.
@@ -138,7 +138,7 @@ async fn deadlocks_should_not_prevent_further_queries() -> anyhow::Result<()> {
 
             assert!(res.is_ok());
         }
-        (_, Some(Err(e))) if e.is_deadlock() => {
+        (Some(Ok(_)), Some(Err(e))) if e.is_deadlock() => {
             // Preventing further locks in the other connection, we
             // close the transaction in the connection that did not
             // throw a deadlock error.
@@ -151,7 +151,10 @@ async fn deadlocks_should_not_prevent_further_queries() -> anyhow::Result<()> {
 
             assert!(res.is_ok());
         }
-        _ => panic!("Excepted one of the connections to be in a deadlock."),
+        (res1, res2) => panic!(
+            "Excepted exactly one of the connections to be in a deadlock: {:?} / {:?}",
+            res1, res2
+        ),
     }
 
     Ok(())
