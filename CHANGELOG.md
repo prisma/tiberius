@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.11.2
+
+- Fix error ordering (#248)
+
 ## Version 0.11.1
 
 - Don't load native roots for trust-all config (#243)
