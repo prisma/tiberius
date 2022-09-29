@@ -47,14 +47,18 @@ where
 
     pub(crate) async fn flush_done(self) -> crate::Result<TokenDone> {
         let mut stream = self.try_unfold();
-
+        let mut last_error = None;
         let mut routing = None;
 
         loop {
             match stream.try_next().await? {
-                Some(ReceivedToken::Done(token)) => match routing {
-                    Some(routing) => return Err(routing),
-                    None => return Ok(token),
+                Some(ReceivedToken::Error(error)) => {
+                    last_error = Some(error);
+                }
+                Some(ReceivedToken::Done(token)) => match (last_error, routing) {
+                    (Some(error), _) => return Err(Error::Server(error)),
+                    (_, Some(routing)) => return Err(routing),
+                    (_, _) => return Ok(token),
                 },
                 Some(ReceivedToken::EnvChange(TokenEnvChange::Routing { host, port })) => {
                     routing = Some(Error::Routing { host, port });
@@ -68,12 +72,19 @@ where
     #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
     pub(crate) async fn flush_sspi(self) -> crate::Result<TokenSspi> {
         let mut stream = self.try_unfold();
+        let mut last_error = None;
 
         loop {
             match stream.try_next().await? {
+                Some(ReceivedToken::Error(error)) => {
+                    last_error = Some(error);
+                }
                 Some(ReceivedToken::Sspi(token)) => return Ok(token),
                 Some(_) => (),
-                None => return Err(crate::Error::Protocol("Never got SSPI token.".into())),
+                None => match last_error {
+                    Some(err) => return Err(crate::Error::Server(err)),
+                    None => Err(crate::Error::Protocol("Never got SSPI token.".into())),
+                },
             }
         }
     }
