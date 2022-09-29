@@ -83,7 +83,7 @@ where
                 Some(_) => (),
                 None => match last_error {
                     Some(err) => return Err(crate::Error::Server(err)),
-                    None => Err(crate::Error::Protocol("Never got SSPI token.".into())),
+                    None => return Err(crate::Error::Protocol("Never got SSPI token.".into())),
                 },
             }
         }

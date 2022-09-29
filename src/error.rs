@@ -6,7 +6,7 @@ use thiserror::Error;
 
 /// A unified error enum that contains several errors that might occurr during
 /// the lifecycle of this driver
-#[derive(Debug, Clone, Error, PartialEq)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum Error {
     #[error("An error occured during the attempt of performing I/O: {}", message)]
     /// An error occured when performing I/O to the server.

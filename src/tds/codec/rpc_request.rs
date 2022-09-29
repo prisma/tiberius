@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 #[bitflags]
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RpcStatus {
     ByRefValue = 1 << 0,
     DefaultValue = 1 << 1,
@@ -17,7 +17,7 @@ pub enum RpcStatus {
 
 #[bitflags]
 #[repr(u16)]
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RpcOption {
     WithRecomp = 1 << 0,
     NoMeta = 1 << 1,

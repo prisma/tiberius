@@ -24,7 +24,7 @@ impl Column {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// The type of the column.
 pub enum ColumnType {
     /// The column doesn't have a specified type.

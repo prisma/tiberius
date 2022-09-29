@@ -8,7 +8,7 @@ macro_rules! uint_enum {
     };
 
     ($( #[$gattr:meta] )* ( $($vis:tt)* ) enum $ty:ident { $( $( #[$attr:meta] )* $variant:ident = $val:expr,)* }) => {
-        #[derive(Debug, Copy, Clone, PartialEq)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq)]
         $( #[$gattr] )*
         #[allow(missing_docs)]
         $( $vis )* enum $ty {

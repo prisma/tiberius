@@ -13,7 +13,7 @@ pub struct TokenDone {
 
 #[bitflags]
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoneStatus {
     More = 1 << 0,
     Error = 1 << 1,
