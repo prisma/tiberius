@@ -72,7 +72,7 @@ impl<'a> FromSql<'a> for f32 {
             ColumnData::F64(data) => {
                 Ok(
                     data.map( |v| v as f32)
-                    // TODO An f64 as f32 could potentially overflow the f32 capacity)
+                    // TODO An f64 as f32 could potentially overflow the f32 capacity) 
                 )
             }
             v => Err(crate::Error::Conversion(
