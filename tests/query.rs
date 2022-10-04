@@ -2613,3 +2613,55 @@ where
 
     Ok(())
 }
+
+#[test_on_runtimes]
+async fn nullable_f64<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(format!("CREATE TABLE ##{table} (m1 float NULL)"), &[])
+        .await?;
+
+    conn.execute(&format!("INSERT INTO ##{table} (m1) VALUES (null)"), &[])
+        .await?;
+
+    let row = conn
+        .query(&format!("SELECT m1 FROM ##{table}"), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    let col: Option<f64> = row.get(0);
+    assert_eq!(None, col);
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn nullable_f32<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.execute(format!("CREATE TABLE ##{table} (m1 real NULL)"), &[])
+        .await?;
+
+    conn.execute(&format!("INSERT INTO ##{table} (m1) VALUES (null)"), &[])
+        .await?;
+
+    let row = conn
+        .query(&format!("SELECT m1 FROM ##{table}"), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    let col: Option<f32> = row.get(0);
+    assert_eq!(None, col);
+
+    Ok(())
+}
