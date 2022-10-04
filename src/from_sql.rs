@@ -71,8 +71,7 @@ impl<'a> FromSql<'a> for f32 {
             ColumnData::F32(data) => Ok(*data),
             ColumnData::F64(data) => {
                 Ok(
-                    data.map( |v| v as f32)
-                    // TODO An f64 as f32 could potentially overflow the f32 capacity) 
+                    data.map(|v| v as f32), // TODO An f64 as f32 could potentially overflow the f32 capacity)
                 )
             }
             v => Err(crate::Error::Conversion(
@@ -85,17 +84,11 @@ impl<'a> FromSql<'a> for f32 {
 impl<'a> FromSql<'a> for f64 {
     fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
         match value {
-            ColumnData::F32(data) => {
-                Ok(data.map( |v| v as f64))
-            },
-            ColumnData::F64(data) => {
-                Ok(*data)
-            },
-            v => {
-                Err(crate::Error::Conversion(
-                    format!("cannot interpret {:?} as an f64 value", v).into(),
-                ))
-            }
+            ColumnData::F32(data) => Ok(data.map(|v| v as f64)),
+            ColumnData::F64(data) => Ok(*data),
+            v => Err(crate::Error::Conversion(
+                format!("cannot interpret {:?} as an f64 value", v).into(),
+            )),
         }
     }
 }
