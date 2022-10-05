@@ -62,58 +62,10 @@ from_sql!(u8: ColumnData::U8(val) => (*val, val), ColumnData::I32(None) => (None
 from_sql!(i16: ColumnData::I16(val) => (*val, val), ColumnData::U8(None) => (None, None), ColumnData::I32(None) => (None, None));
 from_sql!(i32: ColumnData::I32(val) => (*val, val), ColumnData::U8(None) => (None, None));
 from_sql!(i64: ColumnData::I64(val) => (*val, val), ColumnData::U8(None) => (None, None), ColumnData::I32(None) => (None, None));
+from_sql!(f32: ColumnData::F32(val) => (*val, val));
+from_sql!(f64: ColumnData::F64(val) => (*val, val));
 from_sql!(Uuid: ColumnData::Guid(val) => (*val, val));
 from_sql!(Numeric: ColumnData::Numeric(n) => (*n, n));
-
-impl<'a> FromSql<'a> for f32 {
-    fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
-        match value {
-            ColumnData::F32(data) => Ok(*data),
-            ColumnData::F64(data) => {
-                Ok(
-                    data.map(|v| v as f32), // TODO An f64 as f32 could potentially overflow the f32 capacity)
-                )
-            }
-            v => Err(crate::Error::Conversion(
-                format!("cannot interpret {:?} as an f32 value", v).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> FromSql<'a> for f64 {
-    fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
-        match value {
-            ColumnData::F32(data) => Ok(data.map(|v| v as f64)),
-            ColumnData::F64(data) => Ok(*data),
-            v => Err(crate::Error::Conversion(
-                format!("cannot interpret {:?} as an f64 value", v).into(),
-            )),
-        }
-    }
-}
-
-impl FromSqlOwned for XmlData {
-    fn from_sql_owned(value: ColumnData<'static>) -> crate::Result<Option<Self>> {
-        match value {
-            ColumnData::Xml(data) => Ok(data.map(|data| data.into_owned())),
-            v => Err(crate::Error::Conversion(
-                format!("cannot interpret {:?} as a String value", v).into(),
-            )),
-        }
-    }
-}
-
-impl<'a> FromSql<'a> for &'a XmlData {
-    fn from_sql(value: &'a ColumnData<'static>) -> crate::Result<Option<Self>> {
-        match value {
-            ColumnData::Xml(data) => Ok(data.as_ref().map(|s| s.as_ref())),
-            v => Err(crate::Error::Conversion(
-                format!("cannot interpret {:?} as a String value", v).into(),
-            )),
-        }
-    }
-}
 
 impl FromSqlOwned for String {
     fn from_sql_owned(value: ColumnData<'static>) -> crate::Result<Option<Self>> {
