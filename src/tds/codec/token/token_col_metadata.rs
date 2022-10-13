@@ -346,8 +346,8 @@ impl BaseMetaDataColumn {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::VarLenContext;
     use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use crate::VarLenContext;
 
     #[tokio::test]
     async fn nullable_floats_decode() {
