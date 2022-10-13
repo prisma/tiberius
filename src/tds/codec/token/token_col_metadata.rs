@@ -351,16 +351,8 @@ mod tests {
     #[tokio::test]
     async fn nullable_floats_decode() {
         let types = vec![
-            TypeInfo::VarLenSized(VarLenContext::new(
-                VarLenType::Floatn,
-                4,
-                None,
-            )),
-            TypeInfo::VarLenSized(VarLenContext::new(
-                VarLenType::Floatn,
-                8,
-                None,
-            )),
+            TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+            TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
         ];
 
         for ti in types {
@@ -373,7 +365,7 @@ mod tests {
             let nti = TypeInfo::decode(&mut buf.into_sql_read_bytes())
                 .await
                 .expect("decode must succeed");
-                
+
             assert_eq!(nti, ti);
         }
     }
