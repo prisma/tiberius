@@ -344,3 +344,39 @@ impl BaseMetaDataColumn {
         Ok(BaseMetaDataColumn { flags, ty })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+
+    #[tokio::test]
+    async fn nullable_floats_decode() {
+        let types = vec![
+            TypeInfo::VarLenSized(VarLenContext::new(
+                VarLenType::Floatn,
+                4,
+                None,
+            )),
+            TypeInfo::VarLenSized(VarLenContext::new(
+                VarLenType::Floatn,
+                8,
+                None,
+            )),
+        ];
+
+        for ti in types {
+            let mut buf = BytesMut::new();
+
+            ti.clone()
+                .encode(&mut buf)
+                .expect("encode should be successful");
+
+            let nti = TypeInfo::decode(&mut buf.into_sql_read_bytes())
+                .await
+                .expect("decode must succeed");
+                
+            assert_eq!(nti, ti);
+        }
+    }
+}
