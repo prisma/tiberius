@@ -2566,7 +2566,7 @@ where
     assert_eq!(Option::<i32>::None, row.get(8));
     assert_eq!(Option::<i64>::None, row.get(9));
     assert_eq!(Option::<f32>::None, row.get(10));
-    assert_eq!(Option::<f32>::None, row.get(11));
+    assert_eq!(Option::<f64>::None, row.get(11));
 
     Ok(())
 }
