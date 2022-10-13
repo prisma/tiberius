@@ -141,11 +141,9 @@ impl BaseMetaDataColumn {
                 VarLenType::Bitn => ColumnData::Bit(None),
                 VarLenType::Decimaln => ColumnData::Numeric(None),
                 VarLenType::Numericn => ColumnData::Numeric(None),
-                VarLenType::Floatn => {
-                    match cx.len() {
-                        4 => ColumnData::F32(None),
-                        _ => ColumnData::F64(None)
-                    }
+                VarLenType::Floatn => match cx.len() {
+                    4 => ColumnData::F32(None),
+                    _ => ColumnData::F64(None),
                 },
                 VarLenType::Money => ColumnData::F64(None),
                 VarLenType::Datetimen => ColumnData::DateTime(None),
