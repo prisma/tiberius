@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.11.3
+
+- Cleanup TokenRow public API (#255)
+- Fix null values in NBC rows (#253)
+
 ## Version 0.11.2
 
 - Fix error ordering (#248)
