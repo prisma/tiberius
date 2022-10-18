@@ -53,10 +53,17 @@ impl<'a> TokenRow<'a> {
     }
 
     /// Creates a new empty row with allocated capacity.
-    pub fn with_capacity(&self, capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
             data: Vec::with_capacity(capacity),
         }
+    }
+
+    /// Clears the row, removing all column values.
+    ///
+    /// Note that this method has no effect on the allocated capacity of the row.
+    pub fn clear(&mut self) {
+        self.data.clear();
     }
 
     /// The number of columns.
