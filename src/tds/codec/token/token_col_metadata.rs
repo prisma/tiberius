@@ -137,11 +137,19 @@ impl BaseMetaDataColumn {
             },
             TypeInfo::VarLenSized(cx) => match cx.r#type() {
                 VarLenType::Guid => ColumnData::Guid(None),
-                VarLenType::Intn => ColumnData::I32(None),
+                VarLenType::Intn => match cx.len() {
+                    1 => ColumnData::U8(None),
+                    2 => ColumnData::I16(None),
+                    4 => ColumnData::I32(None),
+                    _ => ColumnData::I64(None),
+                },
                 VarLenType::Bitn => ColumnData::Bit(None),
                 VarLenType::Decimaln => ColumnData::Numeric(None),
                 VarLenType::Numericn => ColumnData::Numeric(None),
-                VarLenType::Floatn => ColumnData::F32(None),
+                VarLenType::Floatn => match cx.len() {
+                    4 => ColumnData::F32(None),
+                    _ => ColumnData::F64(None),
+                },
                 VarLenType::Money => ColumnData::F64(None),
                 VarLenType::Datetimen => ColumnData::DateTime(None),
                 #[cfg(feature = "tds73")]

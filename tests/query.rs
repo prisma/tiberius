@@ -955,6 +955,351 @@ where
 }
 
 #[test_on_runtimes]
+async fn floats_in_nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!(
+        r#"
+        create table ##{} (
+            id int identity(1,1),
+            col1 float(53) null,
+            col2 float(53) null,
+            col3 float(53) null,
+            col4 float(53) null,
+            col5 float(53) null,
+            col6 float(53) null,
+            col7 float(53) null,
+            col8 float(53) null
+        )
+    "#,
+        table
+    ))
+    .await?;
+
+    conn.execute(
+        format!(
+            "INSERT INTO ##{} (col1, col2, col3, col4, col5, col6, col7, col8) VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7, @P8)",
+            table
+        ),
+        &[
+            &Option::<f64>::None,
+            &Option::<f64>::None,
+            &Option::<f64>::Some(1.23f64),
+            &Option::<f64>::None,
+            &Option::<f64>::None,
+            &Option::<f64>::None,
+            &Option::<f64>::None,
+            &Option::<f64>::None
+        ],
+    ).await?;
+
+    let mut stream = conn
+        .query(
+            &format!(
+                "SELECT col1, col2, col3, col4, col5, col6, col7, col8 FROM ##{}",
+                table
+            ),
+            &[],
+        )
+        .await?;
+
+    let expected_results = vec![None, None, Some(1.23f64), None, None, None, None];
+
+    let mut res: Vec<Option<f64>> = Vec::new();
+
+    while let Some(item) = stream.try_next().await? {
+        if let QueryItem::Row(row) = item {
+            for i in 0..expected_results.len() {
+                res.push(row.get(i))
+            }
+        }
+    }
+
+    assert_eq!(expected_results, res);
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn tinyint_in_nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!(
+        r#"
+        create table ##{} (
+            id int identity(1,1),
+            col1 tinyint null,
+            col2 tinyint null,
+            col3 tinyint null,
+            col4 tinyint null,
+            col5 tinyint null,
+            col6 tinyint null,
+            col7 tinyint null,
+            col8 tinyint null
+        )
+    "#,
+        table
+    ))
+    .await?;
+
+    conn.execute(
+        format!(
+            "INSERT INTO ##{} (col1, col2, col3, col4, col5, col6, col7, col8) VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7, @P8)",
+            table
+        ),
+        &[
+            &Option::<u8>::None,
+            &Option::<u8>::None,
+            &Option::<u8>::Some(1u8),
+            &Option::<u8>::None,
+            &Option::<u8>::None,
+            &Option::<u8>::None,
+            &Option::<u8>::None,
+            &Option::<u8>::None
+        ],
+    ).await?;
+
+    let mut stream = conn
+        .query(
+            &format!(
+                "SELECT col1, col2, col3, col4, col5, col6, col7, col8 FROM ##{}",
+                table
+            ),
+            &[],
+        )
+        .await?;
+
+    let expected_results = vec![None, None, Some(1u8), None, None, None, None];
+
+    let mut res: Vec<Option<u8>> = Vec::new();
+
+    while let Some(item) = stream.try_next().await? {
+        if let QueryItem::Row(row) = item {
+            for i in 0..expected_results.len() {
+                res.push(row.get(i))
+            }
+        }
+    }
+
+    assert_eq!(expected_results, res);
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn smallint_in_nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!(
+        r#"
+        create table ##{} (
+            id int identity(1,1),
+            col1 smallint null,
+            col2 smallint null,
+            col3 smallint null,
+            col4 smallint null,
+            col5 smallint null,
+            col6 smallint null,
+            col7 smallint null,
+            col8 smallint null
+        )
+    "#,
+        table
+    ))
+    .await?;
+
+    conn.execute(
+        format!(
+            "INSERT INTO ##{} (col1, col2, col3, col4, col5, col6, col7, col8) VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7, @P8)",
+            table
+        ),
+        &[
+            &Option::<i16>::None,
+            &Option::<i16>::None,
+            &Option::<i16>::Some(1i16),
+            &Option::<i16>::None,
+            &Option::<i16>::None,
+            &Option::<i16>::None,
+            &Option::<i16>::None,
+            &Option::<i16>::None
+        ],
+    ).await?;
+
+    let mut stream = conn
+        .query(
+            &format!(
+                "SELECT col1, col2, col3, col4, col5, col6, col7, col8 FROM ##{}",
+                table
+            ),
+            &[],
+        )
+        .await?;
+
+    let expected_results = vec![None, None, Some(1i16), None, None, None, None];
+
+    let mut res: Vec<Option<i16>> = Vec::new();
+
+    while let Some(item) = stream.try_next().await? {
+        if let QueryItem::Row(row) = item {
+            for i in 0..expected_results.len() {
+                res.push(row.get(i))
+            }
+        }
+    }
+
+    assert_eq!(expected_results, res);
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn int_in_nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!(
+        r#"
+        create table ##{} (
+            id int identity(1,1),
+            col1 int null,
+            col2 int null,
+            col3 int null,
+            col4 int null,
+            col5 int null,
+            col6 int null,
+            col7 int null,
+            col8 int null
+        )
+    "#,
+        table
+    ))
+    .await?;
+
+    conn.execute(
+        format!(
+            "INSERT INTO ##{} (col1, col2, col3, col4, col5, col6, col7, col8) VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7, @P8)",
+            table
+        ),
+        &[
+            &Option::<i32>::None,
+            &Option::<i32>::None,
+            &Option::<i32>::Some(1i32),
+            &Option::<i32>::None,
+            &Option::<i32>::None,
+            &Option::<i32>::None,
+            &Option::<i32>::None,
+            &Option::<i32>::None
+        ],
+    ).await?;
+
+    let mut stream = conn
+        .query(
+            &format!(
+                "SELECT col1, col2, col3, col4, col5, col6, col7, col8 FROM ##{}",
+                table
+            ),
+            &[],
+        )
+        .await?;
+
+    let expected_results = vec![None, None, Some(1i32), None, None, None, None];
+
+    let mut res: Vec<Option<i32>> = Vec::new();
+
+    while let Some(item) = stream.try_next().await? {
+        if let QueryItem::Row(row) = item {
+            for i in 0..expected_results.len() {
+                res.push(row.get(i))
+            }
+        }
+    }
+
+    assert_eq!(expected_results, res);
+
+    Ok(())
+}
+
+#[test_on_runtimes]
+async fn bigint_in_nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = random_table().await;
+
+    conn.simple_query(format!(
+        r#"
+        create table ##{} (
+            id int identity(1,1),
+            col1 bigint null,
+            col2 bigint null,
+            col3 bigint null,
+            col4 bigint null,
+            col5 bigint null,
+            col6 bigint null,
+            col7 bigint null,
+            col8 bigint null
+        )
+    "#,
+        table
+    ))
+    .await?;
+
+    conn.execute(
+        format!(
+            "INSERT INTO ##{} (col1, col2, col3, col4, col5, col6, col7, col8) VALUES (@P1, @P2, @P3, @P4, @P5, @P6, @P7, @P8)",
+            table
+        ),
+        &[
+            &Option::<i64>::None,
+            &Option::<i64>::None,
+            &Option::<i64>::Some(1i64),
+            &Option::<i64>::None,
+            &Option::<i64>::None,
+            &Option::<i64>::None,
+            &Option::<i64>::None,
+            &Option::<i64>::None
+        ],
+    ).await?;
+
+    let mut stream = conn
+        .query(
+            &format!(
+                "SELECT col1, col2, col3, col4, col5, col6, col7, col8 FROM ##{}",
+                table
+            ),
+            &[],
+        )
+        .await?;
+
+    let expected_results = vec![None, None, Some(1i64), None, None, None, None];
+
+    let mut res: Vec<Option<i64>> = Vec::new();
+
+    while let Some(item) = stream.try_next().await? {
+        if let QueryItem::Row(row) = item {
+            for i in 0..expected_results.len() {
+                res.push(row.get(i))
+            }
+        }
+    }
+
+    assert_eq!(expected_results, res);
+
+    Ok(())
+}
+
+#[test_on_runtimes]
 async fn nbc_rows<S>(mut conn: tiberius::Client<S>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
@@ -2566,7 +2911,7 @@ where
     assert_eq!(Option::<i32>::None, row.get(8));
     assert_eq!(Option::<i64>::None, row.get(9));
     assert_eq!(Option::<f32>::None, row.get(10));
-    assert_eq!(Option::<f32>::None, row.get(11));
+    assert_eq!(Option::<f64>::None, row.get(11));
 
     Ok(())
 }
