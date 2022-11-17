@@ -37,14 +37,14 @@ impl ConfigString for AdoNetConfig {
                 let parts: Vec<&str> = parts[0].split('\\').collect();
 
                 ServerDefinition {
-                    host: Some(parts[0].into()),
+                    host: Some(parts[0].replace("(local)", "localhost").into()),
                     port,
                     instance: Some(parts[1].into()),
                 }
             } else {
                 // Connect using a TCP target
                 ServerDefinition {
-                    host: Some(parts[0].into()),
+                    host: Some(parts[0].replace("(local)", "localhost").into()),
                     port: parse_port(&parts[1..])?,
                     instance: None,
                 }
@@ -119,6 +119,48 @@ mod tests {
         let server = ado.server()?;
 
         assert_eq!(Some("my-server.com".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
+        Ok(())
+    }
+
+    #[test]
+    fn server_parsing_local() -> crate::Result<()> {
+        let test_str = "server=tcp:(local),4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("localhost".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
+        let test_str = "data source=tcp:(local),4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("localhost".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
+        Ok(())
+    }
+
+    #[test]
+    fn server_parsing_local_no_tcp() -> crate::Result<()> {
+        let test_str = "server=(local),4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("localhost".to_string()), server.host);
+        assert_eq!(Some(4200), server.port);
+        assert_eq!(None, server.instance);
+
+        let test_str = "data source=(local),4200";
+        let ado: AdoNetConfig = test_str.parse()?;
+        let server = ado.server()?;
+
+        assert_eq!(Some("localhost".to_string()), server.host);
         assert_eq!(Some(4200), server.port);
         assert_eq!(None, server.instance);
 
