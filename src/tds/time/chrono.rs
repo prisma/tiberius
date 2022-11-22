@@ -19,30 +19,31 @@ use std::ops::Sub;
 
 #[inline]
 fn from_days(days: i64, start_year: i32) -> NaiveDate {
-    NaiveDate::from_ymd(start_year, 1, 1) + chrono::Duration::days(days as i64)
+    NaiveDate::from_ymd_opt(start_year, 1, 1).unwrap() + chrono::Duration::days(days as i64)
 }
 
 #[inline]
 fn from_sec_fragments(sec_fragments: i64) -> NaiveTime {
-    NaiveTime::from_hms(0, 0, 0) + chrono::Duration::nanoseconds(sec_fragments * (1e9 as i64) / 300)
+    NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+        + chrono::Duration::nanoseconds(sec_fragments * (1e9 as i64) / 300)
 }
 
 #[inline]
 #[cfg(feature = "tds73")]
 fn from_mins(mins: u32) -> NaiveTime {
-    NaiveTime::from_num_seconds_from_midnight(mins, 0)
+    NaiveTime::from_num_seconds_from_midnight_opt(mins, 0).unwrap()
 }
 
 #[inline]
 fn to_days(date: NaiveDate, start_year: i32) -> i64 {
-    date.signed_duration_since(NaiveDate::from_ymd(start_year, 1, 1))
+    date.signed_duration_since(NaiveDate::from_ymd_opt(start_year, 1, 1).unwrap())
         .num_days()
 }
 
 #[inline]
 #[cfg(not(feature = "tds73"))]
 fn to_sec_fragments(time: NaiveTime) -> i64 {
-    time.signed_duration_since(NaiveTime::from_hms(0, 0, 0))
+    time.signed_duration_since(NaiveTime::from_hms_opt(0, 0, 0).unwrap())
         .num_nanoseconds()
         .unwrap()
         * 300
@@ -58,7 +59,7 @@ from_sql!(
         )),
         ColumnData::DateTime2(ref dt) => dt.map(|dt| NaiveDateTime::new(
             from_days(dt.date.days() as i64, 1),
-            NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(dt.time.increments as i64 * 10i64.pow(9 - dt.time.scale as u32))
+            NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(dt.time.increments as i64 * 10i64.pow(9 - dt.time.scale as u32))
         )),
         ColumnData::DateTime(ref dt) => dt.map(|dt| NaiveDateTime::new(
             from_days(dt.days as i64, 1900),
@@ -67,7 +68,7 @@ from_sql!(
     NaiveTime:
         ColumnData::Time(ref time) => time.map(|time| {
             let ns = time.increments as i64 * 10i64.pow(9 - time.scale as u32);
-            NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns)
+            NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns)
         });
     NaiveDate:
         ColumnData::Date(ref date) => date.map(|date| from_days(date.days() as i64, 1));
@@ -75,7 +76,7 @@ from_sql!(
         ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
             let date = from_days(dto.datetime2.date.days() as i64, 1);
             let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
-            let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns);
+            let time = NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns);
 
             let offset = chrono::Duration::minutes(dto.offset as i64);
             let naive = NaiveDateTime::new(date, time).sub(offset);
@@ -85,9 +86,9 @@ from_sql!(
     chrono::DateTime<FixedOffset>: ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
         let date = from_days(dto.datetime2.date.days() as i64, 1);
         let ns = dto.datetime2.time.increments as i64 * 10i64.pow(9 - dto.datetime2.time.scale as u32);
-        let time = NaiveTime::from_hms(0,0,0) + chrono::Duration::nanoseconds(ns);
+        let time = NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns);
 
-        let offset = FixedOffset::east((dto.offset as i32) * 60);
+        let offset = FixedOffset::east_opt((dto.offset as i32) * 60).unwrap();
         let naive = NaiveDateTime::new(date, time);
 
         chrono::DateTime::from_utc(naive, offset)

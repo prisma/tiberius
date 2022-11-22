@@ -2042,7 +2042,10 @@ where
 {
     use chrono::NaiveDate;
 
-    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let dt = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
     let stream = conn.query("SELECT @P1", &[&dt]).await?;
     let row = stream.into_row().await?.unwrap();
 
@@ -2059,7 +2062,10 @@ where
 {
     use chrono::NaiveDate;
 
-    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let dt = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
     let table = random_table().await;
 
     conn.execute(
@@ -2094,7 +2100,10 @@ where
 {
     use chrono::NaiveDate;
 
-    let dt = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let dt = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
     let table = random_table().await;
 
     conn.execute(format!("CREATE TABLE ##{} (date datetime2)", table), &[])
@@ -2156,7 +2165,7 @@ where
 {
     use chrono::NaiveTime;
 
-    let time = NaiveTime::from_hms(16, 20, 0);
+    let time = NaiveTime::from_hms_opt(16, 20, 0).unwrap();
 
     let row = conn
         .query("SELECT @P1", &[&time])
@@ -2189,7 +2198,7 @@ where
 {
     use chrono::NaiveDate;
 
-    let date = NaiveDate::from_ymd(2020, 4, 20);
+    let date = NaiveDate::from_ymd_opt(2020, 4, 20).unwrap();
 
     let row = conn
         .query("SELECT @P1", &[&date])
@@ -2222,7 +2231,10 @@ where
 {
     use chrono::{offset::Utc, DateTime, NaiveDate};
 
-    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let naive = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
     let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
 
     let row = conn
@@ -2256,8 +2268,11 @@ where
 {
     use chrono::{offset::FixedOffset, DateTime, NaiveDate};
 
-    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-    let fixed = FixedOffset::east(3600 * 3);
+    let naive = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
+    let fixed = FixedOffset::east_opt(3600 * 3).unwrap();
     let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
 
     let row = conn
@@ -2291,8 +2306,11 @@ where
 {
     use chrono::{offset::FixedOffset, DateTime, NaiveDate};
 
-    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-    let fixed = FixedOffset::east(3600 * 3);
+    let naive = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
+    let fixed = FixedOffset::east_opt(3600 * 3).unwrap();
     let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
 
     let row = conn
