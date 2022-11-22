@@ -89,7 +89,7 @@ from_sql!(
         let time = NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns);
 
         let offset = FixedOffset::east_opt((dto.offset as i32) * 60).unwrap();
-        let naive = NaiveDateTime::new(date, time).sub(offset);
+        let naive = NaiveDateTime::new(date, time);
 
         chrono::DateTime::from_utc(naive, offset)
     })
@@ -133,7 +133,7 @@ to_sql!(self_,
         chrono::DateTime<FixedOffset>: (ColumnData::DateTimeOffset, {
             use chrono::Timelike;
 
-            let naive = self_.naive_local();
+            let naive = self_.naive_utc();
             let time = naive.time();
             let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
 
@@ -185,7 +185,7 @@ into_sql!(self_,
         chrono::DateTime<FixedOffset>: (ColumnData::DateTimeOffset, {
             use chrono::Timelike;
 
-            let naive = self_.naive_local();
+            let naive = self_.naive_utc();
             let time = naive.time();
             let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
 
