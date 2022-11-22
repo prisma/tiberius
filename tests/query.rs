@@ -2309,8 +2309,11 @@ where
 {
     use chrono::{offset::FixedOffset, DateTime, NaiveDate};
 
-    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
-    let fixed = FixedOffset::east(3600 * 3);
+    let naive = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
+    let fixed = FixedOffset::east_opt(3600 * 3).unwrap();
     let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
 
     let row = conn
