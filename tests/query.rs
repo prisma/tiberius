@@ -2283,6 +2283,30 @@ where
     Ok(())
 }
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn date_time_fixed_convertion<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::{offset::FixedOffset, DateTime, NaiveDate};
+
+    let naive = NaiveDate::from_ymd(2020, 4, 20).and_hms(16, 20, 0);
+    let fixed = FixedOffset::east(3600 * 3);
+    let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+
+    let row = conn
+        .query(format!("SELECT CAST('{}' AS datetimeoffset(7))", dt), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+
+    Ok(())
+}
+
 // time crate
 
 #[cfg(all(not(feature = "tds73"), feature = "time"))]
