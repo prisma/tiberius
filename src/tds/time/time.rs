@@ -74,7 +74,7 @@ from_sql!(
 
             let offset = UtcOffset::from_whole_seconds(dto.offset as i32 * 60).unwrap();
 
-            date.with_time(time).assume_offset(offset)
+            date.with_time(time).assume_utc().to_offset(offset)
         })
 );
 
@@ -98,13 +98,15 @@ to_sql!(self_,
             super::DateTime2::new(date, time)
         });
         OffsetDateTime: (ColumnData::DateTimeOffset, {
-            let nanos: u64 = (self_.time() - Time::from_hms(0, 0, 0).unwrap()).whole_nanoseconds().try_into().unwrap();
-
-            let date = super::Date::new(to_days(self_.date(), 1) as u32);
-            let time = super::Time { increments: nanos / 100, scale: 7 };
-
             let tz = self_.offset();
             let offset = (tz.whole_seconds() / 60) as i16;
+
+            let utc_date = self_.to_offset(UtcOffset::UTC);
+
+            let nanos: u64 = (utc_date.time() - Time::from_hms(0, 0, 0).unwrap()).whole_nanoseconds().try_into().unwrap();
+
+            let date = super::Date::new(to_days(utc_date.date(), 1) as u32);
+            let time = super::Time { increments: nanos / 100, scale: 7 };
 
             super::DateTimeOffset::new(super::DateTime2::new(date, time), offset)
         });
