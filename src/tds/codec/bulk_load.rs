@@ -59,23 +59,10 @@ where
     ///
     /// [`finalize`]: #method.finalize
     pub async fn send(&mut self, row: TokenRow<'a>) -> crate::Result<()> {
-        let packet_size = (self.connection.context().packet_size() as usize) - HEADER_BYTES;
         let mut buf_with_columns = BytesMutWithDataColumns::new(&mut self.buf, &self.columns);
 
         row.encode(&mut buf_with_columns)?;
-
-        while self.buf.len() >= packet_size {
-            let header = PacketHeader::bulk_load(self.packet_id);
-            let data = self.buf.split_to(packet_size);
-
-            event!(
-                Level::TRACE,
-                "Bulk insert packet ({} bytes)",
-                data.len() + HEADER_BYTES,
-            );
-
-            self.connection.write_to_wire(header, data).await?;
-        }
+        self.write_packets().await?;
 
         Ok(())
     }
@@ -87,6 +74,7 @@ where
     /// table.
     pub async fn finalize(mut self) -> crate::Result<ExecuteResult> {
         TokenDone::default().encode(&mut self.buf)?;
+        self.write_packets().await?;
 
         let mut header = PacketHeader::bulk_load(self.packet_id);
         header.set_status(PacketStatus::EndOfMessage);
@@ -103,5 +91,24 @@ where
         self.connection.flush_sink().await?;
 
         ExecuteResult::new(self.connection).await
+    }
+    
+    async fn write_packets(&mut self) -> crate::Result<()> {
+        let packet_size = (self.connection.context().packet_size() as usize) - HEADER_BYTES;
+        
+        if self.buf.len() >= packet_size {
+            let header = PacketHeader::bulk_load(self.packet_id);
+            let data = self.buf.split_to(packet_size);
+
+            event!(
+                Level::TRACE,
+                "Bulk insert packet ({} bytes)",
+                data.len() + HEADER_BYTES,
+            );
+
+            self.connection.write_to_wire(header, data).await?;
+        }        
+        
+        Ok(())
     }
 }
