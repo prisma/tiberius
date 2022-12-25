@@ -96,7 +96,7 @@ where
     async fn write_packets(&mut self) -> crate::Result<()> {
         let packet_size = (self.connection.context().packet_size() as usize) - HEADER_BYTES;
         
-        if self.buf.len() >= packet_size {
+        while self.buf.len() >= packet_size {
             let header = PacketHeader::bulk_load(self.packet_id);
             let data = self.buf.split_to(packet_size);
 
