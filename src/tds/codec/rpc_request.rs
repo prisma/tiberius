@@ -110,7 +110,7 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
             }
         }
 
-        dst.put_u16_le(self.flags.bits() as u16);
+        dst.put_u16_le(self.flags.bits());
 
         for param in self.params.into_iter() {
             param.encode(dst)?;

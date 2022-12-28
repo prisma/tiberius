@@ -213,7 +213,7 @@ mod tests {
         let test_str = "TrustServerCertificate=true";
         let ado: AdoNetConfig = test_str.parse()?;
 
-        assert_eq!(true, ado.trust_cert()?);
+        assert!(ado.trust_cert()?);
 
         Ok(())
     }
@@ -223,7 +223,7 @@ mod tests {
         let test_str = "TrustServerCertificate=false";
         let ado: AdoNetConfig = test_str.parse()?;
 
-        assert_eq!(false, ado.trust_cert()?);
+        assert!(!ado.trust_cert()?);
 
         Ok(())
     }
@@ -233,7 +233,7 @@ mod tests {
         let test_str = "TrustServerCertificate=yes";
         let ado: AdoNetConfig = test_str.parse()?;
 
-        assert_eq!(true, ado.trust_cert()?);
+        assert!(ado.trust_cert()?);
 
         Ok(())
     }
@@ -243,7 +243,7 @@ mod tests {
         let test_str = "TrustServerCertificate=no";
         let ado: AdoNetConfig = test_str.parse()?;
 
-        assert_eq!(false, ado.trust_cert()?);
+        assert!(!ado.trust_cert()?);
 
         Ok(())
     }
@@ -253,7 +253,7 @@ mod tests {
         let test_str = "Something=foo;";
         let ado: AdoNetConfig = test_str.parse()?;
 
-        assert_eq!(false, ado.trust_cert()?);
+        assert!(!ado.trust_cert()?);
 
         Ok(())
     }

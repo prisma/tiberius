@@ -34,9 +34,9 @@ where
         #[cfg(feature = "tds73")]
         Timen => super::time::decode(src, len).await?,
         #[cfg(feature = "tds73")]
-        Datetime2 => super::datetime2::decode(src, len as usize).await?,
+        Datetime2 => super::datetime2::decode(src, len).await?,
         #[cfg(feature = "tds73")]
-        DatetimeOffsetn => super::datetimeoffsetn::decode(src, len as usize).await?,
+        DatetimeOffsetn => super::datetimeoffsetn::decode(src, len).await?,
         BigBinary | BigVarBin => super::binary::decode(src, len).await?,
         Text => super::text::decode(src, collation).await?,
         NText => super::text::decode(src, None).await?,

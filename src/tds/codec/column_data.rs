@@ -689,7 +689,7 @@ mod tests {
     use crate::{Error, VarLenContext};
     use bytes::BytesMut;
 
-    async fn test_round_trip<'a>(ti: TypeInfo, d: ColumnData<'a>) {
+    async fn test_round_trip(ti: TypeInfo, d: ColumnData<'_>) {
         let mut buf = BytesMut::new();
         let mut buf_with_ti = BytesMutWithTypeInfo::new(&mut buf).with_type_info(&ti);
 
@@ -1339,7 +1339,7 @@ mod tests {
 
             if let Error::BulkInput(_) = err {
             } else {
-                assert!(false);
+                panic!("Expected: Error::BulkInput, got: {:?}", err);
             }
         }
     }

@@ -354,7 +354,7 @@ impl DateTime2 {
     where
         R: SqlReadBytes + Unpin,
     {
-        let time = Time::decode(src, n, rlen as usize).await?;
+        let time = Time::decode(src, n, rlen).await?;
 
         let mut bytes = [0u8; 4];
         src.read_exact(&mut bytes[..3]).await?;
