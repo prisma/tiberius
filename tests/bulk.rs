@@ -112,9 +112,17 @@ test_bulk_type!(smallint("SMALLINT", 2000, 0..2000i16));
 test_bulk_type!(int("INT", 2000, 0..2000i32));
 test_bulk_type!(bigint("BIGINT", 2000, 0..2000i64));
 
-test_bulk_type!(real("REAL", 1000, vec![3.14f32; 1000].into_iter()));
+test_bulk_type!(real(
+    "REAL",
+    1000,
+    vec![std::f32::consts::PI; 1000].into_iter()
+));
 
-test_bulk_type!(float("FLOAT", 1000, vec![3.14f64; 1000].into_iter()));
+test_bulk_type!(float(
+    "FLOAT",
+    1000,
+    vec![std::f64::consts::PI; 1000].into_iter()
+));
 
 test_bulk_type!(varchar_limited(
     "VARCHAR(255)",
@@ -126,61 +134,61 @@ test_bulk_type!(varchar_limited(
 test_bulk_type!(datetime2(
     "DATETIME2",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_0(
     "DATETIME2(0)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_1(
     "DATETIME2(1)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_2(
     "DATETIME2(2)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_3(
     "DATETIME2(3)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_4(
     "DATETIME2(4)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_5(
     "DATETIME2(5)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_6(
     "DATETIME2(6)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_7(
     "DATETIME2(7)",
     100,
-    vec![NaiveDateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+    vec![NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap(); 100].into_iter()
 ));

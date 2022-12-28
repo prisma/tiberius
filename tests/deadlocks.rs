@@ -23,7 +23,7 @@ async fn spawn_actor() -> (
     let (response_sender, response_receiver) = mpsc::channel(100);
 
     tokio::spawn(async move {
-        let config = Config::from_ado_string(&*CONN_STR)?;
+        let config = Config::from_ado_string(&CONN_STR)?;
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
         tcp.set_nodelay(true)?;

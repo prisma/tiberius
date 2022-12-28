@@ -105,8 +105,8 @@ impl Encode<BytesMut> for PreloginMessage {
 
         // version
         fields.push((PRELOGIN_VERSION, 0x04 + 0x02)); // version + subbuild
-        data_cursor.write_u32::<BigEndian>(self.version as u32)?;
-        data_cursor.write_u16::<BigEndian>(self.sub_build as u16)?;
+        data_cursor.write_u32::<BigEndian>(self.version)?;
+        data_cursor.write_u16::<BigEndian>(self.sub_build)?;
 
         // encryption
         fields.push((PRELOGIN_ENCRYPTION, 0x01)); // encryption

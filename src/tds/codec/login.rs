@@ -463,7 +463,7 @@ mod tests {
                             .skip(offset as usize)
                             .take(length as usize * 2)
                         {
-                            *byte = *byte ^ 0xA5;
+                            *byte ^= 0xA5;
                             *byte = ((*byte << 4) & 0xf0 | (*byte >> 4) & 0x0f);
                         }
                     }
@@ -513,7 +513,7 @@ mod tests {
                         let pos = cursor.position();
                         let mut options = cursor.read_u8()?;
                         let fed_auth_echo = (options & 1) == 1;
-                        options = options >> 1;
+                        options >>= 1;
                         if options != FED_AUTH_LIBRARYSECURITYTOKEN {
                             unimplemented!("unsupported FedAuthLibrary {:?}", options);
                         }
@@ -574,7 +574,7 @@ mod tests {
         let mut login = LoginMessage::new();
         let token = "fake-aad-token";
         let nonce = [3u8; 32];
-        login.aad_token(token, true, Some(nonce.clone()));
+        login.aad_token(token, true, Some(nonce));
 
         assert!(login.option_flags_3.contains(OptionFlag3::ExtensionUsed));
         assert_eq!(
