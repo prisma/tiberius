@@ -220,8 +220,8 @@ impl Encode<BytesMut> for TypeInfo {
             } => {
                 dst.put_u8(ty as u8);
                 dst.put_u8(size as u8);
-                dst.put_u8(precision as u8);
-                dst.put_u8(scale as u8);
+                dst.put_u8(precision);
+                dst.put_u8(scale);
             }
             TypeInfo::Xml { schema, .. } => {
                 dst.put_u8(VarLenType::Xml as u8);

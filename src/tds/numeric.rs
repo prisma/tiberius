@@ -362,7 +362,7 @@ mod tests {
     fn numeric_to_int_dec_part() {
         let n = Numeric::new_with_scale(57705, 2);
         assert_eq!(n.int_part(), 577);
-        assert_eq!(n.dec_part(), 05);
+        assert_eq!(n.dec_part(), 5);
     }
 
     #[test]

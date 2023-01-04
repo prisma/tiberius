@@ -121,7 +121,7 @@ mod tests {
         let test_str = "jdbc:sqlserver://my-server.com:4200;TrustServerCertificate=true;";
         let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(true, jdbc.trust_cert()?);
+        assert!(jdbc.trust_cert()?);
 
         Ok(())
     }
@@ -131,7 +131,7 @@ mod tests {
         let test_str = "jdbc:sqlserver://my-server.com:4200;TrustServerCertificate=false;";
         let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(false, jdbc.trust_cert()?);
+        assert!(!jdbc.trust_cert()?);
 
         Ok(())
     }
@@ -141,7 +141,7 @@ mod tests {
         let test_str = "jdbc:sqlserver://my-server.com:4200;TrustServerCertificate=yes;";
         let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(true, jdbc.trust_cert()?);
+        assert!(jdbc.trust_cert()?);
 
         Ok(())
     }
@@ -151,7 +151,7 @@ mod tests {
         let test_str = "jdbc:sqlserver://my-server.com:4200;TrustServerCertificate=no;";
         let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(false, jdbc.trust_cert()?);
+        assert!(!jdbc.trust_cert()?);
 
         Ok(())
     }
@@ -161,7 +161,7 @@ mod tests {
         let test_str = "jdbc:sqlserver://my-server.com:4200;";
         let jdbc: JdbcConfig = test_str.parse()?;
 
-        assert_eq!(false, jdbc.trust_cert()?);
+        assert!(!jdbc.trust_cert()?);
 
         Ok(())
     }
