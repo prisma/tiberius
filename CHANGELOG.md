@@ -1,5 +1,10 @@
 # Changes
 
+## Version 0.11.4
+
+- Fix buffer overrun on finalize (#266)
+- Correctly parse (local) server name (#259)
+
 ## Version 0.11.3
 
 - Cleanup TokenRow public API (#255)
