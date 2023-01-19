@@ -2301,6 +2301,33 @@ where
     Ok(())
 }
 
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+#[test_on_runtimes]
+async fn date_time_fixed_convertion<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use chrono::{offset::FixedOffset, DateTime, NaiveDate};
+
+    let naive = NaiveDate::from_ymd_opt(2020, 4, 20)
+        .unwrap()
+        .and_hms_opt(16, 20, 0)
+        .unwrap();
+    let fixed = FixedOffset::east_opt(3600 * 3).unwrap();
+    let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+
+    let row = conn
+        .query(format!("SELECT CAST('{}' AS datetimeoffset(7))", dt), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+
+    Ok(())
+}
+
 // time crate
 
 #[cfg(all(not(feature = "tds73"), feature = "time"))]
@@ -2470,6 +2497,40 @@ where
 
     let row = conn
         .query("SELECT @P1", &[&dt])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    assert_eq!(Some(dt), row.get(0));
+
+    Ok(())
+}
+
+#[cfg(all(feature = "tds73", feature = "time"))]
+#[test_on_runtimes]
+async fn offset_date_time_fixed_with_time_crate_conversion<S>(
+    mut conn: tiberius::Client<S>,
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    use time::format_description::well_known::Rfc3339;
+
+    let dt = time::Date::from_calendar_date(2020, time::Month::April, 20)
+        .unwrap()
+        .with_hms(16, 20, 00)
+        .unwrap()
+        .assume_offset(time::UtcOffset::from_hms(3, 0, 0).unwrap());
+
+    let row = conn
+        .query(
+            format!(
+                "SELECT CAST('{}' AS datetimeoffset(7))",
+                dt.format(&Rfc3339).unwrap()
+            ),
+            &[&dt],
+        )
         .await?
         .into_row()
         .await?
