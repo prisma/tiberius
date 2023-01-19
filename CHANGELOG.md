@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.11.5
+
+- Close connection explicitly (#268)
+
 ## Version 0.11.4
 
 - Fix buffer overrun on finalize (#266)
