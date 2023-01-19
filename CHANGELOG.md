@@ -2,6 +2,12 @@
 
 ## Version 0.11.5
 
+- BREAKING: Correctly convert DateTimeOffset to/from database (#269)
+  Please read the [issue](https://github.com/prisma/tiberius/issues/260)
+  carefully before upgrading.
+
+## Version 0.11.5
+
 - Close connection explicitly (#268)
 
 ## Version 0.11.4
