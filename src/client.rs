@@ -347,6 +347,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         BulkLoadRequest::new(&mut self.connection, columns)
     }
 
+    /// Closes this database connection explicitly.
+    pub async fn close(self) -> crate::Result<()> {
+        self.connection.close().await
+    }
+
     pub(crate) fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
         vec![
             RpcParam {

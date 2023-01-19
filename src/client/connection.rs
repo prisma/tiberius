@@ -484,6 +484,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         Ok(self)
     }
+
+    pub(crate) async fn close(mut self) -> crate::Result<()> {
+        self.transport.close().await
+    }
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Stream for Connection<S> {
