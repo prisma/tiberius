@@ -34,7 +34,7 @@ use crate::{tds::codec::Encode, SqlReadBytes};
 use byteorder::{ByteOrder, LittleEndian};
 use bytes::{BufMut, BytesMut};
 #[cfg(feature = "tds73")]
-use futures::io::AsyncReadExt;
+use futures_util::io::AsyncReadExt;
 
 /// A presentation of `datetime` type in the server.
 ///

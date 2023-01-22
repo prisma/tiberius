@@ -1,6 +1,6 @@
 use crate::{sql_read_bytes::SqlReadBytes, tds::codec::Encode};
 use bytes::BytesMut;
-use futures::io::AsyncReadExt;
+use futures_util::io::AsyncReadExt;
 
 #[derive(Debug)]
 pub struct TokenSspi(Vec<u8>);

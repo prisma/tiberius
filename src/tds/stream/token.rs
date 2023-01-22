@@ -7,7 +7,10 @@ use crate::{
     },
     Error, SqlReadBytes, TokenType,
 };
-use futures::{stream::BoxStream, AsyncRead, AsyncWrite, TryStreamExt};
+use futures_util::{
+    io::{AsyncRead, AsyncWrite},
+    stream::{BoxStream, TryStreamExt},
+};
 use std::{convert::TryFrom, sync::Arc};
 use tracing::{event, Level};
 
@@ -214,7 +217,7 @@ where
     }
 
     pub fn try_unfold(self) -> BoxStream<'a, crate::Result<ReceivedToken>> {
-        let stream = futures::stream::try_unfold(self, |mut this| async move {
+        let stream = futures_util::stream::try_unfold(self, |mut this| async move {
             if this.conn.is_eof() {
                 match this.last_error {
                     None => return Ok(None),

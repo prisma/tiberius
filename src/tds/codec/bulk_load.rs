@@ -1,5 +1,5 @@
 use asynchronous_codec::BytesMut;
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
 use tracing::{event, Level};
 
 use crate::{

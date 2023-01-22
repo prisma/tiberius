@@ -1,6 +1,6 @@
 use crate::tds::Context;
 use bytes::Buf;
-use futures::io::AsyncRead;
+use futures_util::io::AsyncRead;
 use pin_project_lite::pin_project;
 use std::io::ErrorKind::UnexpectedEof;
 use std::{future::Future, io, mem::size_of, pin::Pin, task};
@@ -329,7 +329,7 @@ pub(crate) mod test_utils {
     use crate::tds::Context;
     use crate::SqlReadBytes;
     use bytes::BytesMut;
-    use futures::AsyncRead;
+    use futures_util::io::AsyncRead;
     use std::io;
     use std::pin::Pin;
     use std::task::Poll;

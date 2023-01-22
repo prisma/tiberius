@@ -2,7 +2,7 @@ use crate::{
     client::{config::Config, TrustConfig},
     error::{Error, IoErrorKind},
 };
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
 pub(crate) use opentls::async_io::{TlsConnector, TlsStream};
 use opentls::Certificate;
 use std::fs;

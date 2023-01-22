@@ -3,7 +3,8 @@ use crate::{
     client::Connection,
     tds::stream::{ReceivedToken, TokenStream},
 };
-use futures::{AsyncRead, AsyncWrite, TryStreamExt};
+use futures_util::io::{AsyncRead, AsyncWrite};
+use futures_util::stream::TryStreamExt;
 use std::fmt::Debug;
 
 /// A result from a query execution, listing the number of affected rows.

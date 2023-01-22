@@ -4,7 +4,7 @@ use crate::tds::codec::encode::Encode;
 use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, SqlReadBytes, TokenType};
 use bytes::BufMut;
 pub(crate) use bytes_mut_with_data_columns::BytesMutWithDataColumns;
-use futures::io::AsyncReadExt;
+use futures_util::io::AsyncReadExt;
 pub use into_row::IntoRow;
 
 /// A row of data.

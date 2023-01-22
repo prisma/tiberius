@@ -1,9 +1,8 @@
 use crate::tds::stream::ReceivedToken;
 use crate::{row::ColumnType, Column, Row};
-use futures::{
+use futures_util::{
     ready,
-    stream::{BoxStream, Peekable},
-    Stream, StreamExt, TryStreamExt,
+    stream::{BoxStream, Peekable, Stream, StreamExt, TryStreamExt},
 };
 use std::{
     fmt::Debug,
@@ -38,7 +37,7 @@ use std::{
 /// # use tiberius::{Config, QueryItem};
 /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # use std::env;
-/// # use futures::TryStreamExt;
+/// # use futures_util::stream::TryStreamExt;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
@@ -149,7 +148,7 @@ impl<'a> QueryStream<'a> {
     /// # use tiberius::Config;
     /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
-    /// # use futures::TryStreamExt;
+    /// # use futures_util::stream::TryStreamExt;
     /// # #[tokio::main]
     /// # async fn main() -> anyhow::Result<()> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(

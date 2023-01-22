@@ -1,7 +1,7 @@
 use super::SqlBrowser;
 use crate::client::Config;
 use async_trait::async_trait;
-use futures::TryFutureExt;
+use futures_util::future::TryFutureExt;
 use net::{TcpStream, UdpSocket};
 use std::io;
 use tokio::{

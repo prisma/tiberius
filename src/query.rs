@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     tds::{codec::RpcProcId, stream::TokenStream},

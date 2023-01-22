@@ -1,4 +1,4 @@
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
 use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::cell::RefCell;

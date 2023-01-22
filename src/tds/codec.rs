@@ -19,7 +19,7 @@ use bytes::BytesMut;
 pub use column_data::*;
 pub use decode::*;
 pub(crate) use encode::*;
-use futures::{Stream, TryStreamExt};
+use futures_util::stream::{Stream, TryStreamExt};
 pub use header::*;
 pub(crate) use iterator_ext::*;
 pub use login::*;
