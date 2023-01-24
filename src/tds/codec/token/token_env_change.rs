@@ -1,7 +1,7 @@
 use crate::{tds::Collation, Error, SqlReadBytes};
 use byteorder::{LittleEndian, ReadBytesExt};
 use fmt::Debug;
-use futures::io::AsyncReadExt;
+use futures_util::io::AsyncReadExt;
 use std::{
     convert::TryFrom,
     fmt,

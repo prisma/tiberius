@@ -1,5 +1,5 @@
 use crate::Config;
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
 
 #[cfg(feature = "native-tls")]
 mod native_tls_stream;

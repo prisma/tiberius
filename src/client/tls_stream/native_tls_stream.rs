@@ -4,7 +4,7 @@ use crate::{
 };
 pub(crate) use async_native_tls::TlsStream;
 use async_native_tls::{Certificate, TlsConnector};
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
 use std::fs;
 use tracing::{event, Level};
 

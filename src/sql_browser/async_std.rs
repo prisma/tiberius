@@ -4,7 +4,7 @@ use async_std::{
     net::{self, ToSocketAddrs},
 };
 use async_trait::async_trait;
-use futures::TryFutureExt;
+use futures_util::future::TryFutureExt;
 use std::time;
 use tracing::Level;
 

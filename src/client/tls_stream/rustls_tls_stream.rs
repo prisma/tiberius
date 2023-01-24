@@ -3,7 +3,7 @@ use crate::{
     error::IoErrorKind,
     Error,
 };
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
 use std::{
     fs, io,
     pin::Pin,

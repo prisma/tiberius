@@ -25,8 +25,8 @@ use crate::{
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use enumflags2::BitFlags;
-use futures::{AsyncRead, AsyncWrite};
-use futures_util::TryStreamExt;
+use futures_util::io::{AsyncRead, AsyncWrite};
+use futures_util::stream::TryStreamExt;
 use std::{borrow::Cow, fmt::Debug};
 
 /// `Client` is the main entry point to the SQL Server, providing query

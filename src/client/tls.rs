@@ -9,8 +9,8 @@ use crate::tds::{
     HEADER_BYTES,
 };
 use bytes::BytesMut;
-use futures::ready;
-use futures::{AsyncRead, AsyncWrite};
+use futures_util::io::{AsyncRead, AsyncWrite};
+use futures_util::ready;
 use std::{
     cmp, io,
     pin::Pin,
