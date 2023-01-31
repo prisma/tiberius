@@ -282,18 +282,20 @@ mod bigdecimal_ {
     #[cfg(feature = "tds73")]
     to_sql!(self_,
             BigDecimal: (ColumnData::Numeric, {
-                let (int, exp) = self_.as_bigint_and_exponent();
-                let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
-
+                let (int, exp) = self_.into_bigint_and_exponent();
                 // SQL Server cannot store negative scales, so we have
                 // to convert the number to the correct exponent
                 // before storing.
                 //
                 // E.g. `Decimal(9, -3)` would be stored as
                 // `Decimal(9000, 0)`.
-                if exp < 0 {
-                    value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("Given BigDecimal exponent underflowing the minimum accepted scale (-9223372036854775808).")));
-                }
+                let (int, exp) = if exp < 0 {
+                    self_.with_scale(0).into_bigint_and_exponent()
+                } else {
+                    (int, exp)
+                };
+
+                let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
 
                 let scale = u8::try_from(std::cmp::max(exp, 0))
                     .expect("Given BigDecimal exponent overflowing the maximum accepted scale (255).");
@@ -306,17 +308,18 @@ mod bigdecimal_ {
     into_sql!(self_,
             BigDecimal: (ColumnData::Numeric, {
                 let (int, exp) = self_.as_bigint_and_exponent();
-                let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
-
                 // SQL Server cannot store negative scales, so we have
                 // to convert the number to the correct exponent
                 // before storing.
                 //
                 // E.g. `Decimal(9, -3)` would be stored as
                 // `Decimal(9000, 0)`.
-                if exp < 0 {
-                    value *= i128::from(10i64.pow(u32::try_from(exp.abs()).expect("Given BigDecimal exponent underflowing the minimum accepted scale (-9223372036854775808).")));
-                }
+                let (int, exp) = if exp < 0 {
+                    self_.with_scale(0).into_bigint_and_exponent()
+                } else {
+                    (int, exp)
+                };
+                let mut value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
 
                 let scale = u8::try_from(std::cmp::max(exp, 0))
                     .expect("Given BigDecimal exponent overflowing the maximum accepted scale (255).");
