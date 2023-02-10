@@ -1,6 +1,11 @@
 # Changes
 
-## Version 0.11.5
+## Version 0.12.1
+
+- fix: bigdecimal conversion overflow (#271)
+- Reduce futures crate dependency footprint (#270)
+
+## Version 0.12.0
 
 - BREAKING: Correctly convert DateTimeOffset to/from database (#269)
   Please read the [issue](https://github.com/prisma/tiberius/issues/260)
