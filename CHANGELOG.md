@@ -11,6 +11,10 @@
   Please read the [issue](https://github.com/prisma/tiberius/issues/260)
   carefully before upgrading.
 
+## Version 0.11.6
+
+- fix: bigdecimal conversion overflow (#271)
+
 ## Version 0.11.5
 
 - Close connection explicitly (#268)
