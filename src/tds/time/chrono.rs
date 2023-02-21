@@ -14,6 +14,7 @@ use crate::tds::codec::ColumnData;
 #[cfg_attr(feature = "docs", doc(cfg(feature = "tds73")))]
 pub use chrono::offset::{FixedOffset, Utc};
 pub use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use std::borrow::Borrow;
 #[cfg(feature = "tds73")]
 use std::ops::Sub;
 
@@ -35,8 +36,9 @@ fn from_mins(mins: u32) -> NaiveTime {
 }
 
 #[inline]
-fn to_days(date: NaiveDate, start_year: i32) -> i64 {
-    date.signed_duration_since(NaiveDate::from_ymd_opt(start_year, 1, 1).unwrap())
+fn to_days<D: Borrow<NaiveDate>>(date: D, start_year: i32) -> i64 {
+    date.borrow()
+        .signed_duration_since(NaiveDate::from_ymd_opt(start_year, 1, 1).unwrap())
         .num_days()
 }
 
@@ -96,59 +98,7 @@ from_sql!(
 );
 
 #[cfg(feature = "tds73")]
-to_sql!(self_,
-        NaiveDate: (ColumnData::Date, Date::new(to_days(*self_, 1) as u32));
-        NaiveTime: (ColumnData::Time, {
-            use chrono::Timelike;
-
-            let nanos = self_.num_seconds_from_midnight() as u64 * 1e9 as u64 + self_.nanosecond() as u64;
-            let increments = nanos / 100;
-
-            Time {increments, scale: 7}
-        });
-        NaiveDateTime: (ColumnData::DateTime2, {
-            use chrono::Timelike;
-
-            let time = self_.time();
-            let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
-            let increments = nanos / 100;
-
-            let date = Date::new(to_days(self_.date(), 1) as u32);
-            let time = Time {increments, scale: 7};
-
-            DateTime2::new(date, time)
-        });
-        chrono::DateTime<Utc>: (ColumnData::DateTimeOffset, {
-            use chrono::Timelike;
-
-            let naive = self_.naive_utc();
-            let time = naive.time();
-            let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
-
-            let date = Date::new(to_days(naive.date(), 1) as u32);
-            let time = Time {increments: nanos / 100, scale: 7};
-
-            DateTimeOffset::new(DateTime2::new(date, time), 0)
-        });
-        chrono::DateTime<FixedOffset>: (ColumnData::DateTimeOffset, {
-            use chrono::Timelike;
-
-            let naive = self_.naive_utc();
-            let time = naive.time();
-            let nanos = time.num_seconds_from_midnight() as u64 * 1e9 as u64 + time.nanosecond() as u64;
-
-            let date = Date::new(to_days(naive.date(), 1) as u32);
-            let time = Time { increments: nanos / 100, scale: 7 };
-
-            let tz = self_.timezone();
-            let offset = (tz.local_minus_utc() / 60) as i16;
-
-            DateTimeOffset::new(DateTime2::new(date, time), offset)
-        });
-);
-
-#[cfg(feature = "tds73")]
-into_sql!(self_,
+to_sql_and_into_sql!(self_,
         NaiveDate: (ColumnData::Date, Date::new(to_days(self_, 1) as u32));
         NaiveTime: (ColumnData::Time, {
             use chrono::Timelike;
@@ -200,20 +150,7 @@ into_sql!(self_,
 );
 
 #[cfg(not(feature = "tds73"))]
-to_sql!(self_,
-        NaiveDateTime: (ColumnData::DateTime, {
-            let date = self_.date();
-            let time = self_.time();
-
-            let days = to_days(date, 1900) as i32;
-            let seconds_fragments = to_sec_fragments(time);
-
-            DateTime1::new(days, seconds_fragments as u32)
-        });
-);
-
-#[cfg(not(feature = "tds73"))]
-into_sql!(self_,
+to_sql_and_into_sql!(self_,
         NaiveDateTime: (ColumnData::DateTime, {
             let date = self_.date();
             let time = self_.time();
