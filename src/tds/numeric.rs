@@ -248,7 +248,7 @@ mod decimal {
     );
 
     #[cfg(feature = "tds73")]
-    to_sql!(self_,
+    to_sql_and_into_sql!(self_,
             Decimal: (ColumnData::Numeric, {
                 let unpacked = self_.unpack();
 
@@ -280,32 +280,7 @@ mod bigdecimal_ {
     }));
 
     #[cfg(feature = "tds73")]
-    to_sql!(self_,
-            BigDecimal: (ColumnData::Numeric, {
-                let (int, exp) = self_.as_bigint_and_exponent();
-                // SQL Server cannot store negative scales, so we have
-                // to convert the number to the correct exponent
-                // before storing.
-                //
-                // E.g. `Decimal(9, -3)` would be stored as
-                // `Decimal(9000, 0)`.
-                let (int, exp) = if exp < 0 {
-                    self_.with_scale(0).into_bigint_and_exponent()
-                } else {
-                    (int, exp)
-                };
-
-                let value = int.to_i128().expect("Given BigDecimal overflowing the maximum accepted value.");
-
-                let scale = u8::try_from(std::cmp::max(exp, 0))
-                    .expect("Given BigDecimal exponent overflowing the maximum accepted scale (255).");
-
-                Numeric::new_with_scale(value, scale)
-            });
-    );
-
-    #[cfg(feature = "tds73")]
-    into_sql!(self_,
+    to_sql_and_into_sql!(self_,
             BigDecimal: (ColumnData::Numeric, {
                 let (int, exp) = self_.as_bigint_and_exponent();
                 // SQL Server cannot store negative scales, so we have

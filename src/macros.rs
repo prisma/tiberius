@@ -99,7 +99,12 @@ macro_rules! into_sql {
     }
 }
 
-#[cfg(any(feature = "chrono", feature = "time"))]
+#[cfg(any(
+    feature = "chrono",
+    feature = "time",
+    feature = "rust_decimal",
+    feature = "bigdecimal"
+))]
 macro_rules! to_sql_and_into_sql {
     ($target:ident, $( $ty:ty: ($variant:expr, $val:expr) ;)* ) => {
         $(
