@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use byteorder::{ByteOrder, LittleEndian};
-use encoding::DecoderTrap;
 
 use crate::{error::Error, sql_read_bytes::SqlReadBytes, tds::Collation, VarLenType};
 
@@ -24,9 +23,10 @@ where
             let collation = collation.as_ref().unwrap();
             let encoder = collation.encoding()?;
 
-            let s: String = encoder
-                .decode(buf.as_ref(), DecoderTrap::Strict)
-                .map_err(Error::Encoding)?;
+            let s = encoder
+                .decode_without_bom_handling_and_without_replacement(buf.as_ref())
+                .ok_or_else(|| Error::Encoding("invalid sequence".into()))?
+                .to_string();
 
             Ok(Some(s.into()))
         }
