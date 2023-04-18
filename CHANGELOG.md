@@ -1,5 +1,13 @@
 # Changes
 
+## Version 0.11.7
+
+- Updating connection-string crate to 0.2 (#288)
+
+## Version 0.11.6
+
+- Fix bigdecimal conversion overflow (#271)
+
 ## Version 0.11.5
 
 - Close connection explicitly (#268)

@@ -13,7 +13,7 @@ license = "MIT/Apache-2.0"
 name = "tiberius"
 readme = "README.md"
 repository = "https://github.com/prisma/tiberius"
-version = "0.11.6"
+version = "0.11.7"
 
 [workspace]
 members = ["runtimes-macro"]
@@ -49,7 +49,7 @@ pin-project-lite = "0.2"
 asynchronous-codec = "0.6"
 futures-sink = "0.3"
 async-trait = "0.1"
-connection-string = "0.1.4"
+connection-string = "0.2"
 num-traits = "0.2"
 uuid = "1.0"
 
