@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.12.2
+
+- Update connection-string crate to 0.2 (#286)
+
 ## Version 0.12.1
 
 - fix: bigdecimal conversion overflow (#271)
