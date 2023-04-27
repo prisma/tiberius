@@ -42,3 +42,30 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
 ) -> crate::Result<TlsStream<S>> {
     opentls_tls_stream::create_tls_stream(config, stream).await
 }
+
+#[cfg(any(feature = "native-tls", feature = "vendored-openssl"))]
+mod iter_certs {
+    const BEGIN: &[u8] = b"-----BEGIN";
+    pub struct IterCertBundle<'a> {
+        bundle: &'a [u8],
+        current_begin: Option<usize>,
+    }
+    impl<'a> IterCertBundle<'a> {
+        pub fn new(bundle: &'a [u8]) -> Self {
+            Self {
+                bundle,
+                current_begin: bundle.windows(BEGIN.len()).position(|x| x == BEGIN),
+            }
+        }
+    }
+    impl<'a> Iterator for IterCertBundle<'a> {
+        type Item = &'a [u8];
+        fn next(&mut self) -> Option<&'a [u8]> {
+            self.current_begin.map(|begin| {
+                let next_begin = self.bundle.windows(BEGIN.len()).skip(begin + 1).position(|x| x == BEGIN).map(|x| x + begin + 1);
+                self.current_begin = next_begin;
+                &self.bundle[begin..next_begin.unwrap_or(self.bundle.len() - 1)]
+            })
+        }
+    }
+}
