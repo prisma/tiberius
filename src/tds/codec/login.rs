@@ -232,6 +232,14 @@ impl<'a> LoginMessage<'a> {
             nonce,
         })
     }
+
+    pub fn readonly(&mut self, readonly: bool) {
+        if readonly {
+            self.type_flags.insert(LoginTypeFlag::ReadOnlyIntent);
+        } else {
+            self.type_flags.remove(LoginTypeFlag::ReadOnlyIntent);
+        }
+    }
 }
 
 impl<'a> Encode<BytesMut> for LoginMessage<'a> {
