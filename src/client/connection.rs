@@ -105,6 +105,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 config.database,
                 config.host,
                 config.application_name,
+                config.readonly,
                 prelogin,
             )
             .await?;
@@ -290,6 +291,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         db: Option<String>,
         server_name: Option<String>,
         application_name: Option<String>,
+        readonly: bool,
         prelogin: PreloginMessage,
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
@@ -305,6 +307,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         if let Some(app_name) = application_name {
             login_message.app_name(app_name);
         }
+
+        login_message.readonly(readonly);
 
         match auth {
             #[cfg(all(windows, feature = "winauth"))]
