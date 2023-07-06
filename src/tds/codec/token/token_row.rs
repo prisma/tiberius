@@ -71,6 +71,11 @@ impl<'a> TokenRow<'a> {
         self.data.len()
     }
 
+    /// Returns an iterator over column values.
+    pub fn iter(&self) -> std::slice::Iter<'_, ColumnData<'a>> {
+        self.data.iter()
+    }
+
     /// True if row has no columns.
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
