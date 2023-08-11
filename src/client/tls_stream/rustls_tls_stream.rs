@@ -17,17 +17,16 @@ use tokio_rustls::{
             HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
             WantsTransparencyPolicyOrClientCert,
         },
-        internal::msgs::handshake::DigitallySignedStruct,
-        Certificate, ClientConfig, ConfigBuilder, Error as RustlsError, RootCertStore, ServerName,
-        WantsVerifier,
+        Certificate, ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError,
+        RootCertStore, ServerName, WantsVerifier,
     },
     TlsConnector,
 };
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{event, Level};
 
-impl From<tokio_rustls::webpki::Error> for Error {
-    fn from(e: tokio_rustls::webpki::Error) -> Self {
+impl From<tokio_rustls::rustls::Error> for Error {
+    fn from(e: tokio_rustls::rustls::Error) -> Self {
         crate::Error::Tls(e.to_string())
     }
 }
