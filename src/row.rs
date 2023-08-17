@@ -13,6 +13,11 @@ pub struct Column {
 }
 
 impl Column {
+    /// Construct a new Column.
+    pub fn new(name: String, column_type: ColumnType) -> Self {
+        Self { name, column_type }
+    }
+
     /// The name of the column.
     pub fn name(&self) -> &str {
         &self.name
@@ -289,6 +294,11 @@ impl Row {
     /// ```
     pub fn columns(&self) -> &[Column] {
         &self.columns
+    }
+
+    /// Return an iterator over row column-value pairs.
+    pub fn cells(&self) -> impl Iterator<Item = (&Column, &ColumnData<'static>)> {
+        self.columns().iter().zip(self.data.iter())
     }
 
     /// The result set number, starting from zero and increasing if the stream
