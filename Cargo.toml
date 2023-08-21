@@ -118,7 +118,7 @@ version = "1.12.0"
 optional = true
 
 [dependencies.tokio-rustls]
-version = "0.23.3"
+version = "0.24.0"
 optional = true
 features = ["dangerous_configuration"]
 
@@ -144,7 +144,15 @@ version = "0.7"
 features = ["compat"]
 
 [dev-dependencies.tokio]
-features = ["macros", "sync", "io-std", "time", "io-util", "net", "rt-multi-thread"]
+features = [
+    "macros",
+    "sync",
+    "io-std",
+    "time",
+    "io-util",
+    "net",
+    "rt-multi-thread",
+]
 version = "1.0"
 
 [dev-dependencies.async-std]
