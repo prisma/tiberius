@@ -114,6 +114,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                     });
                 }
             }
+            TrustConfig::CaCertificateBundle(bundle) => {
+                let mut cert_store = RootCertStore::empty();
+                let certs = rustls_pemfile::certs(&mut bundle.as_slice())?;
+                for cert in certs {
+                    cert_store.add(&Certificate(cert))?;
+                }
+                builder
+                    .with_root_certificates(cert_store)
+                    .with_no_client_auth()
+            }
             TrustConfig::TrustAll => {
                 event!(
                     Level::WARN,
