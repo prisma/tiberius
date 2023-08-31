@@ -49,7 +49,14 @@ A native Microsoft SQL Server (TDS) client for Rust.
 | `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                          | `disabled` |
 | `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                                     | `disabled` |
 
-Note: if you get a timeout on macOS you will need to use either `rustls` or `vendored-openssl`.
+#### TLS feature flags
+
+There are three TLS feature flags: `native-tls` which uses system libraries; `rustls` which is a pure rust solution; and `vendored-openssl` which uses a prepackaged binary. By default this library will use `native-tls`. Because of the way default features
+currently work with cargo, if you select another TLS implementation, you will get that implementation *and* the `native-tls` implementation.
+
+To avoid duplication of implementations, this library will use any specified TLS feature in preference of `native-tls`. This means that by default the library will use `native-tls`, but in the case of either `rustls` or `vendored-openssl` being supplied, those choices will take preference.
+
+If you experience issues with TLS handshake, simply add `tiberius = {version = "*", features = ["rustls"]}` to your cargo file.
 
 ### Supported protocols
 

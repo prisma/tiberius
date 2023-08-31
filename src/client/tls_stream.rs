@@ -24,7 +24,7 @@ cfg_if::cfg_if! {
         ) -> crate::Result<TlsStream<S>> {
             opentls_tls_stream::create_tls_stream(config, stream).await
         }
-   } else {
+   } else if #[cfg(feature = "native-tls")] {
         mod native_tls_stream;
 
         pub(crate) use native_tls_stream::TlsStream;
