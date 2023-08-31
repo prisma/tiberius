@@ -49,6 +49,8 @@ A native Microsoft SQL Server (TDS) client for Rust.
 | `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                          | `disabled` |
 | `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                                     | `disabled` |
 
+Note: if you get a timeout on macOS you will need to use either `rustls` or `vendored-openssl`.
+
 ### Supported protocols
 
 Tiberius does not rely on any protocol when connecting to an SQL Server instance. Instead the `Client` takes a socket that implements the `AsyncRead` and `AsyncWrite` traits from the [futures-rs](https://crates.io/crates/futures) crate.
