@@ -2237,7 +2237,7 @@ where
         .unwrap()
         .and_hms_opt(16, 20, 0)
         .unwrap();
-    let dt: DateTime<Utc> = DateTime::from_utc(naive, Utc);
+    let dt: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive, Utc);
 
     let row = conn
         .query("SELECT @P1", &[&dt])
@@ -2276,7 +2276,7 @@ where
         .unwrap();
 
     let fixed = FixedOffset::east_opt(3600 * 3).unwrap();
-    let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+    let dt: DateTime<FixedOffset> = DateTime::from_naive_utc_and_offset(naive, fixed);
 
     let row = conn
         .query("SELECT @P1", &[&dt])
@@ -2314,7 +2314,7 @@ where
         .and_hms_opt(16, 20, 0)
         .unwrap();
     let fixed = FixedOffset::east_opt(3600 * 3).unwrap();
-    let dt: DateTime<FixedOffset> = DateTime::from_utc(naive, fixed);
+    let dt: DateTime<FixedOffset> = DateTime::from_naive_utc_and_offset(naive, fixed);
 
     let row = conn
         .query(format!("SELECT CAST('{}' AS datetimeoffset(7))", dt), &[])
