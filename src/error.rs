@@ -63,6 +63,11 @@ pub enum Error {
     #[error("BULK UPLOAD input failure: {0}")]
     /// Invalid input in Bulk Upload
     BulkInput(Cow<'static, str>),
+    #[error("Unimplemented: {0}")]
+    /// Not yet implemented
+    ///
+    /// NOTE: It may be removed in the future.
+    Unimplemented(Cow<'static, str>),
 }
 
 impl Error {

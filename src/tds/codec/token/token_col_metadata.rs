@@ -6,7 +6,7 @@ use std::{
 use crate::{
     error::Error,
     tds::codec::{Encode, FixedLenType, TokenType, TypeInfo, VarLenType},
-    Column, ColumnData, ColumnType, SqlReadBytes,
+    Column, ColumnData, ColumnType, Result, SqlReadBytes,
 };
 use asynchronous_codec::BytesMut;
 use bytes::BufMut;
@@ -119,8 +119,8 @@ pub struct BaseMetaDataColumn {
 }
 
 impl BaseMetaDataColumn {
-    pub(crate) fn null_value(&self) -> ColumnData<'static> {
-        match &self.ty {
+    pub(crate) fn null_value(&self) -> Result<ColumnData<'static>> {
+        let val = match &self.ty {
             TypeInfo::FixedLen(ty) => match ty {
                 FixedLenType::Null => ColumnData::I32(None),
                 FixedLenType::Int1 => ColumnData::U8(None),
@@ -167,11 +167,17 @@ impl BaseMetaDataColumn {
                 VarLenType::NVarchar => ColumnData::String(None),
                 VarLenType::NChar => ColumnData::String(None),
                 VarLenType::Xml => ColumnData::Xml(None),
-                VarLenType::Udt => todo!("User-defined types not supported"),
+                VarLenType::Udt => {
+                    return Err(Error::Unimplemented(
+                        "User-defined types not supported".into(),
+                    ))
+                }
                 VarLenType::Text => ColumnData::String(None),
                 VarLenType::Image => ColumnData::Binary(None),
                 VarLenType::NText => ColumnData::String(None),
-                VarLenType::SSVariant => todo!(),
+                VarLenType::SSVariant => {
+                    return Err(Error::Unimplemented("SSVariant type not supported".into()))
+                }
             },
             TypeInfo::VarLenSizedPrecision { ty, .. } => match ty {
                 VarLenType::Guid => ColumnData::Guid(None),
@@ -197,14 +203,21 @@ impl BaseMetaDataColumn {
                 VarLenType::NVarchar => ColumnData::String(None),
                 VarLenType::NChar => ColumnData::String(None),
                 VarLenType::Xml => ColumnData::Xml(None),
-                VarLenType::Udt => todo!("User-defined types not supported"),
+                VarLenType::Udt => {
+                    return Err(Error::Unimplemented(
+                        "User-defined types not supported".into(),
+                    ))
+                }
                 VarLenType::Text => ColumnData::String(None),
                 VarLenType::Image => ColumnData::Binary(None),
                 VarLenType::NText => ColumnData::String(None),
-                VarLenType::SSVariant => todo!(),
+                VarLenType::SSVariant => {
+                    return Err(Error::Unimplemented("SSVariant type not supported".into()))
+                }
             },
             TypeInfo::Xml { .. } => ColumnData::Xml(None),
-        }
+        };
+        Ok(val)
     }
 }
 
