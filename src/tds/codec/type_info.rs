@@ -99,7 +99,11 @@ impl Encode<BytesMut> for VarLenContext {
                 dst.put_u32_le(self.len() as u32);
             }
             VarLenType::Xml => (),
-            typ => todo!("encoding {:?} is not supported yet", typ),
+            typ => {
+                return Err(Error::Unimplemented(
+                    format!("encoding {:?} is not supported yet", typ).into(),
+                ))
+            }
         }
 
         if let Some(collation) = self.collation() {
@@ -314,7 +318,11 @@ impl TypeInfo {
                     VarLenType::Image | VarLenType::Text | VarLenType::NText => {
                         src.read_u32_le().await? as usize
                     }
-                    _ => todo!("not yet implemented for {:?}", ty),
+                    _ => {
+                        return Err(Error::Unimplemented(
+                            format!("not yet implemented for {:?}", ty).into(),
+                        ));
+                    }
                 };
 
                 let collation = match ty {

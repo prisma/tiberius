@@ -27,7 +27,7 @@ use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
     tds::{time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
-    SqlReadBytes,
+    Error, SqlReadBytes,
 };
 use bytes::BufMut;
 pub(crate) use bytes_mut_with_type_info::BytesMutWithTypeInfo;
@@ -133,7 +133,11 @@ impl<'a> ColumnData<'a> {
                 VarLenType::Decimaln | VarLenType::Numericn => {
                     ColumnData::Numeric(Numeric::decode(src, *scale).await?)
                 }
-                _ => todo!(),
+                _ => {
+                    return Err(Error::Unimplemented(
+                        format!("not yet implemented for {:?}", ty).into(),
+                    ))
+                }
             },
             TypeInfo::Xml { schema, size } => xml::decode(src, *size, schema.clone()).await?,
         };
@@ -656,7 +660,7 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
             {
                 if let Some(num) = opt {
                     if scale != &num.scale() {
-                        todo!("this still need some work, if client scale not aligned with server, we need to do conversion but will lose precision")
+                        return Err(Error::Unimplemented("this still need some work, if client scale not aligned with server, we need to do conversion but will lose precision".into()));
                     }
                     num.encode(&mut *dst)?;
                 } else {
