@@ -7,7 +7,7 @@
 pub use time::*;
 
 use crate::tds::codec::ColumnData;
-use std::time::Duration;
+use std::{borrow::Borrow, time::Duration};
 
 #[inline]
 fn from_days(days: u64, start_year: i32) -> Date {
@@ -29,6 +29,11 @@ fn from_sec_fragments(sec_fragments: u64) -> Time {
 #[inline]
 fn to_days(date: Date, start_year: i32) -> i64 {
     (date - Date::from_calendar_date(start_year, Month::January, 1).unwrap()).whole_days()
+}
+
+#[inline]
+fn owned<D: Borrow<T>, T: Copy>(data: D) -> T {
+    *data.borrow()
 }
 
 #[inline]
@@ -79,10 +84,10 @@ from_sql!(
 );
 
 #[cfg(feature = "tds73")]
-to_sql!(self_,
-        Date: (ColumnData::Date, super::Date::new(to_days(*self_, 1) as u32));
+to_sql_and_into_sql!(self_,
+        Date: (ColumnData::Date, super::Date::new(to_days(owned(self_), 1) as u32));
         Time: (ColumnData::Time, {
-            let nanos: u64 = (*self_ - Time::from_hms(0, 0, 0).unwrap()).whole_nanoseconds().try_into().unwrap();
+            let nanos: u64 = (owned::<_, Time>(self_) - Time::from_hms(0, 0, 0).unwrap()).whole_nanoseconds().try_into().unwrap();
             let increments = nanos / 100;
 
             super::Time {increments, scale: 7}
@@ -113,7 +118,7 @@ to_sql!(self_,
 );
 
 #[cfg(not(feature = "tds73"))]
-to_sql!(self_,
+to_sql_and_into_sql!(self_,
         PrimitiveDateTime: (ColumnData::DateTime, {
             let date = self_.date();
             let time = self_.time();
