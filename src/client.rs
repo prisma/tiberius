@@ -398,7 +398,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
                 query.push_str(")");
             }
             query.push_str(")");
-            query.push_str(" WITH (KEEPIDENTITY)");
         }
         let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
         let id = self.connection.context_mut().next_packet_id();
