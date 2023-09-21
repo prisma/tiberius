@@ -14,6 +14,7 @@ pub use auth::*;
 pub use config::*;
 pub(crate) use connection::*;
 
+use crate::bulk_options::{SqlBulkCopyOptions, ColumOrderHint};
 use crate::tds::stream::ReceivedToken;
 use crate::{
     result::ExecuteResult,
@@ -251,6 +252,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         Ok(result)
     }
 
+    #[doc(hidden)] // deprecated for bulk_insert_with_options
+    pub async fn bulk_insert<'a>(
+        &'a mut self,
+        table: &'a str,
+    ) -> crate::Result<BulkLoadRequest<'a, S>> {
+        return self.bulk_insert_with_options(table, &[], Default::default(), &[]).await;
+    }
+
     /// Execute a `BULK INSERT` statement, efficiantly storing a large number of
     /// rows to a specified table. Note: make sure the input row follows the same
     /// schema as the table, otherwise calling `send()` will return an error.
@@ -296,15 +305,24 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn bulk_insert<'a>(
+    pub async fn bulk_insert_with_options<'a>(
         &'a mut self,
         table: &'a str,
+        column_names: &'a [&'a str],
+        options: SqlBulkCopyOptions,
+        order_hints: &'a [ColumOrderHint<'a>],
     ) -> crate::Result<BulkLoadRequest<'a, S>> {
         // Start the bulk request
         self.connection.flush_stream().await?;
 
         // retrieve column metadata from server
-        let query = format!("SELECT TOP 0 * FROM {}", table);
+
+        let cols_sql = match column_names.len() {
+            0 => "*".to_owned(),
+            _ => column_names.iter().map(|c| format!("\"{}\"", c)).join(", "),
+        };
+
+        let query = format!("SELECT TOP 0 {} FROM {}", cols_sql, table);
 
         let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
 
@@ -333,9 +351,55 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             .collect();
 
         self.connection.flush_stream().await?;
-        let col_data = columns.iter().map(|c| format!("{}", c)).join(", ");
-        let query = format!("INSERT BULK {} ({})", table, col_data);
-
+        let col_data = columns.iter().map(|c| format!("\"{}\"", c)).join(", ");
+        let mut query = format!("INSERT BULK {} ({})", table, col_data);
+        if options.bits() > 0 || order_hints.len() > 0 {
+            let mut add_separator = false;
+            query.push_str(" WITH (");
+            if options.contains(SqlBulkCopyOptions::KeepNulls) {
+                query.push_str("KEEP_NULLS");
+                add_separator = true;
+            }
+            if options.contains(SqlBulkCopyOptions::TableLock) {
+                if add_separator {
+                    query.push_str(", ");
+                }
+                query.push_str("TABLOCK");
+                add_separator = true;
+            }
+            if options.contains(SqlBulkCopyOptions::CheckConstraints) {
+                if add_separator {
+                    query.push_str(", ");
+                }
+                query.push_str("CHECK_CONSTRAINTS");
+                add_separator = true;
+            }
+            if options.contains(SqlBulkCopyOptions::FireTriggers) {
+                if add_separator {
+                    query.push_str(", ");
+                }
+                query.push_str("FIRE_TRIGGERS");
+                add_separator = true;
+            }
+            if order_hints.len() > 0 {
+                if add_separator {
+                    query.push_str(", ");
+                }
+                query.push_str("ORDER (");
+                query.push_str(
+                    &order_hints
+                        .iter()
+                        .map(|(col, order)| format!("{} {}", col, match order {
+                            crate::bulk_options::SortOrder::Ascending => "ASC",
+                            crate::bulk_options::SortOrder::Descending => "DESC",
+                        }))
+                        .join(", "),
+                );
+                query.push_str(")");
+            }
+            query.push_str(")");
+            query.push_str(" WITH (KEEPIDENTITY)");
+        }
         let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
         let id = self.connection.context_mut().next_packet_id();
 
