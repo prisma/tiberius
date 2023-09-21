@@ -319,7 +319,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
 
         let cols_sql = match column_names.len() {
             0 => "*".to_owned(),
-            _ => column_names.iter().map(|c| format!("\"{}\"", c)).join(", "),
+            _ => column_names.iter().map(|c| format!("[{}]", c)).join(", "),
         };
 
         let query = format!("SELECT TOP 0 {} FROM {}", cols_sql, table);
@@ -351,7 +351,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
             .collect();
 
         self.connection.flush_stream().await?;
-        let col_data = columns.iter().map(|c| format!("\"{}\"", c)).join(", ");
+        let col_data = columns.iter().map(|c| format!("{}", c)).join(", ");
         let mut query = format!("INSERT BULK {} ({})", table, col_data);
         if options.bits() > 0 || order_hints.len() > 0 {
             let mut add_separator = false;
