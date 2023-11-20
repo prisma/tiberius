@@ -341,8 +341,10 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         dst.put_u32_le(bytes.len() as u32);
                         dst.extend_from_slice(bytes.as_slice());
 
-                        // no next blob
-                        dst.put_u32_le(0u32);
+                        if bytes.len() > 0 {
+                            // no next blob
+                            dst.put_u32_le(0u32);
+                        }
                     }
                 } else if vlc.len() < 0xffff {
                     dst.put_u16_le(0xffff);
@@ -407,8 +409,10 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                             ));
                         }
 
-                        // no next blob
-                        dst.put_u32_le(0u32);
+                        if length > 0 {
+                            // no next blob
+                            dst.put_u32_le(0u32);
+                        }
 
                         let dst: &mut [u8] = dst.borrow_mut();
                         let mut dst = &mut dst[len_pos..];
@@ -463,8 +467,10 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u16_le(chr);
                 }
 
-                // PLP_TERMINATOR
-                dst.put_u32_le(0);
+                if length > 0 {
+                    // PLP_TERMINATOR
+                    dst.put_u32_le(0);
+                }
 
                 let dst: &mut [u8] = dst.borrow_mut();
                 let bytes = (length * 2).to_le_bytes(); // u32, four bytes
@@ -496,8 +502,10 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         // unknown size
                         dst.put_u64_le(0xfffffffffffffffe);
                         dst.put_u32_le(bytes.len() as u32);
-                        dst.extend(bytes.into_owned());
-                        dst.put_u32_le(0);
+                        if bytes.len() > 0 {
+                            dst.extend(bytes.into_owned());
+                            dst.put_u32_le(0);
+                        }
                     }
                 } else if vlc.len() < 0xffff {
                     dst.put_u16_le(0xffff);
@@ -519,10 +527,12 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 dst.put_u64_le(0xfffffffffffffffe_u64);
                 // We'll write in one chunk, length is the whole bytes length
                 dst.put_u32_le(bytes.len() as u32);
-                // Payload
-                dst.extend(bytes.into_owned());
-                // PLP_TERMINATOR
-                dst.put_u32_le(0);
+                if bytes.len() > 0 {
+                    // Payload
+                    dst.extend(bytes.into_owned());
+                    // PLP_TERMINATOR
+                    dst.put_u32_le(0);
+                }
             }
             (ColumnData::DateTime(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Datetimen =>
@@ -705,11 +715,14 @@ mod tests {
             .encode(&mut buf_with_ti)
             .expect("encode must succeed");
 
-        let nd = ColumnData::decode(&mut buf.into_sql_read_bytes(), &ti)
+        let reader = &mut buf.into_sql_read_bytes();
+        let nd = ColumnData::decode(reader, &ti)
             .await
             .expect("decode must succeed");
 
-        assert_eq!(nd, d)
+        assert_eq!(nd, d);
+
+        reader.read_u8().await.expect_err("decode must consume entire buffer");
     }
 
     #[tokio::test]
@@ -1026,6 +1039,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn empty_string_with_varlen_bigvarchar() {
+        test_round_trip(
+            TypeInfo::VarLenSized(VarLenContext::new(
+                VarLenType::BigVarChar,
+                0x8ffff,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(Some("".into())),
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn string_with_varlen_nvarchar() {
         test_round_trip(
             TypeInfo::VarLenSized(VarLenContext::new(
@@ -1047,6 +1073,19 @@ mod tests {
                 Some(Collation::new(13632521, 52)),
             )),
             ColumnData::String(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn empty_string_with_varlen_nvarchar() {
+        test_round_trip(
+            TypeInfo::VarLenSized(VarLenContext::new(
+                VarLenType::NVarchar,
+                0x8ffff,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::String(Some("".into())),
         )
         .await;
     }
@@ -1153,6 +1192,19 @@ mod tests {
         test_round_trip(
             TypeInfo::VarLenSized(VarLenContext::new(VarLenType::BigVarBin, 40, None)),
             ColumnData::Binary(None),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn empty_binary_with_varlen_bigvarbin() {
+        test_round_trip(
+            TypeInfo::VarLenSized(VarLenContext::new(
+                VarLenType::BigVarBin,
+                0x8ffff,
+                Some(Collation::new(13632521, 52)),
+            )),
+            ColumnData::Binary(Some(b"".as_slice().into())),
         )
         .await;
     }
