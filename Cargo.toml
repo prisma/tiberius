@@ -16,7 +16,7 @@ repository = "https://github.com/prisma/tiberius"
 version = "0.12.2"
 
 [workspace]
-members = ["runtimes-macro"]
+members = ["runtimes-macro", "tvp-macro"]
 
 [[test]]
 path = "tests/query.rs"
@@ -161,6 +161,9 @@ version = "1"
 
 [dev-dependencies.runtimes-macro]
 path = "./runtimes-macro"
+
+[dependencies.tvp-macro]
+path = "./tvp-macro"
 
 [dev-dependencies]
 names = "0.14"

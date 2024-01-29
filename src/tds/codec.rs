@@ -12,6 +12,7 @@ mod pre_login;
 mod rpc_request;
 mod token;
 mod type_info;
+mod type_info_tvp;
 
 pub use batch_request::*;
 pub use bulk_load::*;
@@ -28,6 +29,7 @@ pub use pre_login::*;
 pub use rpc_request::*;
 pub use token::*;
 pub use type_info::*;
+pub use type_info_tvp::*;
 
 const HEADER_BYTES: usize = 8;
 const ALL_HEADERS_LEN_TX: usize = 22;
