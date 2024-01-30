@@ -281,6 +281,7 @@ pub use sql_browser::SqlBrowser;
 pub use tds::{
     codec::{BulkLoadRequest, ColumnData, ColumnFlag, IntoRow, TokenRow, TypeLength},
     numeric,
+    stream::CommandStream,
     stream::QueryStream,
     time, xml, EncryptionLevel,
 };
