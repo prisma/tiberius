@@ -57,12 +57,12 @@ fn table_value_param_impl(
     let col_binds: Vec<_> = fields.iter().map(|f| f.as_bind()).collect();
     let col_binds = sp_quote!( #(#col_binds);*);
     sp_quote! {
-        impl #lt_impl ::tiberius::TableValueRow #lt_impl for #name #lt_struct {
+        impl #lt_impl tiberius::TableValueRow #lt_impl for #name #lt_struct {
             fn get_db_type() -> &'static str {
                 stringify!{ #name }
             }
 
-            fn bind_fields(&self, data_row: &mut ::tiberius::SqlTableDataRow #lt_impl) {
+            fn bind_fields(&self, data_row: &mut tiberius::SqlTableDataRow #lt_impl) {
                 #col_binds;
             }
         }
@@ -125,11 +125,11 @@ mod tests {
             syn::Data::Union(_) => panic!("doesn't work with unions"),
         };
         let etalon = sp_quote!(
-            impl<'query> ::tiberius::TableValueRow<'query> for SomeGeoList {
+            impl<'query> tiberius::TableValueRow<'query> for SomeGeoList {
                 fn get_db_type() -> &'static str {
                     stringify! { SomeGeoList }
                 }
-                fn bind_fields(&self, data_row: &mut ::tiberius::SqlTableDataRow<'query>) {
+                fn bind_fields(&self, data_row: &mut tiberius::SqlTableDataRow<'query>) {
                     data_row.add_field(self.id);
                     data_row.add_field(self.lat);
                     data_row.add_field(self.lon);
@@ -160,11 +160,11 @@ mod tests {
         };
 
         let etalon = sp_quote!(
-            impl<'e> ::tiberius::TableValueRow<'e> for AnotherGeoList<'e> {
+            impl<'e> tiberius::TableValueRow<'e> for AnotherGeoList<'e> {
                 fn get_db_type() -> &'static str {
                     stringify! { AnotherGeoList }
                 }
-                fn bind_fields(&self, data_row: &mut ::tiberius::SqlTableDataRow<'e>) {
+                fn bind_fields(&self, data_row: &mut tiberius::SqlTableDataRow<'e>) {
                     data_row.add_field(self.id);
                     data_row.add_field(self.s);
                 }
