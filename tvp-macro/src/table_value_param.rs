@@ -57,7 +57,7 @@ fn table_value_param_impl(
     let col_binds: Vec<_> = fields.iter().map(|f| f.as_bind()).collect();
     let col_binds = sp_quote!( #(#col_binds);*);
     sp_quote! {
-        impl #lt_impl ::tiberius::TableValueRow #lt_impl for #name #lt_struct {
+        impl #lt_impl tiberius::TableValueRow #lt_impl for #name #lt_struct {
             fn get_db_type() -> &'static str {
                 stringify!{ #name }
             }
