@@ -177,8 +177,8 @@ impl<'a> Command<'a> {
     /// The same as `bind_table`, but with optional DB type name override
     pub fn bind_table_with_dbtype(
         &mut self,
-        db_type: &'a str,
         name: impl Into<Cow<'a, str>>,
+        db_type: &'a str,
         data: impl TableValue<'a> + 'a,
     ) {
         self.params.push(CommandParam {

@@ -115,7 +115,7 @@ where
 
     conn.simple_query(format!(
         r#"
-            create type dbo.{} as table
+            create type dbo.[{}] as table
             (
                 [ID] int not null,
                 [lat] decimal(9,6),
@@ -143,7 +143,7 @@ where
         r#"
         create or alter procedure {} 
           @id int,
-          @geo dbo.{} readonly
+          @geo dbo.[{}] readonly
         as
         update t set
             [lat] = g.[lat],
@@ -204,7 +204,7 @@ where
     let tbl = vec![g1, g2];
     let mut tvp_cmd = Command::new(&proc_tvp);
     tvp_cmd.bind_param("@id", 23);
-    tvp_cmd.bind_table_with_dbtype("@geo", db_type, tbl);
+    tvp_cmd.bind_table_with_dbtype("@geo", &db_type, tbl);
 
     let result = tvp_cmd.exec(&mut conn).await?.into_command_result().await?;
     assert_eq!(0, result.return_code());
