@@ -23,6 +23,10 @@ path = "tests/query.rs"
 name = "query"
 
 [[test]]
+path = "tests/command.rs"
+name = "command"
+
+[[test]]
 path = "tests/named-instance-async.rs"
 name = "named-instance-async"
 required-features = ["sql-browser-async-std"]
