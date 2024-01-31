@@ -18,9 +18,10 @@ use std::{
 /// # Example
 ///
 /// ```no_run
-/// # use futures::TryStreamExt;
-/// # use tiberius::{numeric::Numeric, Client, Command};
-/// # use tokio::net::TcpStream;
+/// # use std::env;
+/// # use tiberius::Config;
+/// # use tiberius::{Command, CommandItem};
+/// # use futures_util::TryStreamExt;
 /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,7 +37,7 @@ use std::{
 /// cmd.bind_param("@foo", 34i32);
 /// cmd.bind_param("@zoo", "the zoo string prm");
 /// cmd.bind_out_param("@bar", "bar");
-/// let stream = cmd.exec(&mut client).await?;
+/// let mut stream = cmd.exec(&mut client).await?;
 ///
 /// while let Some(item) = stream.try_next().await? {
 ///     match item {
@@ -46,7 +47,7 @@ use std::{
 ///         }
 ///         // ... and from there on from 0..N rows
 ///         CommandItem::Row(row) if row.result_index() == 0 => {
-///             let var = row.get(0);
+///             let var: Option<i32> = row.get(0);
 ///         }
 ///         // the second result set returns first another metadata item
 ///         CommandItem::Metadata(meta) => {
@@ -54,7 +55,7 @@ use std::{
 ///         }
 ///         // ...and, again, we get rows from the second resultset
 ///         CommandItem::Row(row) => {
-///             let var = row.get(0);
+///             let var: Option<i32> = row.get(0);
 ///         }
 ///         // check return status (mandatory, returned always)
 ///         CommandItem::ReturnStatus(rs) => {

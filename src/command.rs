@@ -126,15 +126,17 @@ impl<'a> Command<'a> {
     /// Example
     ///
     /// ```no_run
-    /// # use tiberius::{numeric::Numeric, Client, Command, TableValueRow};
-    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
+    /// # use tiberius::Config;
+    /// # use tiberius::{numeric::Numeric, Command, TableValueRow};
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// #[derive(TableValueRow)]
     /// struct SomeGeoList {
     ///     eid: i32,
     ///     lat: Numeric,
     ///     lon: Numeric,
     /// }
+    /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
@@ -142,7 +144,7 @@ impl<'a> Command<'a> {
     /// # let config = Config::from_ado_string(&c_str)?;
     /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
     /// # tcp.set_nodelay(true)?;
-    /// # let mut client = tiberius::Client::connect(config, tcp.compat_write()).await?;
+    /// # let client = tiberius::Client::connect(config, tcp.compat_write()).await?;
     ///
     /// let r1 = SomeGeoList {
     ///     eid: 1,
@@ -178,9 +180,10 @@ impl<'a> Command<'a> {
     /// Example
     ///
     /// ```no_run
-    /// # use tiberius::{numeric::Numeric, Client, Command};
+    /// # use tiberius::{Config, Command};
     /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
     /// # use std::env;
+    /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
     /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
@@ -195,10 +198,9 @@ impl<'a> Command<'a> {
     /// cmd.bind_out_param("@bar", "bar");
     /// let res = cmd.exec(&mut client).await?.into_command_result().await?;
     ///
-    /// let rv: Option<String> = res.try_return_value("@bar")?;
+    /// let rv: Option<&str> = res.try_return_value("@bar")?;
     /// let rc = res.return_code();
     ///
-    /// println!("And we got bar: {:#?}, return_code: {}", rv, rc);
     /// # Ok(())
     /// # }
     /// ```

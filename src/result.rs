@@ -123,9 +123,10 @@ impl IntoIterator for ExecuteResult {
 /// # Example
 ///
 /// ```no_run
-/// # use tiberius::{numeric::Numeric, Client, Command};
+/// # use tiberius::{Config, Command};
 /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
 /// # use std::env;
+/// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// # let c_str = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or(
 /// #     "server=tcp:localhost,1433;integratedSecurity=true;TrustServerCertificate=true".to_owned(),
@@ -140,16 +141,11 @@ impl IntoIterator for ExecuteResult {
 /// cmd.bind_out_param("@bar", "bar");
 /// let res = cmd.exec(&mut client).await?.into_command_result().await?;
 ///
-/// let rv: Option<String> = res.try_return_value("@bar")?;
+/// let rv: Option<&str> = res.try_return_value("@bar")?;
 /// let rc = res.return_code();
 /// let ra = res.rows_affected();
 ///
-/// println!("And we got bar: {:#?}, return_code: {}", rv, rc);
-///
-/// let rs0 = res.to_query_result(0)
-/// if let Some(rows) = rs0 {
-///     printls!("First record set: {:#?}", rows);
-/// }
+/// let rs0 = res.to_query_result(0);
 /// # Ok(())
 /// # }
 /// ```
