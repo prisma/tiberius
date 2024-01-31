@@ -71,7 +71,7 @@ enum CommandParamData<'a> {
 #[derive(Debug)]
 pub struct SqlTableData<'a> {
     rows: Vec<SqlTableDataRow<'a>>,
-    db_type: &'static str,
+    db_type: &'a str,
 }
 
 #[derive(Debug)]
