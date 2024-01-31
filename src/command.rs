@@ -174,6 +174,23 @@ impl<'a> Command<'a> {
         });
     }
 
+    /// The same as `bind_table`, but with optional DB type name override
+    pub fn bind_table_with_dbtype(
+        &mut self,
+        db_type: &'a str,
+        name: impl Into<Cow<'a, str>>,
+        data: impl TableValue<'a> + 'a,
+    ) {
+        self.params.push(CommandParam {
+            name: name.into(),
+            out: false,
+            data: CommandParamData::Table(SqlTableData {
+                db_type,
+                ..data.into_sql()
+            }),
+        });
+    }
+
     /// Executes the `Command` in the SQL Server, returning `CommandStream` that
     /// can be collected into `CommandResult` for convinience.
     ///
