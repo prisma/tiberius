@@ -113,7 +113,6 @@ where
     let proc_get = random_table().await;
 
     conn.simple_query("BEGIN TRAN").await?;
-
     conn.simple_query(format!(
         r#"if not exists(select * from sys.types where name = 'GeoTest')
             create type dbo.[GeoTest] as table
@@ -125,6 +124,7 @@ where
         "#
     ))
     .await?;
+    conn.simple_query("COMMIT").await?;
 
     conn.simple_query(format!(
         r#"
@@ -224,8 +224,6 @@ where
     let lon: Numeric = rows[0].get("lon").unwrap();
     assert_eq!(Numeric::new_with_scale(141, 6), lon);
     assert_eq!(Numeric::new_with_scale(192, 6), lat);
-
-    conn.simple_query("COMMIT").await?;
 
     Ok(())
 }
