@@ -1,14 +1,12 @@
 use futures_util::io::{AsyncRead, AsyncWrite};
-use futures_util::stream::TryStreamExt;
+// use futures_util::stream::TryStreamExt;
 use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use std::cell::RefCell;
 use std::env;
 use std::sync::Once;
 
-use tiberius::FromSql;
-use tiberius::{numeric::Numeric, xml::XmlData, ColumnType, Command, CommandItem, Result};
-use uuid::Uuid;
+use tiberius::{Command, Result};
 
 use runtimes_macro::test_on_runtimes;
 
