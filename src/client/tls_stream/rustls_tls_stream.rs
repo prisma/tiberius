@@ -132,6 +132,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                 event!(Level::INFO, "Using default trust configuration.");
                 builder.with_native_roots().with_no_client_auth()
             }
+            TrustConfig::WebPkiRoots => {
+                event!(Level::INFO, "Using webpki trust configuration.");
+                builder.with_webpki_roots().with_no_client_auth()
+            }
         };
 
         let connector = TlsConnector::from(Arc::new(client_config));

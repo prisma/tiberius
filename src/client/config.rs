@@ -39,6 +39,8 @@ pub(crate) enum TrustConfig {
     CaCertificateLocation(PathBuf),
     TrustAll,
     Default,
+    #[cfg(feature = "rustls")]
+    WebPkiRoots
 }
 
 impl Default for Config {
