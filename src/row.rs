@@ -417,5 +417,5 @@ impl IntoIterator for Row {
 impl Into<TokenRow<'static>> for Row {
     fn into(self) -> TokenRow<'static> {
         self.data
-    };
+    }
 }
