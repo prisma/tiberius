@@ -216,10 +216,15 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::I32(Some(val)), None) => {
-                let header = [VarLenType::Intn as u8, 4, 4];
+            (ColumnData::I32(opt), None) => {
+                let header = [VarLenType::Intn as u8, 4];
                 dst.extend_from_slice(&header);
-                dst.put_i32_le(val);
+                if let Some(val) = opt {
+                    dst.put_u8(4);
+                    dst.put_i32_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::I64(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int8))) => {
                 dst.put_i64_le(val);
