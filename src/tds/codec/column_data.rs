@@ -158,13 +158,18 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
             (ColumnData::Bit(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Bit))) => {
                 dst.put_u8(val as u8);
             }
-            (ColumnData::Bit(Some(val)), None) => {
+            (ColumnData::Bit(opt), None) => {
                 // if TypeInfo was not given, encode a TypeInfo
                 // the first 1 is part of TYPE_INFO
-                // the second 1 is part of TYPE_VARBYTE
-                let header = [VarLenType::Bitn as u8, 1, 1];
+                let header = [VarLenType::Bitn as u8, 1];
                 dst.extend_from_slice(&header);
-                dst.put_u8(val as u8);
+                if let Some(val) = opt {
+                    // the second 1 is part of TYPE_VARBYTE
+                    dst.put_u8(1);
+                    dst.put_u8(val as u8);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::U8(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Intn =>
@@ -179,10 +184,15 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
             (ColumnData::U8(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int1))) => {
                 dst.put_u8(val);
             }
-            (ColumnData::U8(Some(val)), None) => {
-                let header = [VarLenType::Intn as u8, 1, 1];
+            (ColumnData::U8(opt), None) => {
+                let header = [VarLenType::Intn as u8, 1];
                 dst.extend_from_slice(&header);
-                dst.put_u8(val);
+                if let Some(val) = opt {
+                    dst.put_u8(1);
+                    dst.put_u8(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::I16(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int2))) => {
                 dst.put_i16_le(val);
@@ -197,11 +207,15 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::I16(Some(val)), None) => {
-                let header = [VarLenType::Intn as u8, 2, 2];
+            (ColumnData::I16(opt), None) => {
+                let header = [VarLenType::Intn as u8, 2];
                 dst.extend_from_slice(&header);
-
-                dst.put_i16_le(val);
+                if let Some(val) = opt {
+                    dst.put_u8(2);
+                    dst.put_i16_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::I32(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Int4))) => {
                 dst.put_i32_le(val);
@@ -239,10 +253,15 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::I64(Some(val)), None) => {
-                let header = [VarLenType::Intn as u8, 8, 8];
+            (ColumnData::I64(opt), None) => {
+                let header = [VarLenType::Intn as u8, 8];
                 dst.extend_from_slice(&header);
-                dst.put_i64_le(val);
+                if let Some(val) = opt {
+                    dst.put_u8(8);
+                    dst.put_i64_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::F32(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Float4))) => {
                 dst.put_f32_le(val);
@@ -257,10 +276,15 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::F32(Some(val)), None) => {
-                let header = [VarLenType::Floatn as u8, 4, 4];
+            (ColumnData::F32(opt), None) => {
+                let header = [VarLenType::Floatn as u8, 4];
                 dst.extend_from_slice(&header);
-                dst.put_f32_le(val);
+                if let Some(val) = opt {
+                    dst.put_u8(4);
+                    dst.put_f32_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::F64(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Float8))) => {
                 dst.put_f64_le(val);
@@ -275,10 +299,15 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::F64(Some(val)), None) => {
-                let header = [VarLenType::Floatn as u8, 8, 8];
+            (ColumnData::F64(opt), None) => {
+                let header = [VarLenType::Floatn as u8, 8];
                 dst.extend_from_slice(&header);
-                dst.put_f64_le(val);
+                if let Some(val) = opt {
+                    dst.put_u8(8);
+                    dst.put_f64_le(val);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::Guid(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Guid =>
