@@ -257,6 +257,7 @@ pub(crate) extern crate bigdecimal_ as bigdecimal;
 mod macros;
 
 mod client;
+mod command;
 mod from_sql;
 mod query;
 mod sql_read_bytes;
@@ -270,6 +271,7 @@ mod tds;
 mod sql_browser;
 
 pub use client::{AuthMethod, Client, Config};
+pub use command::{Command, SqlTableDataRow, TableValueRow};
 pub(crate) use error::Error;
 pub use from_sql::{FromSql, FromSqlOwned};
 pub use query::Query;
@@ -279,6 +281,7 @@ pub use sql_browser::SqlBrowser;
 pub use tds::{
     codec::{BulkLoadRequest, ColumnData, ColumnFlag, IntoRow, TokenRow, TypeLength},
     numeric,
+    stream::CommandStream,
     stream::QueryStream,
     time, xml, EncryptionLevel,
 };

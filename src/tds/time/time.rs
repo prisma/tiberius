@@ -7,7 +7,7 @@
 pub use time::*;
 
 use crate::tds::codec::ColumnData;
-use std::time::Duration;
+pub use std::time::Duration;
 
 #[inline]
 fn from_days(days: u64, start_year: i32) -> Date {
