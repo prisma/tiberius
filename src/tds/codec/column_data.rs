@@ -293,13 +293,17 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
-            (ColumnData::Guid(Some(uuid)), None) => {
-                let header = [VarLenType::Guid as u8, 16, 16];
+            (ColumnData::Guid(opt), None) => {
+                let header = [VarLenType::Guid as u8, 16];
                 dst.extend_from_slice(&header);
-
-                let mut data = *uuid.as_bytes();
-                super::guid::reorder_bytes(&mut data);
-                dst.extend_from_slice(&data);
+                if let Some(uuid) = opt {
+                    dst.put_u8(16);
+                    let mut data = *uuid.as_bytes();
+                    super::guid::reorder_bytes(&mut data);
+                    dst.extend_from_slice(&data);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             (ColumnData::String(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::BigChar
