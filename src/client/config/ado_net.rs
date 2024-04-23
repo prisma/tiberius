@@ -37,14 +37,14 @@ impl ConfigString for AdoNetConfig {
                 let parts: Vec<&str> = parts[0].split('\\').collect();
 
                 ServerDefinition {
-                    host: Some(parts[0].replace("(local)", "localhost").into()),
+                    host: Some(parts[0].replace("(local)", "localhost")),
                     port,
                     instance: Some(parts[1].into()),
                 }
             } else {
                 // Connect using a TCP target
                 ServerDefinition {
-                    host: Some(parts[0].replace("(local)", "localhost").into()),
+                    host: Some(parts[0].replace("(local)", "localhost")),
                     port: parse_port(&parts[1..])?,
                     instance: None,
                 }

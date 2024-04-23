@@ -35,7 +35,7 @@ impl Context {
     }
 
     pub fn last_meta(&self) -> Option<Arc<TokenColMetaData<'static>>> {
-        self.last_meta.as_ref().map(Arc::clone)
+        self.last_meta.clone()
     }
 
     pub fn packet_size(&self) -> u32 {

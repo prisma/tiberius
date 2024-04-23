@@ -112,9 +112,21 @@ test_bulk_type!(smallint("SMALLINT", 2000, 0..2000i16));
 test_bulk_type!(int("INT", 2000, 0..2000i32));
 test_bulk_type!(bigint("BIGINT", 2000, 0..2000i64));
 
-test_bulk_type!(empty_varchar("VARCHAR(MAX)", 1, [""].into_iter()));
-test_bulk_type!(empty_nvarchar("NVARCHAR(MAX)", 1, [""].into_iter()));
-test_bulk_type!(empty_varbinary("VARBINARY(MAX)", 1, [b""].into_iter()));
+test_bulk_type!(empty_varchar(
+    "VARCHAR(MAX)",
+    100,
+    vec![""; 100].into_iter()
+));
+test_bulk_type!(empty_nvarchar(
+    "NVARCHAR(MAX)",
+    100,
+    vec![""; 100].into_iter()
+));
+test_bulk_type!(empty_varbinary(
+    "VARBINARY(MAX)",
+    100,
+    vec![b""; 100].into_iter()
+));
 
 test_bulk_type!(real(
     "REAL",
