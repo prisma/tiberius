@@ -722,7 +722,10 @@ mod tests {
 
         assert_eq!(nd, d);
 
-        reader.read_u8().await.expect_err("decode must consume entire buffer");
+        reader
+            .read_u8()
+            .await
+            .expect_err("decode must consume entire buffer");
     }
 
     #[tokio::test]
