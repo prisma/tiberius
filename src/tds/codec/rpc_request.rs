@@ -1,3 +1,4 @@
+use super::TypeInfoTvp;
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
 use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, Result};
 use bytes::{BufMut, BytesMut};
@@ -47,10 +48,17 @@ impl<'a> TokenRpcRequest<'a> {
 }
 
 #[derive(Debug)]
+pub enum RpcValue<'a> {
+    Scalar(ColumnData<'a>),
+    Table(TypeInfoTvp<'a>), // as per grammar, TYPE_INFO_TVP contains data rows (looks quite odd)
+}
+
+#[derive(Debug)]
 pub struct RpcParam<'a> {
     pub name: Cow<'a, str>,
     pub flags: BitFlags<RpcStatus>,
-    pub value: ColumnData<'a>,
+    // pub value: ColumnData<'a>,
+    pub value: RpcValue<'a>,
 }
 
 /// 2.2.6.6 RPC Request
@@ -103,10 +111,18 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
                 let val = (0xffff_u32) | ((*id as u16) as u32) << 16;
                 dst.put_u32_le(val);
             }
-            RpcProcIdValue::Name(ref _name) => {
-                //let (left_bytes, _) = try!(write_varchar::<u16>(&mut cursor, name, 0));
-                //assert_eq!(left_bytes, 0);
-                todo!()
+            RpcProcIdValue::Name(ref name) => {
+                let len_pos = dst.len();
+                dst.put_u16_le(0u16);
+                let mut length = 0_u16;
+
+                for chr in name.encode_utf16() {
+                    dst.put_u16_le(chr);
+                    length += 1;
+                }
+                let dst: &mut [u8] = dst.borrow_mut();
+                let mut dst = &mut dst[len_pos..];
+                dst.put_u16_le(length as u16);
             }
         }
 
@@ -134,8 +150,13 @@ impl<'a> Encode<BytesMut> for RpcParam<'a> {
 
         dst.put_u8(self.flags.bits());
 
-        let mut dst_fi = BytesMutWithTypeInfo::new(dst);
-        self.value.encode(&mut dst_fi)?;
+        match self.value {
+            RpcValue::Scalar(value) => {
+                let mut dst_ti = BytesMutWithTypeInfo::new(dst);
+                value.encode(&mut dst_ti)?;
+            }
+            RpcValue::Table(value) => value.encode(dst)?,
+        }
 
         let dst: &mut [u8] = dst.borrow_mut();
         dst[len_pos] = length;
