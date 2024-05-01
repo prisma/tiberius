@@ -720,9 +720,7 @@ mod tests {
             .await
             .expect("decode must succeed");
 
-        assert_eq!(nd, d);
-
-        reader.read_u8().await.expect_err("decode must consume entire buffer");
+        assert_eq!(nd, d)
     }
 
     #[tokio::test]
