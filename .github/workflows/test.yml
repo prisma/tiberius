@@ -92,7 +92,7 @@ jobs:
           - "--no-default-features --features=vendored-openssl,winauth"
 
     env:
-      TIBERIUS_TEST_INSTANCE: "MSSQLSERVER"
+      TIBERIUS_TEST_INSTANCE: "namedInstance"
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
 
     steps:
@@ -152,7 +152,7 @@ jobs:
           [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.SqlWmiManagement") | Out-Null
 
           $serverName = $env:COMPUTERNAME
-          $instanceName = "MSSQLSERVER"
+          $instanceName = "namedInstance"
 
           $smo = 'Microsoft.SqlServer.Management.Smo.'
           $wmi = new-object ($smo + 'Wmi.ManagedComputer')
@@ -181,8 +181,8 @@ jobs:
           echo "Starting services"
           Set-Service SQLBrowser -StartupType Manual
           Start-Service SQLBrowser
-          net stop MSSQLSERVER
-          net start MSSQLSERVER
+          net stop namedInstance
+          net start namedInstance
 
       - name: Run normal tests
         shell: powershell
