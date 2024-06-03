@@ -208,7 +208,8 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
 
-      - uses: docker-practice/actions-setup-docker@master
+      - name: Setup Docker on macOS
+        uses: douglascamata/setup-docker-macos-action@v1-alpha
 
       - name: Start SQL Server ${{matrix.database}}
         run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
