@@ -8,6 +8,8 @@ use tiberius::{IntoSql, Result, TokenRow};
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 use chrono::DateTime;
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+use chrono::NaiveDateTime;
 
 use runtimes_macro::test_on_runtimes;
 
@@ -152,6 +154,14 @@ test_bulk_type!(datetime2(
     100,
     vec![DateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
 ));
+
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+test_bulk_type!(datetime2_naive("DATETIME2", 100, {
+    #[allow(deprecated)]
+    let dt = NaiveDateTime::from_timestamp_opt(1658524194, 123456789).unwrap();
+
+    vec![dt; 100].into_iter()
+}));
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2_0(
