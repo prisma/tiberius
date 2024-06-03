@@ -189,7 +189,7 @@ jobs:
         run: cargo test ${{matrix.features}}
 
   cargo-test-macos:
-    runs-on: macos-latest
+    runs-on: macos-13
 
     strategy:
       fail-fast: false
@@ -208,12 +208,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
 
-      - name: Install docker # Taken from https://github.com/actions/virtual-environments/issues/1143#issuecomment-652264388
-        run: |
-          brew install docker
-          colima start
-
-      # - uses: docker-practice/actions-setup-docker@master
+      - uses: docker-practice/actions-setup-docker@master
 
       - name: Start SQL Server ${{matrix.database}}
         run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
