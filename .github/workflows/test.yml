@@ -209,7 +209,9 @@ jobs:
       - uses: actions-rs/toolchain@v1
 
       - name: Setup Docker on macOS
-        uses: douglascamata/setup-docker-macos-action@v1-alpha
+        run: |
+          brew install docker
+          colima start --runtime docker
 
       - name: Start SQL Server ${{matrix.database}}
         run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
