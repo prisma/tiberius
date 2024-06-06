@@ -154,6 +154,8 @@ macro_rules! bytes_reader {
     };
 }
 
+/// The `SqlReadBytes` trait is used to read bytes from the wire.
+// Many of the methods have an `allow(dead_code)` attribute because they are not currently used but they could be anytime in the future.
 pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     // Pretty-print current wire content.
     #[allow(dead_code)]
