@@ -129,7 +129,7 @@ impl TokenRow<'static> {
 
         for (i, column) in col_meta.columns.iter().enumerate() {
             let data = if row_bitmap.is_null(i) {
-                column.base.null_value()
+                column.base.null_value()?
             } else {
                 ColumnData::decode(src, &column.base.ty).await?
             };
