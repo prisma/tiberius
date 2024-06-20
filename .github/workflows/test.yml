@@ -197,7 +197,7 @@ jobs:
         database:
           - 2019
         features:
-          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
+          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,rust_decimal,bigdecimal"
           - "--no-default-features --features=vendored-openssl"
 
     env:
