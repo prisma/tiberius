@@ -341,7 +341,7 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         dst.put_u32_le(bytes.len() as u32);
                         dst.extend_from_slice(bytes.as_slice());
 
-                        if bytes.len() > 0 {
+                        if !bytes.is_empty() {
                             // no next blob
                             dst.put_u32_le(0u32);
                         }
@@ -502,7 +502,8 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         // unknown size
                         dst.put_u64_le(0xfffffffffffffffe);
                         dst.put_u32_le(bytes.len() as u32);
-                        if bytes.len() > 0 {
+
+                        if !bytes.is_empty() {
                             dst.extend(bytes.into_owned());
                             dst.put_u32_le(0);
                         }
@@ -527,7 +528,8 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 dst.put_u64_le(0xfffffffffffffffe_u64);
                 // We'll write in one chunk, length is the whole bytes length
                 dst.put_u32_le(bytes.len() as u32);
-                if bytes.len() > 0 {
+
+                if !bytes.is_empty() {
                     // Payload
                     dst.extend(bytes.into_owned());
                     // PLP_TERMINATOR

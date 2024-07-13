@@ -4,10 +4,10 @@
 //! The time library offers better ergonomy and are highly recommended if
 //! needing to modify and deal with date and time in SQL Server.
 
-pub use time::*;
+use std::time::Duration;
+pub use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 
 use crate::tds::codec::ColumnData;
-use std::time::Duration;
 
 #[inline]
 fn from_days(days: u64, start_year: i32) -> Date {

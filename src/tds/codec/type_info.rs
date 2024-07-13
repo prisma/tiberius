@@ -271,7 +271,7 @@ impl TypeInfo {
             Err(()) => Err(Error::Protocol(
                 format!("invalid or unsupported column type: {:?}", ty).into(),
             )),
-            Ok(ty) if ty == VarLenType::Xml => {
+            Ok(VarLenType::Xml) => {
                 let has_schema = src.read_u8().await?;
 
                 let schema = if has_schema == 1 {

@@ -154,8 +154,11 @@ macro_rules! bytes_reader {
     };
 }
 
+/// The `SqlReadBytes` trait is used to read bytes from the wire.
+// Many of the methods have an `allow(dead_code)` attribute because they are not currently used but they could be anytime in the future.
 pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     // Pretty-print current wire content.
+    #[allow(dead_code)]
     fn debug_buffer(&self);
 
     // The client state.
@@ -165,6 +168,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     fn context_mut(&mut self) -> &mut Context;
 
     // Read a single i8 value.
+    #[allow(dead_code)]
     fn read_i8(&mut self) -> ReadI8<&mut Self>
     where
         Self: Unpin,
@@ -189,6 +193,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single big-endian f32 value.
+    #[allow(dead_code)]
     fn read_f32(&mut self) -> ReadF32<&mut Self>
     where
         Self: Unpin,
@@ -197,6 +202,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single big-endian f64 value.
+    #[allow(dead_code)]
     fn read_f64(&mut self) -> ReadF64<&mut Self>
     where
         Self: Unpin,
@@ -245,6 +251,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single u128 value.
+    #[allow(dead_code)]
     fn read_u128_le(&mut self) -> ReadU128Le<&mut Self>
     where
         Self: Unpin,
@@ -277,6 +284,7 @@ pub(crate) trait SqlReadBytes: AsyncRead + Unpin {
     }
 
     // Read a single i128 value.
+    #[allow(dead_code)]
     fn read_i128_le(&mut self) -> ReadI128Le<&mut Self>
     where
         Self: Unpin,
