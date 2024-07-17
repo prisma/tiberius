@@ -123,11 +123,21 @@ impl From<&TypeInfo> for ColumnType {
             },
             TypeInfo::VarLenSized(cx) => match cx.r#type() {
                 VarLenType::Guid => Self::Guid,
-                VarLenType::Intn => Self::Intn,
+                VarLenType::Intn => match cx.len() {
+                    1 => Self::Int1,
+                    2 => Self::Int2,
+                    4 => Self::Int4,
+                    8 => Self::Int8,
+                    _ => Self::Intn,
+                },
                 VarLenType::Bitn => Self::Bitn,
                 VarLenType::Decimaln => Self::Decimaln,
                 VarLenType::Numericn => Self::Numericn,
-                VarLenType::Floatn => Self::Floatn,
+                VarLenType::Floatn => match cx.len() {
+                    4 => Self::Float4,
+                    8 => Self::Float8,
+                    _ => Self::Floatn,
+                },
                 VarLenType::Money => Self::Money,
                 VarLenType::Datetimen => Self::Datetimen,
                 #[cfg(feature = "tds73")]
