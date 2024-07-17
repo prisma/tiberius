@@ -2678,7 +2678,7 @@ where
             let col = meta.columns().first();
 
             assert_eq!(Some("col"), col.map(|c| c.name()));
-            assert_eq!(Some(ColumnType::Intn), col.map(|c| c.column_type()));
+            assert_eq!(Some(ColumnType::Int4), col.map(|c| c.column_type()));
         }
     }
 
