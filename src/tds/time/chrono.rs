@@ -81,7 +81,7 @@ from_sql!(
             let offset = chrono::Duration::minutes(dto.offset as i64);
             let naive = NaiveDateTime::new(date, time).sub(offset);
 
-            chrono::DateTime::from_utc(naive, Utc)
+            chrono::DateTime::from_naive_utc_and_offset(naive, Utc)
         }),
         ColumnData::DateTime2(ref dt2) => dt2.map(|dt2| {
             let date = from_days(dt2.date.days() as i64, 1);
@@ -89,7 +89,7 @@ from_sql!(
             let time = NaiveTime::from_hms_opt(0,0,0).unwrap() + chrono::Duration::nanoseconds(ns);
             let naive = NaiveDateTime::new(date, time);
 
-            chrono::DateTime::from_utc(naive, Utc)
+            chrono::DateTime::from_naive_utc_and_offset(naive, Utc)
         });
     chrono::DateTime<FixedOffset>: ColumnData::DateTimeOffset(ref dto) => dto.map(|dto| {
         let date = from_days(dto.datetime2.date.days() as i64, 1);
@@ -99,7 +99,7 @@ from_sql!(
         let offset = FixedOffset::east_opt((dto.offset as i32) * 60).unwrap();
         let naive = NaiveDateTime::new(date, time);
 
-        chrono::DateTime::from_utc(naive, offset)
+        chrono::DateTime::from_naive_utc_and_offset(naive, offset)
     })
 );
 
