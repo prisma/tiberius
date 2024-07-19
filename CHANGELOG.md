@@ -24,6 +24,14 @@
   Please read the [issue](https://github.com/prisma/tiberius/issues/260)
   carefully before upgrading.
 
+## Version 0.11.8
+
+- feat: improve column type info (#347)
+
+## Version 0.11.7
+
+- chore: Update connection string to 0.2 (#286)
+
 ## Version 0.11.6
 
 - fix: bigdecimal conversion overflow (#271)
