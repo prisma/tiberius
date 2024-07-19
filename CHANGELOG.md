@@ -1,5 +1,9 @@
 # Changes
 
+## Version 0.11.8
+
+- feat: improve column type info (#347)
+
 ## Version 0.11.7
 
 - chore: Update connection string to 0.2 (#286)
