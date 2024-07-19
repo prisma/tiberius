@@ -2,6 +2,7 @@ use super::BaseMetaDataColumn;
 use crate::{tds::codec::ColumnData, Error, SqlReadBytes};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct TokenReturnValue {
     pub param_ordinal: u16,
     pub param_name: String,

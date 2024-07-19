@@ -15,6 +15,7 @@ use std::{convert::TryFrom, sync::Arc};
 use tracing::{event, Level};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ReceivedToken {
     NewResultset(Arc<TokenColMetaData<'static>>),
     Row(TokenRow<'static>),
