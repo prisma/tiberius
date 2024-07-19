@@ -1,5 +1,14 @@
 # Changes
 
+## Version 0.12.3
+- feat: improve column type accuracy (#347)
+- fix: encoding of zero-length values for large varlen columns (#315)
+- update tokio_rustls (#306)
+- Allow iterating over the cells in a row. (#303)
+- Send ReadOnlyIntent when ApplicationIntent=ReadOnly specified (#297)
+- Replace encoding with encoding_rs (#285)
+- Disable chrono's oldtime feature (#284)
+
 ## Version 0.12.2
 
 - Update connection-string crate to 0.2 (#286)
