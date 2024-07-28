@@ -268,6 +268,7 @@ mod row;
 mod tds;
 
 mod sql_browser;
+mod bulk_options;
 
 pub use client::{AuthMethod, Client, Config};
 pub(crate) use error::Error;
@@ -284,7 +285,7 @@ pub use tds::{
 };
 pub use to_sql::{IntoSql, ToSql};
 pub use uuid::Uuid;
-
+pub use bulk_options::{SqlBulkCopyOptions, SortOrder, ColumOrderHint};
 use sql_read_bytes::*;
 use tds::codec::*;
 

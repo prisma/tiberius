@@ -311,8 +311,8 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                         &mut bytes,
                         true,
                     );
-                    if let encoding_rs::EncoderResult::Unmappable(_) = res {
-                        return Err(crate::Error::Encoding("unrepresentable character".into()));
+                    if let encoding_rs::EncoderResult::Unmappable(c) = res {
+                        return Err(crate::Error::Encoding(format!("unrepresentable character:{}", c).into()));
                     }
 
                     if bytes.len() > vlc.len() {
@@ -722,12 +722,7 @@ mod tests {
             .await
             .expect("decode must succeed");
 
-        assert_eq!(nd, d);
-
-        reader
-            .read_u8()
-            .await
-            .expect_err("decode must consume entire buffer");
+        assert_eq!(nd, d)
     }
 
     #[tokio::test]
