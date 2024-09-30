@@ -87,6 +87,10 @@ default-features = false
 version = "0.3"
 optional = true
 
+[dependencies.futures]
+version = "0.3"
+default-features = false
+
 [dependencies.futures-util]
 version = "0.3"
 default-features = false
