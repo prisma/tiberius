@@ -1,5 +1,5 @@
 use super::{AllHeaderTy, Encode, ALL_HEADERS_LEN_TX};
-use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, Result};
+use crate::{tds::codec::ColumnData, BytesMutWithTypeInfo, Error, Result};
 use bytes::{BufMut, BytesMut};
 use enumflags2::{bitflags, BitFlags};
 use std::borrow::BorrowMut;
@@ -106,7 +106,7 @@ impl<'a> Encode<BytesMut> for TokenRpcRequest<'a> {
             RpcProcIdValue::Name(ref _name) => {
                 //let (left_bytes, _) = try!(write_varchar::<u16>(&mut cursor, name, 0));
                 //assert_eq!(left_bytes, 0);
-                todo!()
+                return Err(Error::Unimplemented("".into()));
             }
         }
 
