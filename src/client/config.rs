@@ -179,6 +179,10 @@ impl Config {
     pub fn multi_subnet_failover(&mut self, multi_subnet_failover: bool) {
         self.multi_subnet_failover = multi_subnet_failover;
     }
+    /// Gets multiSubnetFailover flag.
+    pub fn get_multi_subnet_failover(&self) -> bool {
+        self.multi_subnet_failover
+    }
 
     pub(crate) fn get_host(&self) -> &str {
         self.host
