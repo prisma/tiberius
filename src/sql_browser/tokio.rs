@@ -19,39 +19,33 @@ impl SqlBrowser for TcpStream {
     /// enabled. Please see the crate examples for more detailed examples.
     async fn connect_named(builder: &Config) -> crate::Result<Self> {
         let addrs = net::lookup_host(builder.get_addr()).await?;
+        let mut first_error = None;
 
         if builder.multi_subnet_failover {
             let mut futures = addrs
                 .map(|addr| connect_addr(builder, addr))
                 .collect::<FuturesUnordered<_>>();
-            let mut first_error = None;
-            for f in futures.next().await {
-                match f {
-                    Ok(Some(result)) => return Ok(result),
-                    Ok(None) => break,
-                    Err(error) => {
-                        if first_error.is_none() {
-                            first_error = Some(error);
-                        }
-                    }
-                }
-            }
-            if let Some(error) = first_error {
-                return Err(error);
+            while let Some(connection) = futures.next().await {
+                match connection {
+                    Ok(connection) => return Ok(connection),
+                    Err(error) => first_error.get_or_insert(error),
+                };
             }
         } else {
             for addr in addrs {
-                if let Some(stream) = connect_addr(builder, addr).await? {
-                    return Ok(stream);
-                }
+                match connect_addr(builder, addr).await {
+                    Ok(connection) => return Ok(connection),
+                    Err(error) => first_error.get_or_insert(error),
+                };
             }
         }
 
-        Err(io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host").into())
+        // If we end up here, there was no successfull connection.
+        Err(first_error.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host").into()))
     }
 }
 
-async fn connect_addr(builder: &Config, mut addr: SocketAddr) -> crate::Result<Option<TcpStream>> {
+async fn connect_addr(builder: &Config, mut addr: SocketAddr) -> crate::Result<TcpStream> {
     if let Some(ref instance_name) = builder.instance_name {
         // First resolve the instance to a port via the
         // SSRP protocol/MS-SQLR protocol [1]
@@ -96,10 +90,7 @@ async fn connect_addr(builder: &Config, mut addr: SocketAddr) -> crate::Result<O
         addr.set_port(port);
     };
 
-    if let Ok(stream) = TcpStream::connect(addr).await {
-        stream.set_nodelay(true)?;
-        return Ok(Some(stream));
-    } else {
-        return Ok(None);
-    }
+    let stream = TcpStream::connect(addr).await?;
+    stream.set_nodelay(true)?;
+    Ok(stream)
 }

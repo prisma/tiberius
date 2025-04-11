@@ -5,8 +5,9 @@ use async_std::{
     net::{self, ToSocketAddrs},
 };
 use async_trait::async_trait;
-use futures::{future::select_all, FutureExt};
 use futures_util::future::TryFutureExt;
+use futures_util::stream::FuturesUnordered;
+use futures_util::StreamExt;
 use std::time;
 use tracing::Level;
 
@@ -70,16 +71,28 @@ impl SqlBrowser for net::TcpStream {
     /// enabled. Please see the crate examples for more detailed examples.
     async fn connect_named(builder: &crate::client::Config) -> crate::Result<Self> {
         let addrs = builder.get_addr().to_socket_addrs().await?;
+        let mut first_error = None;
 
         if builder.multi_subnet_failover {
-            let futures = addrs.map(|addr| connect_addr(builder, addr).boxed());
-            select_all(futures).await;
+            let mut futures = addrs
+                .map(|addr| connect_addr(builder, addr))
+                .collect::<FuturesUnordered<_>>();
+            while let Some(connection) = futures.next().await {
+                match connection {
+                    Ok(connection) => return Ok(connection),
+                    Err(error) => first_error.get_or_insert(error),
+                };
+            }
         } else {
-            for mut addr in addrs {
-                connect_addr(builder, addr).await?;
+            for addr in addrs {
+                match connect_addr(builder, addr).await {
+                    Ok(connection) => return Ok(connection),
+                    Err(error) => first_error.get_or_insert(error),
+                };
             }
         }
 
-        Err(io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host").into())
+        // If we end up here, there was no successfull connection.
+        Err(first_error.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not resolve server host").into()))
     }
 }
