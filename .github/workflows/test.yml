@@ -61,7 +61,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
 
-      - uses: actions/cache@v2
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -108,20 +108,20 @@ jobs:
 
       - name: Setup PowerShell module cache
         id: cacher
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
             path: ${{ steps.psmodulecache.outputs.modulepath }}
             key: ${{ steps.psmodulecache.outputs.keygen }}
 
       - name: Setup Chocolatey download cache
         id: chococache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
           key: chocolatey-install
 
       - name: Setup Cargo build cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             C:\Users\runneradmin\.cargo\registry
