@@ -213,3 +213,10 @@ impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
         self.with_root_certificates(roots)
     }
 }
+
+pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
+    config: &Config,
+    stream: S,
+) -> crate::Result<TlsStream<S>> {
+    TlsStream::new(config, stream).await
+}
