@@ -61,7 +61,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
 
-      - uses: actions/cache@v2
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -69,14 +69,51 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ matrix.features }}
 
-      - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+      - name: Start MSSQL 2017
+        # run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-2017
+        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-2017
 
       - name: Install dependencies
         run: sudo apt install -y openssl libkrb5-dev
 
+      # - name: Generate fresh test cert
+      #   run: |
+      #     openssl req -x509 -newkey rsa:2048 \
+      #       -keyout test_key.pem \
+      #       -out test_cert.pem \
+      #       -days 365 -nodes \
+      #       -subj "/CN=localhost"
+
+      - name: Generate fresh test cert
+        run: |
+          mkdir -p docker/certs
+          openssl req -x509 -newkey rsa:2048 \
+          -keyout docker/certs/customCA.key \
+          -out docker/certs/customCA.crt \
+          -days 3650 -nodes \
+          -subj "/CN=localhost"
+
+
+      # - name: Update CA certificates
+      #   run: sudo update-ca-certificates
+
+
+      - name: Trust generated cert
+        run: |
+          sudo cp docker/certs/customCA.crt /usr/local/share/ca-certificates/customCA.crt
+          sudo update-ca-certificates
+          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+      # - name: Start SQL Server ${{matrix.database}}
+      #   run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+
+      # - name: Run tests
+      #   run: cargo test ${{matrix.features}}
+
       - name: Run tests
-        run: cargo test ${{matrix.features}}
+        run: |
+          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+          cargo test ${{matrix.features}}
 
   cargo-test-windows:
     runs-on: windows-latest
@@ -108,20 +145,20 @@ jobs:
 
       - name: Setup PowerShell module cache
         id: cacher
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
             path: ${{ steps.psmodulecache.outputs.modulepath }}
             key: ${{ steps.psmodulecache.outputs.keygen }}
 
       - name: Setup Chocolatey download cache
         id: chococache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
           key: chocolatey-install
 
       - name: Setup Cargo build cache
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             C:\Users\runneradmin\.cargo\registry
@@ -189,7 +226,7 @@ jobs:
         run: cargo test ${{matrix.features}}
 
   cargo-test-macos:
-    runs-on: macos-12
+    runs-on: macos-latest
 
     strategy:
       fail-fast: false
@@ -201,7 +238,7 @@ jobs:
           - "--no-default-features --features=vendored-openssl"
 
     env:
-      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
 
     steps:
       - uses: actions/checkout@v2

@@ -9,7 +9,7 @@ if ! test -f "customCA.crt"; then
   echo Generating CA-Cert
   openssl req -x509 -new -nodes \
     -key customCA.key \
-    -sha256 -days 2048 \
+    -sha256 -days 3650 \
     -subj "/CN=Acme" \
     -passin file:passphrase.txt \
     -out customCA.crt

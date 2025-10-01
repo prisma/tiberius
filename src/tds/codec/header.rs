@@ -55,6 +55,7 @@ pub(crate) struct PacketHeader {
     window: u8,
 }
 
+#[allow(dead_code)]
 impl PacketHeader {
     pub fn new(length: usize, id: u8) -> PacketHeader {
         assert!(length <= u16::max_value() as usize);
