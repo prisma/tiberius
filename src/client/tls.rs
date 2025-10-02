@@ -114,7 +114,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
 ///
 /// What it does is it interferes on handshake for TDS packet handling,
 /// and when complete, just passes the calls to the underlying connection.
-#[allow(dead_code)]
 pub(crate) struct TlsPreloginWrapper<S> {
     stream: Option<S>,
     pending_handshake: bool,

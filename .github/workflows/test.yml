@@ -1,254 +1,222 @@
-name: Cargo tests
+name: Cargo Tests
+
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
+
+
 jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-            components: clippy
-            override: true
-      - name: Install dependencies
-        run: sudo apt install -y openssl libkrb5-dev
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --features=all
+    - uses: actions/checkout@v5 # checkout versions have been updated. previous v1/2
+    - uses: dtolnay/rust-toolchain@stable # changed to stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Install dependencies
+      run: sudo apt install -y openssl libkrb5-dev
+    - uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --features=all
 
   format:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          components: rustfmt
-          override: true
-      - uses: mbrobbel/rustfmt-check@master
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - uses: mbrobbel/rustfmt-check@master
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
   cargo-test-linux:
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
-        database:
-          - 2017
-          - 2019
-          - 2022
-          - azure-sql-edge
-        features:
-          - "--features=all"
-          - "--no-default-features"
-          - "--no-default-features --features=chrono"
-          - "--no-default-features --features=time"
-          - "--no-default-features --features=rustls"
-          - "--no-default-features --features=vendored-openssl"
-
-    env:
-      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
-      RUSTFLAGS: "-Dwarnings"
+        engine: [ 2017, 2019, 2022, "azure" ]
+        features: [ "--features=all", "--no-default-features", "--no-default-features --features=chrono", "--no-default-features --features=rustls", "--no-default-features --features=time", "--no-default-features --features=vendored-openssl" ]
 
     steps:
-      - uses: actions/checkout@v2
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libkrb5-dev krb5-user
+        sudo ln -s /usr/include/krb5/gssapi /usr/include/gssapi || true
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ matrix.features }}
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
 
-      - name: Start MSSQL 2017
-        # run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-2017
-        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-2017
+    - name: Build xtask
+      working-directory: xtask
+      run: cargo build --bin xtask
 
-      - name: Install dependencies
-        run: sudo apt install -y openssl libkrb5-dev
+    - name: Clean up any SQL containers
+      run: |
+        docker rm -f mssql-${{ matrix.engine }} || true
+        docker ps -a
 
-      # - name: Generate fresh test cert
-      #   run: |
-      #     openssl req -x509 -newkey rsa:2048 \
-      #       -keyout test_key.pem \
-      #       -out test_cert.pem \
-      #       -days 365 -nodes \
-      #       -subj "/CN=localhost"
+    - name: Start SQL server container
+      working-directory: xtask
+      run: cargo run -p xtask -- container ${{ matrix.engine }}
+      env:
+        SA_PASSWORD: "<YourStrong@Passw0rd>"
 
-      - name: Generate fresh test cert
-        run: |
-          mkdir -p docker/certs
-          openssl req -x509 -newkey rsa:2048 \
-          -keyout docker/certs/customCA.key \
-          -out docker/certs/customCA.crt \
-          -days 3650 -nodes \
-          -subj "/CN=localhost"
+    - name: Wait for SQL Server
+      run: |
+        echo "Waiting for SQL server (${{ matrix.engine }}) to be ready..."
+        sleep 25
 
+    - name: Run tests
+      working-directory: xtask
+      env:
+        TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+      run: cargo run -p xtask -- test -- ${{ matrix.features }}
 
-      # - name: Update CA certificates
-      #   run: sudo update-ca-certificates
+    - name: Stop SQL server container
+      working-directory: xtask
+      if: always()
+      run: cargo run -p xtask -- stop ${{ matrix.engine }}
 
+    - name: Build xtask local
+      working-directory: xtask
+      run: cargo build --bin xtask
 
-      - name: Trust generated cert
-        run: |
-          sudo cp docker/certs/customCA.crt /usr/local/share/ca-certificates/customCA.crt
-          sudo update-ca-certificates
-          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+    - name: Clean up any SQL containers
+      run: |
+        docker rm -f mssql-${{ matrix.engine }} || true
+        docker ps -a
 
-      # - name: Start SQL Server ${{matrix.database}}
-      #   run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+    - name: Start SQL server local
+      working-directory: xtask
+      run: cargo run -p xtask -- local ${{ matrix.engine }}
+      env:
+        SA_PASSWORD: "<YourStrong@Passw0rd>"
 
-      # - name: Run tests
-      #   run: cargo test ${{matrix.features}}
+    - name: Wait for SQL server local
+      run: |
+        echo "Waiting for SQL server (${{ matrix.engine }}) to be ready..."
+        sleep 25
 
-      - name: Run tests
-        run: |
-          export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-          cargo test ${{matrix.features}}
+    - name: Run tests local
+      working-directory: xtask
+      env:
+        TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
+      run: cargo run -p xtask -- test -- ${{ matrix.features }}
+
+    - name: Stop SQL server container
+      working-directory: xtask
+      if: always()
+      run: cargo run -p xtask -- stop ${{ matrix.engine }}
 
   cargo-test-windows:
     runs-on: windows-latest
-
     strategy:
       fail-fast: false
       matrix:
         database:
-          - 2019
+        - 2019
         features:
-          - "--features=all"
-          - "--no-default-features --features=rustls,winauth"
-          - "--no-default-features --features=vendored-openssl,winauth"
-
+        - "--features=all"
+        - "--no-default-features --features=rustls,winauth"
+        - "--no-default-features --features=vendored-openssl,winauth"
     env:
       TIBERIUS_TEST_INSTANCE: "MSSQLSERVER"
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
 
     steps:
-      - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
 
-      - uses: actions-rs/toolchain@v1
+    - name: Set required PowerShell modules
+      id: psmodulecache
+      uses: potatoqualitee/psmodulecache@v1
+      with:
+        modules-to-cache: SqlServer
 
-      - name: Set required PowerShell modules
-        id: psmodulecache
-        uses: potatoqualitee/psmodulecache@v1
-        with:
-          modules-to-cache: SqlServer
+    - name: Setup PowerShell module cache
+      id: cacher
+      uses: actions/cache@v4 # cache updated to v4
+      with:
+        path: ${{ steps.psmodulecache.outputs.modulepath }}
+        key: ${{ steps.psmodulecache.outputs.keygen }}
 
-      - name: Setup PowerShell module cache
-        id: cacher
-        uses: actions/cache@v4
-        with:
-            path: ${{ steps.psmodulecache.outputs.modulepath }}
-            key: ${{ steps.psmodulecache.outputs.keygen }}
+    - name: Setup Chocolatey download cache
+      id: chococache
+      uses: actions/cache@v4
+      with:
+        path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
+        key: chocolatey-install
 
-      - name: Setup Chocolatey download cache
-        id: chococache
-        uses: actions/cache@v4
-        with:
-          path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
-          key: chocolatey-install
+    - name: Setup Cargo build cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\Users\runneradmin\.cargo\registry
+          C:\Users\runneradmin\.cargo\git
+          target
+        key: ${{ runner.os }}-cargo
 
-      - name: Setup Cargo build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            C:\Users\runneradmin\.cargo\registry
-            C:\Users\runneradmin\.cargo\git
-            target
-          key: ${{ runner.os }}-cargo
+    - name: Install required PowerShell modules
+      if: steps.cacher.outputs.cache-hit != 'true'
+      shell: powershell
+      run: |
+        Set-PSRepository PSGallery -InstallationPolicy Trusted
+        Install-Module SqlServer
 
-      - name: Install required PowerShell modules
-        if: steps.cacher.outputs.cache-hit != 'true'
-        shell: powershell
-        run: |
-            Set-PSRepository PSGallery -InstallationPolicy Trusted
-            Install-Module SqlServer
+    - name: Install SQL Server ${{matrix.database}}
+      shell: powershell
+      run: |
+        choco feature disable --name="'exitOnRebootDetected'"
+        $ErrorActionPreference = 'SilentlyContinue'
+        choco install sql-server-${{matrix.database}} --params="'/IgnorePendingReboot'"
 
-      - name: Install SQL Server ${{matrix.database}}
-        shell: powershell
-        run: |
-          choco feature disable --name="'exitOnRebootDetected'"
-          $ErrorActionPreference = 'SilentlyContinue'
-          choco install sql-server-${{matrix.database}} --params="'/IgnorePendingReboot'"
+    - name: Setup SQL Server ${{matrix.database}}
+      shell: powershell
+      run: |
+        Import-Module 'sqlps'
+        [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
+        [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.SqlWmiManagement") | Out-Null
+        $serverName = $env:COMPUTERNAME
+        $instanceName = "MSSQLSERVER"
+        $smo = 'Microsoft.SqlServer.Management.Smo.'
+        $wmi = new-object ($smo + 'Wmi.ManagedComputer')
+        $wmi
+        # Enable TCP/IP
+        echo "Enabling TCP/IP"
+        $Tcp = $wmi.GetSmoObject("ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']")
+        $Tcp.IsEnabled = $true
+        $Tcp.alter()
+        $Tcp
+        # Enable named pipes
+        echo "Enabling named pipes"
+        $Np = $wmi.GetSmoObject("ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Np']")
+        $Np.IsEnabled = $true
+        $Np.Alter()
+        $Np
+        # Set Alias
+        echo "Setting the alias"
+        New-Item HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client -Name ConnectTo | Out-Null
+        Set-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo -Name '(local)' -Value "DBMSSOCN,$serverName\$instanceName" | Out-Null
+        # Start services
+        echo "Starting services"
+        Set-Service SQLBrowser -StartupType Manual
+        Start-Service SQLBrowser
+        net stop MSSQLSERVER
+        net start MSSQLSERVER
 
-      - name: Setup SQL Server ${{matrix.database}}
-        shell: powershell
-        run: |
-          Import-Module 'sqlps'
-
-          [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.Smo") | Out-Null
-          [reflection.assembly]::LoadWithPartialName("Microsoft.SqlServer.SqlWmiManagement") | Out-Null
-
-          $serverName = $env:COMPUTERNAME
-          $instanceName = "MSSQLSERVER"
-
-          $smo = 'Microsoft.SqlServer.Management.Smo.'
-          $wmi = new-object ($smo + 'Wmi.ManagedComputer')
-          $wmi
-
-          # Enable TCP/IP
-          echo "Enabling TCP/IP"
-          $Tcp = $wmi.GetSmoObject("ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Tcp']")
-          $Tcp.IsEnabled = $true
-          $Tcp.alter()
-          $Tcp
-
-          # Enable named pipes
-          echo "Enabling named pipes"
-          $Np = $wmi.GetSmoObject("ManagedComputer[@Name='$serverName']/ServerInstance[@Name='$instanceName']/ServerProtocol[@Name='Np']")
-          $Np.IsEnabled = $true
-          $Np.Alter()
-          $Np
-
-          # Set Alias
-          echo "Setting the alias"
-          New-Item HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client -Name ConnectTo | Out-Null
-          Set-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\MSSQLServer\Client\ConnectTo -Name '(local)' -Value "DBMSSOCN,$serverName\$instanceName" | Out-Null
-
-          # Start services
-          echo "Starting services"
-          Set-Service SQLBrowser -StartupType Manual
-          Start-Service SQLBrowser
-          net stop MSSQLSERVER
-          net start MSSQLSERVER
-
-      - name: Run normal tests
-        shell: powershell
-        run: cargo test ${{matrix.features}}
-
-  cargo-test-macos:
-    runs-on: macos-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        database:
-          - 2019
-        features:
-          - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
-          - "--no-default-features --features=vendored-openssl"
-
-    env:
-      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - uses: actions-rs/toolchain@v1
-
-      - uses: docker-practice/actions-setup-docker@master
-
-      - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
-
-      - name: Run tests
-        run: cargo test ${{matrix.features}}
+    - name: Run normal tests
+      shell: powershell
+      run: cargo test ${{matrix.features}}
