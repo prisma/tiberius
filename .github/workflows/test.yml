@@ -77,18 +77,18 @@ jobs:
         echo "Waiting for SQL server (${{ matrix.engine }}) to be ready..."
         sleep 25
 
-    - name: Run tests
+    - name: Run tests (container)
       working-directory: xtask
       env:
         TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
       run: cargo run -p xtask -- test -- ${{ matrix.features }}
 
-    - name: Stop SQL server container
+    - name: Stop SQL server (container)
       working-directory: xtask
       if: always()
       run: cargo run -p xtask -- stop ${{ matrix.engine }}
 
-    - name: Build xtask local
+    - name: Build xtask (local)
       working-directory: xtask
       run: cargo build --bin xtask
 
@@ -97,24 +97,24 @@ jobs:
         docker rm -f mssql-${{ matrix.engine }} || true
         docker ps -a
 
-    - name: Start SQL server local
+    - name: Start SQL server (local)
       working-directory: xtask
       run: cargo run -p xtask -- local ${{ matrix.engine }}
       env:
         SA_PASSWORD: "<YourStrong@Passw0rd>"
 
-    - name: Wait for SQL server local
+    - name: Wait for SQL server (local)
       run: |
         echo "Waiting for SQL server (${{ matrix.engine }}) to be ready..."
         sleep 25
 
-    - name: Run tests local
+    - name: Run tests (local)
       working-directory: xtask
       env:
         TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
       run: cargo run -p xtask -- test -- ${{ matrix.features }}
 
-    - name: Stop SQL server container
+    - name: Stop SQL server (container)
       working-directory: xtask
       if: always()
       run: cargo run -p xtask -- stop ${{ matrix.engine }}
