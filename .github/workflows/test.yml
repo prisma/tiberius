@@ -130,7 +130,7 @@ jobs:
 
     - name: Start SQL server (test)
       working-directory: xtask
-      run: cargo run -p xtask -- local ${{ matrix.engine }}
+      run: cargo run -p xtask -- test ${{ matrix.engine }}
       env:
         SA_PASSWORD: "<YourStrong@Passw0rd>"
 
