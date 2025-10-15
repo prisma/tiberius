@@ -16,23 +16,11 @@ jobs:
         components: rustfmt, clippy
 
     - name: Install dependencies
-      run: sudo apt install -y openssl libkrb5-dev
-    - uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --features=all
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev krb5-user && sudo ln -s /usr/include/krb5/gssapi /usr/include/gssapi
 
-  format:
-    runs-on: ubuntu-latest
+    - run: cargo clippy --all-features
 
-    steps:
-    - uses: actions/checkout@v5
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
-    - uses: mbrobbel/rustfmt-check@master
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+    - run: cargo fmt --check
 
   cargo-test-linux:
     runs-on: ubuntu-latest
@@ -40,6 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         engine: [ 2017, 2019, 2022, "azure" ]
+        # engine: [ 2019 ]
         features: [ "--features=all", "--no-default-features", "--no-default-features --features=chrono", "--no-default-features --features=rustls", "--no-default-features --features=time", "--no-default-features --features=vendored-openssl" ]
 
     steps:
@@ -47,108 +36,19 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libkrb5-dev krb5-user
-        sudo ln -s /usr/include/krb5/gssapi /usr/include/gssapi || true
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev krb5-user && sudo ln -s /usr/include/krb5/gssapi /usr/include/gssapi
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
 
-    - name: Build xtask
-      working-directory: xtask
-      run: cargo build --bin xtask
+    - run: cargo xtask container ${{ matrix.engine }}
 
-    - name: Clean up any SQL containers
-      run: |
-        docker rm -f mssql-${{ matrix.engine }} || true
-        docker ps -a
+    # Wait for SQL Server
+    - run: sleep 25
 
-    - name: Start SQL server container
-      working-directory: xtask
-      run: cargo run -p xtask -- container ${{ matrix.engine }}
-      env:
-        SA_PASSWORD: "<YourStrong@Passw0rd>"
+    - run: cargo xtask test ${{ matrix.features }}
 
-    - name: Wait for SQL Server
-      run: |
-        echo "Waiting for SQL server (${{ matrix.engine }}) to be ready..."
-        sleep 25
-
-    - name: Run tests (container)
-      working-directory: xtask
-      env:
-        TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
-      run: cargo run -p xtask -- test -- ${{ matrix.features }}
-
-    - name: Stop SQL server (container)
-      working-directory: xtask
-      if: always()
-      run: cargo run -p xtask -- stop ${{ matrix.engine }}
-
-    - name: Build xtask (local)
-      working-directory: xtask
-      run: cargo build --bin xtask
-
-    - name: Clean up any SQL containers
-      run: |
-        docker rm -f mssql-${{ matrix.engine }} || true
-        docker ps -a
-
-    - name: Start SQL server (local)
-      working-directory: xtask
-      run: cargo run -p xtask -- local ${{ matrix.engine }}
-      env:
-        SA_PASSWORD: "<YourStrong@Passw0rd>"
-
-    - name: Wait for SQL server (local)
-      run: |
-        echo "Waiting for SQL server (${{ matrix.engine }}) to be ready..."
-        sleep 25
-
-    - name: Run tests (local)
-      working-directory: xtask
-      env:
-        TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
-      run: cargo run -p xtask -- test -- ${{ matrix.features }}
-
-    - name: Stop SQL server (container)
-      working-directory: xtask
-      if: always()
-      run: cargo run -p xtask -- stop ${{ matrix.engine }}
-
-    - name: Build xtask (test)
-      working-directory: xtask
-      run: cargo build --bin xtask
-
-    - name: Clean up any SQL containers
-      run: |
-        docker rm -f mssql-${{ matrix.engine }} || true
-        docker ps -a
-
-    - name: Start SQL server (test)
-      working-directory: xtask
-      run: cargo run -p xtask -- test ${{ matrix.engine }}
-      env:
-        SA_PASSWORD: "<YourStrong@Passw0rd>"
-
-    - name: Wait for SQL server (test)
-      run: |
-        echo "Waiting for SQL server (${{ matrix.engine }}) to be ready..."
-        sleep 25
-
-    - name: Run tests (test)
-      working-directory: xtask
-      env:
-        TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=sa;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
-      run: cargo run -p xtask -- test -- ${{ matrix.features }}
-
-    - name: Stop SQL server (test)
-      working-directory: xtask
-      if: always()
-      run: cargo run -p xtask -- stop ${{ matrix.engine }}
+    - run: cargo xtask stop ${{ matrix.engine }}
 
   cargo-test-windows:
     runs-on: windows-latest
@@ -251,3 +151,30 @@ jobs:
     - name: Run normal tests
       shell: powershell
       run: cargo test ${{matrix.features}}
+
+  cargo-test-macos:
+    runs-on: macos-26
+
+    strategy:
+      fail-fast: false
+      matrix:
+        database:
+        - 2019
+        features:
+        - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
+        - "--no-default-features --features=vendored-openssl"
+
+    steps:
+
+    - uses: actions/checkout@v5
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    # For now we're not running the integration tests in macos,
+    # only running the unit tests
+    - name: Run test
+      run: cargo test ${{ matrix.features }} --lib
+
+    - name: Run clippy
+      run: cargo clippy ${{ matrix.features }}
