@@ -11,7 +11,10 @@ fn main() {
 
     match cmd.as_str() {
         "container" => {
-            //  need to change unwrap_or_else in document
+            // need to change unwrap_or_else in document
+            // default version is 2019, any opposition?
+
+            // doesn't run tests
             let version = args.next().unwrap_or_else(|| "2019".into());
             start_container(&version);
         }
@@ -20,13 +23,17 @@ fn main() {
             run_tests(args.collect::<Vec<_>>());
         }
         "local" => {
+            // local runs test AND container
             let version = args.next().unwrap_or_else(|| "2019".into());
             start_container(&version);
-            wait_for_sql();
+            // start_container calls wait_for_sql anyway
+            // so we don't need to call the below line:
+            // wait_for_sql();
             run_tests(vec![]);
             stop_container(&version);
         }
         "stop" => {
+            // stops running containers
             let version = args.next().unwrap_or_else(|| "2019".into());
             stop_container(&version);
         }
