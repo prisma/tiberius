@@ -15,11 +15,8 @@ fn main() {
             let version = args.next().unwrap_or_else(|| "2019".into());
             start_container(&version);
         }
-        "stop" => {
-            let version = args.next().unwrap_or_else(|| "2019".into());
-            stop_container(&version);
-        }
         "test" => {
+            // run the tests
             run_tests(args.collect::<Vec<_>>());
         }
         "local" => {
@@ -27,6 +24,10 @@ fn main() {
             start_container(&version);
             wait_for_sql();
             run_tests(vec![]);
+            stop_container(&version);
+        }
+        "stop" => {
+            let version = args.next().unwrap_or_else(|| "2019".into());
             stop_container(&version);
         }
         _ => {
@@ -83,7 +84,7 @@ fn start_container(version: &str) {
 }
 
 fn wait_for_sql() {
-    println!("Waiting for SQL Server to start. 25 seconds.");
+    println!("Waiting for SQL Server to start. 25 seconds. Do not change or exit.");
     sleep(Duration::from_secs(25));
 }
 
@@ -103,7 +104,7 @@ fn run_tests(_flags: Vec<String>) {
         )
     });
 
-    println!("Running tests with connection: {}", connection_string);
+    // for debugging: println!("Running tests with connection {}", connection_string);
 
     let status = Command::new("cargo")
         .arg("test")
