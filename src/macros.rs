@@ -17,6 +17,7 @@ macro_rules! uint_enum {
 
         impl ::std::convert::TryFrom<u8> for $ty {
             type Error = ();
+            #[allow(clippy::cast_enum_truncation,reason="todo, investigate")]
             fn try_from(n: u8) -> ::std::result::Result<$ty, ()> {
                 match n {
                     $( x if x == $ty::$variant as u8 => Ok($ty::$variant), )*

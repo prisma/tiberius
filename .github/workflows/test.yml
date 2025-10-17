@@ -18,7 +18,7 @@ jobs:
     - name: Install dependencies
       run: sudo apt-get update && sudo apt-get install -y libkrb5-dev krb5-user && sudo ln -s /usr/include/krb5/gssapi /usr/include/gssapi
 
-    - run: cargo clippy --all-features
+    - run: cargo clippy --features=all
 
     - run: cargo fmt --check
 
@@ -29,7 +29,6 @@ jobs:
       matrix:
         engine: [ 2017, 2019, 2022, "azure" ]
         # engine: [ 2019 ]
-        features: [ "--features=all", "--no-default-features", "--no-default-features --features=chrono", "--no-default-features --features=rustls", "--no-default-features --features=time", "--no-default-features --features=vendored-openssl" ]
 
     steps:
     - name: Checkout repository
@@ -41,12 +40,23 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Setup Cargo build cache
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ubuntu-cargo
+
     - run: cargo xtask container ${{ matrix.engine }}
 
     # Wait for SQL Server
     - run: sleep 25
 
-    - run: cargo xtask test ${{ matrix.features }}
+    - run: cargo xtask test --features=all
+    - run: cargo xtask test --no-default-features
+    - run: cargo xtask test --no-default-features --features=chrono
+    - run: cargo xtask test --no-default-features --features=rustls
+    - run: cargo xtask test --no-default-features --features=time
+    - run: cargo xtask test --no-default-features --features=vendored-openssl
 
     - run: cargo xtask stop ${{ matrix.engine }}
 
@@ -57,10 +67,6 @@ jobs:
       matrix:
         database:
         - 2019
-        features:
-        - "--features=all"
-        - "--no-default-features --features=rustls,winauth"
-        - "--no-default-features --features=vendored-openssl,winauth"
     env:
       TIBERIUS_TEST_INSTANCE: "MSSQLSERVER"
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
@@ -148,9 +154,12 @@ jobs:
         net stop MSSQLSERVER
         net start MSSQLSERVER
 
-    - name: Run normal tests
-      shell: powershell
-      run: cargo test ${{matrix.features}}
+    - shell: powershell
+      run: cargo test --features=all
+    - shell: powershell
+      run: cargo test --no-default-features --features=rustls,winauth
+    - shell: powershell
+      run: cargo test --no-default-features --features=vendored-openssl,winauth
 
   cargo-test-macos:
     runs-on: macos-26
@@ -160,21 +169,16 @@ jobs:
       matrix:
         database:
         - 2019
-        features:
-        - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
-        - "--no-default-features --features=vendored-openssl"
 
     steps:
 
     - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
       with:
-        components: rustfmt, clippy
+        components: clippy
 
     # For now we're not running the integration tests in macos,
     # only running the unit tests
-    - name: Run test
-      run: cargo test ${{ matrix.features }} --lib
-
-    - name: Run clippy
-      run: cargo clippy ${{ matrix.features }}
+    - run: cargo test --no-default-features --features=vendored-openssl --lib
+    - run: cargo test --no-default-features --features=rustls,chrono,time,tds73,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal --lib
+    - run: cargo clippy ${{ matrix.features }}

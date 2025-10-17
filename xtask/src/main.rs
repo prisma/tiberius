@@ -29,7 +29,7 @@ fn main() {
             // start_container calls wait_for_sql anyway
             // so we don't need to call the below line:
             // wait_for_sql();
-            run_tests(vec![]);
+            run_tests(args.collect::<Vec<_>>());
             stop_container(&version);
         }
         "stop" => {
@@ -101,7 +101,7 @@ fn stop_container(version: &str) {
     println!("Stopped container {}", name);
 }
 
-fn run_tests(_flags: Vec<String>) {
+fn run_tests(flags: Vec<String>) {
     let sa_password =
         env::var("SA_PASSWORD").unwrap_or_else(|_| "<YourStrong@Passw0rd>".to_string());
     let connection_string = env::var("TIBERIUS_TEST_CONNECTION_STRING").unwrap_or_else(|_| {
@@ -116,6 +116,7 @@ fn run_tests(_flags: Vec<String>) {
     let status = Command::new("cargo")
         .arg("test")
         .env("TIBERIUS_TEST_CONNECTION_STRING", &connection_string)
+        .args(&flags)
         .status()
         .expect("failed to run cargo test");
 

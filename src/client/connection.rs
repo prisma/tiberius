@@ -285,7 +285,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
     #[allow(clippy::too_many_arguments)]
-    async fn login<'a>(
+    async fn login(
         mut self,
         auth: AuthMethod,
         encryption: EncryptionLevel,

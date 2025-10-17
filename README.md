@@ -142,3 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Security
 
 If you have a security issue to report, please contact us at [security@prisma.io](mailto:security@prisma.io?subject=[GitHub]%20Prisma%202%20Security%20Report%20Tiberius)
+
+## Notes
+
+We have native TLS, open TLS, and rust TLS. In the event that multiple are chosen the one with the lowest number will always "win".
