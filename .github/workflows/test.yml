@@ -28,7 +28,6 @@ jobs:
       fail-fast: false
       matrix:
         engine: [ 2017, 2019, 2022, "azure" ]
-        # engine: [ 2019 ]
 
     steps:
     - name: Checkout repository
@@ -90,21 +89,32 @@ jobs:
         path: ${{ steps.psmodulecache.outputs.modulepath }}
         key: ${{ steps.psmodulecache.outputs.keygen }}
 
-    - name: Setup Chocolatey download cache
-      id: chococache
-      uses: actions/cache@v4
-      with:
-        path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
-        key: chocolatey-install
+    # - name: Setup Chocolatey download cache
+    #   id: chococache
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
+    #     key: chocolatey-install
 
-    - name: Setup Cargo build cache
-      uses: actions/cache@v4
+    # - name: Setup Cargo build cache
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: |
+    #       C:\Users\runneradmin\.cargo\registry
+    #       C:\Users\runneradmin\.cargo\git
+    #       target
+    #     key: ${{ runner.os }}-cargo
+
+    - name: Cache Cargo build cache
+      uses: actions/cache@v4 # cache command, updated to v4
       with:
         path: |
-          C:\Users\runneradmin\.cargo\registry
-          C:\Users\runneradmin\.cargo\git
+          ~/.cargo/registry
+          ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
 
     - name: Install required PowerShell modules
       if: steps.cacher.outputs.cache-hit != 'true'

@@ -25,7 +25,6 @@
 #[cfg_attr(feature = "docs", doc(cfg(feature = "chrono")))]
 pub mod chrono;
 
-//#[allow(clippy::module_inception,reason="tbd rename tds::time or this module")]
 #[allow(
     clippy::module_inception,
     reason = "tbd rename tds::time or this module"
