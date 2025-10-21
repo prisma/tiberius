@@ -89,22 +89,6 @@ jobs:
         path: ${{ steps.psmodulecache.outputs.modulepath }}
         key: ${{ steps.psmodulecache.outputs.keygen }}
 
-    # - name: Setup Chocolatey download cache
-    #   id: chococache
-    #   uses: actions/cache@v4
-    #   with:
-    #     path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
-    #     key: chocolatey-install
-
-    # - name: Setup Cargo build cache
-    #   uses: actions/cache@v4
-    #   with:
-    #     path: |
-    #       C:\Users\runneradmin\.cargo\registry
-    #       C:\Users\runneradmin\.cargo\git
-    #       target
-    #     key: ${{ runner.os }}-cargo
-
     - name: Cache Cargo build cache
       uses: actions/cache@v4 # cache command, updated to v4
       with:
