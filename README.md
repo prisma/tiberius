@@ -146,3 +146,7 @@ If you have a security issue to report, please contact us at [security@prisma.io
 ## Notes
 
 We have native TLS, open TLS, and rust TLS. In the event that multiple are chosen the one with the lowest number will always "win".
+
+1. Rust TLS
+2. Native TLS
+3. Open TLS

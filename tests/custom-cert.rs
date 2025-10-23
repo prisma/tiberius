@@ -7,13 +7,6 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 #[allow(dead_code)]
 static LOGGER_SETUP: Once = Once::new();
 
-#[allow(dead_code)]
-fn load_ca_bytes() -> Result<Vec<u8>> {
-    let ca_path = std::env::current_dir()?.join("docker/certs/customCA.crt");
-    let ca_bytes = std::fs::read(&ca_path)?;
-    Ok(ca_bytes)
-}
-
 #[test]
 #[cfg(any(
     feature = "rustls",
@@ -28,12 +21,9 @@ fn connect_to_custom_cert_instance_ado() -> Result<()> {
     let rt = Runtime::new()?;
 
     rt.block_on(async {
-        #[allow(unused_variables)]
-        let ca_bytes = load_ca_bytes()?;
-
         let mut config =
             Config::from_ado_string("server=tcp:localhost,1433;IntegratedSecurity=true")?;
-        config.trust_cert();
+        config.trust_cert_ca("docker/certs/customCA.crt");
         config.authentication(AuthMethod::sql_server("sa", "<YourStrong@Passw0rd>"));
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
@@ -64,11 +54,8 @@ fn connect_to_custom_cert_instance_jdbc() -> Result<()> {
 
     let rt = Runtime::new()?;
     rt.block_on(async {
-        #[allow(unused_variables)]
-        let ca_bytes = load_ca_bytes()?;
-
         let mut config = Config::from_jdbc_string("jdbc:sqlserver://localhost:1433")?;
-        config.trust_cert();
+        config.trust_cert_ca("docker/certs/customCA.crt");
         config.authentication(AuthMethod::sql_server("sa", "<YourStrong@Passw0rd>"));
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
