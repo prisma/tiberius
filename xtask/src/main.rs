@@ -62,7 +62,7 @@ fn start_container(version: &str) {
     //     _ => panic!("Unsupported version, {}", version),
     // };
 
-    let dockerfile = format!("Dockerfile.{}", version);
+    let dockerfile = format!("docker/Dockerfile.{}", version);
     let image_tag = format!("my-mssql:{}", version);
 
 
