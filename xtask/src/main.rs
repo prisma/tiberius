@@ -54,6 +54,9 @@ fn start_container(version: &str) {
     let sa_password =
         env::var("SA_PASSWORD").unwrap_or_else(|_| "<YourStrong@Passw0rd>".to_string());
     let container_name = format!("mssql-{}", version);
+
+    // OLD version
+
     // let image_tag = match version {
     //     "2017" => "mcr.microsoft.com/mssql/server:2017-latest",
     //     "2019" => "mcr.microsoft.com/mssql/server:2019-latest",
@@ -72,9 +75,9 @@ fn start_container(version: &str) {
         .args(["rm", "-f", &container_name])
         .status();
 
-    // let _ = Command::new("docker")
-    //     .args(["", "", &container_name])
-    //     .status();
+    let _ = Command::new("docker")
+        .args(["", "", &container_name])
+        .status();
 
     println!("Building image {} from {}...", image_tag, dockerfile);
 
