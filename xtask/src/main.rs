@@ -119,7 +119,7 @@ fn start_container(version: &str) {
 }
 
 fn wait_for_sql() {
-    println!("Waiting for SQL Server to start. 25 seconds. Do not change or exit.");
+    println!("Waiting for SQL Server to start. 25 seconds. Do not change or exit. - please.");
     sleep(Duration::from_secs(25));
 }
 
