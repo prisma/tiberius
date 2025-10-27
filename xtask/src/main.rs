@@ -68,7 +68,6 @@ fn start_container(version: &str) {
     let dockerfile = format!("docker/Dockerfile.{}", version);
     let image_tag = format!("my-mssql:{}", version);
 
-
     println!("Cleaning up existing container, {}", container_name);
 
     let _ = Command::new("docker")
