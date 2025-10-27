@@ -5,12 +5,6 @@ use std::{
     time::Duration,
 };
 
-// build and run container docker
-// docker rm and then docker build then docker run and run the container that we build
-// use those image tag things to figure out which docker file to build so instea dof templating the
-// name of the image on microsofts container repo we'll need to template the name of the docker file itself
-// when we use docker build we'll give docker a tag and then run that same tag
-
 fn main() {
     let mut args = env::args().skip(1);
     let cmd = args.next().unwrap_or_default();
@@ -33,8 +27,6 @@ fn main() {
             let version = args.next().unwrap_or_else(|| "2019".into());
             start_container(&version);
             // start_container calls wait_for_sql anyway
-            // so we don't need to call the below line:
-            // wait_for_sql();
             run_tests(args.collect::<Vec<_>>());
             stop_container(&version);
         }
@@ -44,7 +36,6 @@ fn main() {
             stop_container(&version);
         }
         _ => {
-            // eprintln!("Usage: cargo xtask <container|stop|test|local> [args]");
             exit(1);
         }
     }
@@ -54,16 +45,6 @@ fn start_container(version: &str) {
     let sa_password =
         env::var("SA_PASSWORD").unwrap_or_else(|_| "<YourStrong@Passw0rd>".to_string());
     let container_name = format!("mssql-{}", version);
-
-    // OLD version
-
-    // let image_tag = match version {
-    //     "2017" => "mcr.microsoft.com/mssql/server:2017-latest",
-    //     "2019" => "mcr.microsoft.com/mssql/server:2019-latest",
-    //     "2022" => "mcr.microsoft.com/mssql/server:2022-latest",
-    //     "azure" => "mcr.microsoft.com/azure-sql-edge",
-    //     _ => panic!("Unsupported version, {}", version),
-    // };
 
     let dockerfile = format!("docker/Dockerfile.{}", version);
     let image_tag = format!("my-mssql:{}", version);
