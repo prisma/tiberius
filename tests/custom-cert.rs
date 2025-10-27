@@ -95,3 +95,9 @@ fn connect_to_custom_cert_instance_without_ca() -> Result<()> {
         Ok(())
     })
 }
+
+// build and run container docker
+// docker rm and then docker build then docker run and run the container that we build
+// use those image tag things to figure out which docker file to build so instea dof templating the
+// name of the image on microsofts container repo we'll need to template the name of the docker file itself
+// when we use docker build we'll give docker a tag and then run that same tag

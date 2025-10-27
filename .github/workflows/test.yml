@@ -99,8 +99,6 @@ jobs:
           ~/.cargo/git
           target
         key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}
-        # restore-keys: |
-        #   ${{ runner.os }}-cargo-
 
     - name: Install required PowerShell modules
       if: steps.cacher.outputs.cache-hit != 'true'
@@ -172,10 +170,6 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
-
-    #rust tls
-    # .. tls
-    # vendored tls
 
     # For now we're not running the integration tests in macos,
     # only running the unit tests

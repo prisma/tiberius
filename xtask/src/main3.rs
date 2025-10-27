@@ -54,17 +54,13 @@ fn start_container(version: &str) {
     let sa_password =
         env::var("SA_PASSWORD").unwrap_or_else(|_| "<YourStrong@Passw0rd>".to_string());
     let container_name = format!("mssql-{}", version);
-    // let image_tag = match version {
-    //     "2017" => "mcr.microsoft.com/mssql/server:2017-latest",
-    //     "2019" => "mcr.microsoft.com/mssql/server:2019-latest",
-    //     "2022" => "mcr.microsoft.com/mssql/server:2022-latest",
-    //     "azure" => "mcr.microsoft.com/azure-sql-edge",
-    //     _ => panic!("Unsupported version, {}", version),
-    // };
-
-    let dockerfile = format!("Dockerfile.{}", version);
-    let image_tag = format!("my-mssql:{}", version);
-
+    let image_tag = match version {
+        "2017" => "mcr.microsoft.com/mssql/server:2017-latest",
+        "2019" => "mcr.microsoft.com/mssql/server:2019-latest",
+        "2022" => "mcr.microsoft.com/mssql/server:2022-latest",
+        "azure" => "mcr.microsoft.com/azure-sql-edge",
+        _ => panic!("Unsupported version, {}", version),
+    };
 
     println!("Cleaning up existing container, {}", container_name);
 
@@ -72,21 +68,9 @@ fn start_container(version: &str) {
         .args(["rm", "-f", &container_name])
         .status();
 
-    // let _ = Command::new("docker")
-    //     .args(["", "", &container_name])
-    //     .status();
-
-    println!("Building image {} from {}...", image_tag, dockerfile);
-
-    let status = Command::new("docker")
-        .args(["build", "-f", &dockerfile, "-t", &image_tag, "."])
-        .status()
-        .expect("Failed to build docker image");
-
-    if !status.success() {
-        eprintln!("Docker build failed for {}", version);
-        exit(1);
-    }
+    let _ = Command::new("docker")
+        .args(["", "", &container_name])
+        .status();
 
     println!("Starting SQL Server {} container...", version);
 
@@ -102,7 +86,7 @@ fn start_container(version: &str) {
             &format!("SA_PASSWORD={}", sa_password),
             "-p",
             "1433:1433",
-            &image_tag,
+            image_tag,
         ])
         .status()
         .expect("Failed to run docker");
