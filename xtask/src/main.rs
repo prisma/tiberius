@@ -46,7 +46,7 @@ fn start_container(version: &str) {
         env::var("SA_PASSWORD").unwrap_or_else(|_| "<YourStrong@Passw0rd>".to_string());
     let container_name = format!("mssql-{}", version);
 
-    let dockerfile = format!("docker/Dockerfile.{}", version);
+    let dockerfile = format!("docker/docker-mssql-{}.dockerfile", version);
     let image_tag = format!("my-mssql:{}", version);
 
     println!("Cleaning up existing container, {}", container_name);
