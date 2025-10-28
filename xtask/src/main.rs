@@ -133,4 +133,3 @@ fn run_tests(flags: Vec<String>) {
         exit(1);
     }
 }
-
