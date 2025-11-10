@@ -70,7 +70,8 @@ jobs:
         - 2019
     env:
       TIBERIUS_TEST_INSTANCE: "MSSQLSERVER"
-      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
+      # TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
+      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificate=true"
 
     steps:
     - uses: actions/checkout@v5
