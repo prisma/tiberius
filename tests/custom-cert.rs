@@ -8,7 +8,7 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 static LOGGER_SETUP: Once = Once::new();
 
 #[test]
-#[cfg(any(q
+#[cfg(any(
     feature = "rustls",
     feature = "native-tls",
     feature = "vendored-openssl"
