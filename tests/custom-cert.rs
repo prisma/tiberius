@@ -41,6 +41,12 @@ fn connect_to_custom_cert_instance_ado() -> Result<()> {
     })
 }
 
+// build and run container docker
+// docker rm and then docker build then docker run and run the container that we build
+// use those image tag things to figure out which docker file to build so instead of templating the
+// name of the image on microsofts container repo we'll need to template the name of the docker file itself
+// when we use docker build we'll give docker a tag and then run that same tag
+
 #[test]
 #[cfg(any(
     feature = "rustls",
@@ -55,7 +61,10 @@ fn connect_to_custom_cert_instance_jdbc() -> Result<()> {
     let rt = Runtime::new()?;
     rt.block_on(async {
         let mut config = Config::from_jdbc_string("jdbc:sqlserver://localhost:1433")?;
-        config.trust_cert_ca("docker/certs/customCA.crt");
+        let ca_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docker/certs/customCA.crt");
+        // let ca_path_string = format!("{:?}", ca_path).to_string();
+        config.trust_cert_ca(ca_path.display().to_string());
+        //config.trust_cert_ca("docker/certs/customCA.crt");
         config.authentication(AuthMethod::sql_server("sa", "<YourStrong@Passw0rd>"));
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
@@ -95,9 +104,3 @@ fn connect_to_custom_cert_instance_without_ca() -> Result<()> {
         Ok(())
     })
 }
-
-// build and run container docker
-// docker rm and then docker build then docker run and run the container that we build
-// use those image tag things to figure out which docker file to build so instea dof templating the
-// name of the image on microsofts container repo we'll need to template the name of the docker file itself
-// when we use docker build we'll give docker a tag and then run that same tag
