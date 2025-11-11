@@ -28,6 +28,7 @@ use enumflags2::BitFlags;
 use futures_util::io::{AsyncRead, AsyncWrite};
 use futures_util::stream::TryStreamExt;
 use std::{borrow::Cow, fmt::Debug};
+use crate::tds::codec::MetaDataColumn;
 
 /// `Client` is the main entry point to the SQL Server, providing query
 /// execution capabilities.
@@ -300,7 +301,32 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
         &'a mut self,
         table: &'a str,
     ) -> crate::Result<BulkLoadRequest<'a, S>> {
-        // Start the bulk request
+        let columns: Vec<_> = self.column_metadata(table).await?
+            .into_iter()
+            .filter(|column| column.base.flags.contains(ColumnFlag::Updateable))
+            .collect();
+
+        self.connection.flush_stream().await?;
+        let col_data = columns.iter().map(|c| format!("{}", c)).join(", ");
+        let query = format!("INSERT BULK {} ({})", table, col_data);
+
+        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
+        let id = self.connection.context_mut().next_packet_id();
+
+        self.connection.send(PacketHeader::batch(id), req).await?;
+
+        let ts = TokenStream::new(&mut self.connection);
+        ts.flush_done().await?;
+
+        BulkLoadRequest::new(&mut self.connection, columns)
+    }
+
+    /// Retrieve the column metadata for a table, including column names, types,
+    /// sizes, and flags (e.g. nullability).
+    pub async fn column_metadata<'a, 'b>(
+        &'a mut self,
+        table: &'a str,
+    ) -> crate::Result<Vec<MetaDataColumn<'b>>> {
         self.connection.flush_stream().await?;
 
         // retrieve column metadata from server
@@ -321,30 +347,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
 
                 Ok(columns)
             })
-            .await?;
-
-        // now start bulk upload
-        let columns: Vec<_> = columns
+            .await?
             .ok_or_else(|| {
                 crate::Error::Protocol("expecting column metadata from query but not found".into())
-            })?
-            .into_iter()
-            .filter(|column| column.base.flags.contains(ColumnFlag::Updateable))
-            .collect();
+            })?;
 
-        self.connection.flush_stream().await?;
-        let col_data = columns.iter().map(|c| format!("{}", c)).join(", ");
-        let query = format!("INSERT BULK {} ({})", table, col_data);
-
-        let req = BatchRequest::new(query, self.connection.context().transaction_descriptor());
-        let id = self.connection.context_mut().next_packet_id();
-
-        self.connection.send(PacketHeader::batch(id), req).await?;
-
-        let ts = TokenStream::new(&mut self.connection);
-        ts.flush_done().await?;
-
-        BulkLoadRequest::new(&mut self.connection, columns)
+        Ok(columns)
     }
 
     /// Closes this database connection explicitly.
