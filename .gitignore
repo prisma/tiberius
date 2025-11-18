@@ -3,3 +3,5 @@ Cargo.lock
 .idea
 .direnv/
 .vscode
+mssql.crt
+mssql.key

@@ -21,11 +21,11 @@ fn connect_to_custom_cert_instance_ado() -> Result<()> {
     let rt = Runtime::new()?;
 
     rt.block_on(async {
-        let mut config = Config::from_ado_string("server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificateCA=docker/certs/customCA.crt")?;
-        config.authentication(AuthMethod::sql_server(
-            "sa",
-            "<YourStrong@Passw0rd>",
-        ));
+        let mut config = Config::from_ado_string(
+            "server=tcp:localhost,1433;IntegratedSecurity=true;TrustServerCertificateCA=mssql.crt",
+        )?;
+        config.authentication(AuthMethod::sql_server("sa", "<YourStrong@Passw0rd>"));
+        // config.trust_cert_ca("mssql.crt");
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
 
@@ -59,9 +59,10 @@ fn connect_to_custom_cert_instance_jdbc() -> Result<()> {
     rt.block_on(async {
         // Careful: the / in the TrustServerCertificateCA needs to be escaped
         let mut config = Config::from_jdbc_string(
-            "jdbc:sqlserver://localhost:1433;TrustServerCertificateCA=docker{/}certs{/}customCA.crt",
+            "jdbc:sqlserver://localhost:1433;TrustServerCertificateCA=mssql.crt",
         )?;
         config.authentication(AuthMethod::sql_server("sa", "<YourStrong@Passw0rd>"));
+        // config.trust_cert_ca("mssql.crt");
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
 
@@ -93,6 +94,7 @@ fn connect_to_custom_cert_instance_without_ca() -> Result<()> {
         config.encryption(EncryptionLevel::On);
         config.host("localhost");
         config.port(1433);
+        // config.trust_cert_ca("mssql.crt");
 
         let tcp = TcpStream::connect(config.get_addr()).await?;
 

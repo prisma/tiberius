@@ -9,6 +9,8 @@ fn main() {
     let mut args = env::args().skip(1);
     let cmd = args.next().unwrap_or_default();
 
+    let container_engine = env::var("CONTAINER_ENGINE").unwrap_or_else(|_| "docker".to_string());
+
     match cmd.as_str() {
         "container" => {
             // need to change unwrap_or_else in document
@@ -16,7 +18,7 @@ fn main() {
 
             // doesn't run tests
             let version = args.next().unwrap_or_else(|| "2019".into());
-            start_container(&version);
+            start_container(&version, &container_engine);
         }
         "test" => {
             // run the tests
@@ -25,15 +27,15 @@ fn main() {
         "local" => {
             // local runs test AND container
             let version = args.next().unwrap_or_else(|| "2019".into());
-            start_container(&version);
+            start_container(&version, &container_engine);
             // start_container calls wait_for_sql anyway
             run_tests(args.collect::<Vec<_>>());
-            stop_container(&version);
+            stop_container(&version, &container_engine);
         }
         "stop" => {
             // stops running containers
             let version = args.next().unwrap_or_else(|| "2019".into());
-            stop_container(&version);
+            stop_container(&version, &container_engine);
         }
         _ => {
             exit(1);
@@ -41,7 +43,13 @@ fn main() {
     }
 }
 
-fn start_container(version: &str) {
+fn start_container(version: &str, container_engine: &str) {
+    Command::new("bash")
+        .arg("-c")
+        .arg("./generate.sh")
+        .status()
+        .unwrap();
+
     let sa_password =
         env::var("SA_PASSWORD").unwrap_or_else(|_| "<YourStrong@Passw0rd>".to_string());
     let container_name = format!("mssql-{}", version);
@@ -51,17 +59,14 @@ fn start_container(version: &str) {
 
     println!("Cleaning up existing container, {}", container_name);
 
-    let _ = Command::new("docker")
+    Command::new(container_engine)
         .args(["rm", "-f", &container_name])
-        .status();
-
-    let _ = Command::new("docker")
-        .args(["", "", &container_name])
-        .status();
+        .status()
+        .unwrap();
 
     println!("Building image {} from {}...", image_tag, dockerfile);
 
-    let status = Command::new("docker")
+    let status = Command::new(container_engine)
         .args(["build", "-f", &dockerfile, "-t", &image_tag, "."])
         .status()
         .expect("Failed to build docker image");
@@ -73,7 +78,7 @@ fn start_container(version: &str) {
 
     println!("Starting SQL Server {} container...", version);
 
-    let status = Command::new("docker")
+    let status = Command::new(container_engine)
         .args([
             "run",
             "-d",
@@ -82,7 +87,9 @@ fn start_container(version: &str) {
             "-e",
             "ACCEPT_EULA=Y",
             "-e",
-            &format!("SA_PASSWORD={}", sa_password),
+            &format!("MSSQL_SA_PASSWORD={}", sa_password),
+            "-e",
+            "MSSQL_PID=Developer",
             "-p",
             "1433:1433",
             &image_tag,
@@ -104,9 +111,11 @@ fn wait_for_sql() {
     sleep(Duration::from_secs(25));
 }
 
-fn stop_container(version: &str) {
+fn stop_container(version: &str, container_engine: &str) {
     let name = format!("mssql-{}", version);
-    let _ = Command::new("docker").args(["rm", "-f", &name]).status();
+    let _ = Command::new(container_engine)
+        .args(["rm", "-f", &name])
+        .status();
     println!("Stopped container {}", name);
 }
 
