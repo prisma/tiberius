@@ -184,20 +184,20 @@ where
             _ => (),
         }
 
-        event!(Level::INFO, "{}", change);
+        event!(Level::DEBUG, "{}", change);
 
         Ok(ReceivedToken::EnvChange(change))
     }
 
     async fn get_info(&mut self) -> crate::Result<ReceivedToken> {
         let info = TokenInfo::decode(self.conn).await?;
-        event!(Level::INFO, "{}", info.message);
+        event!(Level::DEBUG, "{}", info.message);
         Ok(ReceivedToken::Info(info))
     }
 
     async fn get_login_ack(&mut self) -> crate::Result<ReceivedToken> {
         let ack = TokenLoginAck::decode(self.conn).await?;
-        event!(Level::INFO, "{} version {}", ack.prog_name, ack.version);
+        event!(Level::DEBUG, "{} version {}", ack.prog_name, ack.version);
         Ok(ReceivedToken::LoginAck(ack))
     }
 

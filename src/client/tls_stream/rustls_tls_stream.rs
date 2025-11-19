@@ -72,7 +72,7 @@ fn get_server_name(config: &Config) -> crate::Result<ServerName> {
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
     pub(super) async fn new(config: &Config, stream: S) -> crate::Result<Self> {
-        event!(Level::INFO, "Performing a TLS handshake");
+        event!(Level::DEBUG, "Performing a TLS handshake");
 
         let builder = ClientConfig::builder().with_safe_defaults();
 
@@ -129,7 +129,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                 config
             }
             TrustConfig::Default => {
-                event!(Level::INFO, "Using default trust configuration.");
+                event!(Level::DEBUG, "Using default trust configuration.");
                 builder.with_native_roots().with_no_client_auth()
             }
         };
