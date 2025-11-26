@@ -297,7 +297,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// ```
     pub async fn bulk_insert<'a>(
         &'a mut self,
-        table: &'a str,
+        table: &str,
     ) -> crate::Result<BulkLoadRequest<'a, S>> {
         self.bulk_insert_columns(table, &["*"]).await
     }
@@ -350,8 +350,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// ```
     pub async fn bulk_insert_columns<'a>(
         &'a mut self,
-        table: &'a str,
-        columns: &'a [&'a str],
+        table: &str,
+        columns: &[&str],
     ) -> crate::Result<BulkLoadRequest<'a, S>> {
         let columns: Vec<MetaDataColumn<'a>> = self.column_metadata(table, columns).await?
             .into_iter()
@@ -379,8 +379,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// sizes, and flags (e.g. nullability).
     pub async fn column_metadata<'a, 'b>(
         &'a mut self,
-        table: &'a str,
-        columns: &'a [&'a str],
+        table: &str,
+        columns: &[&str],
     ) -> crate::Result<Vec<MetaDataColumn<'b>>> {
         self.connection.flush_stream().await?;
 
