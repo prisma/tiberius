@@ -270,9 +270,9 @@ pub enum ColumnFlag {
     /// If column is writeable.
     Updateable = 1 << 3,
     /// Column modification status unknown.
-    UpdateableUnknown = 1 << 4,
+    UpdateableUnknown = 1 << 2,
     /// Column is an identity.
-    Identity = 1 << 5,
+    Identity = 1 << 4,
     /// Coulumn is computed.
     Computed = 1 << 7,
     /// Column is a fixed-length common language runtime user-defined type (CLR
