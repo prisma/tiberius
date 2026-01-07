@@ -8,7 +8,7 @@ use futures_util::io::AsyncReadExt;
 pub use into_row::IntoRow;
 
 /// A row of data.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct TokenRow<'a> {
     data: Vec<ColumnData<'a>>,
 }
