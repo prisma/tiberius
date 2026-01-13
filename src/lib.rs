@@ -1,61 +1,8 @@
 //! An asynchronous, runtime-independent, pure-rust Tabular Data Stream (TDS)
 //! implementation for Microsoft SQL Server.
 //!
-//! # Connecting with async-std
-//!
 //! Being not bound to any single runtime, a `TcpStream` must be created
 //! separately and injected to the [`Client`].
-//!
-//! ```no_run
-//! use tiberius::{Client, Config, Query, AuthMethod};
-//! use async_std::net::TcpStream;
-//!
-//! #[async_std::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     // Using the builder method to construct the options.
-//!     let mut config = Config::new();
-//!
-//!     config.host("localhost");
-//!     config.port(1433);
-//!
-//!     // Using SQL Server authentication.
-//!     config.authentication(AuthMethod::sql_server("SA", "<YourStrong@Passw0rd>"));
-//!
-//!     // on production, it is not a good idea to do this
-//!     config.trust_cert();
-//!
-//!     // Taking the address from the configuration, using async-std's
-//!     // TcpStream to connect to the server.
-//!     let tcp = TcpStream::connect(config.get_addr()).await?;
-//!
-//!     // We'll disable the Nagle algorithm. Buffering is handled
-//!     // internally with a `Sink`.
-//!     tcp.set_nodelay(true)?;
-//!
-//!     // Handling TLS, login and other details related to the SQL Server.
-//!     let mut client = Client::connect(config, tcp).await?;
-//!
-//!     // Constructing a query object with one parameter annotated with `@P1`.
-//!     // This requires us to bind a parameter that will then be used in
-//!     // the statement.
-//!     let mut select = Query::new("SELECT @P1");
-//!     select.bind(-4i32);
-//!
-//!     // A response to a query is a stream of data, that must be
-//!     // polled to the end before querying again. Using streams allows
-//!     // fetching data in an asynchronous manner, if needed.
-//!     let stream = select.query(&mut client).await?;
-//!
-//!     // In this case, we know we have only one query, returning one row
-//!     // and one column, so calling `into_row` will consume the stream
-//!     // and return us the first row of the first result.
-//!     let row = stream.into_row().await?;
-//!
-//!     assert_eq!(Some(-4i32), row.unwrap().get(0));
-//!
-//!     Ok(())
-//! }
-//! ```
 //!
 //! # Connecting with Tokio
 //!
@@ -180,22 +127,22 @@
 //!
 //! On Windows platforms, connecting to the SQL Server might require going through
 //! the SQL Browser service to get the correct port for the named instance. This
-//! feature requires either the `sql-browser-async-std` or `sql-browser-tokio` feature
+//! feature requires the `sql-browser-tokio` feature
 //! flag to be enabled and has a bit different way of connecting:
 //!
 //! ```no_run
-//! # #[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
+//! # #[cfg(feature = "sql-browser-tokio")]
 //! use tiberius::{Client, Config, AuthMethod};
-//! # #[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
-//! use async_std::net::TcpStream;
+//! # #[cfg(feature = "sql-browser-tokio")]
+//! use tokio::net::TcpStream;
 //!
 //! // An extra trait that allows connecting to a named instance with the given
 //! // `TcpStream`.
-//! # #[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
+//! # #[cfg(feature = "sql-browser-tokio")]
 //! use tiberius::SqlBrowser;
 //!
-//! #[async_std::main]
-//! # #[cfg(any(feature = "sql-browser-async-std", feature = "sql-browser-tokio"))]
+//! #[tokio::main]
+//! # #[cfg(feature = "sql-browser-tokio")]
 //! async fn main() -> anyhow::Result<()> {
 //!     let mut config = Config::new();
 //!
@@ -211,7 +158,7 @@
 //!     // on production, it is not a good idea to do this
 //!     config.trust_cert();
 //!
-//!     // This will create a new `TcpStream` from `async-std`, connected to the
+//!     // This will create a new `TcpStream` from `tokio`, connected to the
 //!     // right port of the named instance.
 //!     let tcp = TcpStream::connect_named(&config).await?;
 //!
@@ -220,7 +167,7 @@
 //!     # client.query("SELECT @P1", &[&-4i32]).await?;
 //!     Ok(())
 //! }
-//! # #[cfg(any(not(feature = "sql-browser-async-std"), not(feature = "sql-browser-tokio")))]
+//! # #[cfg(not(feature = "sql-browser-tokio"))]
 //! # fn main() {}
 //! ```
 //!

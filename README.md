@@ -43,8 +43,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 | `chrono`                 | Read and write date and time values using `chrono`'s types. (for greenfield, using time instead of chrono is recommended)        | `disabled` |
 | `time`                   | Read and write date and time values using `time` crate types.                                                                    | `disabled` |
 | `rust_decimal`           | Read and write `numeric`/`decimal` values using `rust_decimal`'s `Decimal`.                                                      | `disabled` |
-| `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.                                                     | `disabled` |
-| `sql-browser-async-std`  | SQL Browser implementation for the `TcpStream` of async-std.                                                                     | `disabled` |
+| `bigdecimal`             | Read and write `numeric`/`decimal` values using `bigdecimal`'s `BigDecimal`.                                                     | `disabled` |                                                                 | `disabled` |
 | `sql-browser-tokio`      | SQL Browser implementation for the `TcpStream` of Tokio.                                                                         | `disabled` |
 | `sql-browser-smol`       | SQL Browser implementation for the `TcpStream` of smol.                                                                          | `disabled` |
 | `integrated-auth-gssapi` | Support for using Integrated Auth via GSSAPI                                                                                     | `disabled` |
@@ -53,7 +52,7 @@ A native Microsoft SQL Server (TDS) client for Rust.
 
 Tiberius does not rely on any protocol when connecting to an SQL Server instance. Instead the `Client` takes a socket that implements the `AsyncRead` and `AsyncWrite` traits from the [futures-rs](https://crates.io/crates/futures) crate.
 
-Currently there are good async implementations for TCP in the [async-std](https://crates.io/crates/async-std), [Tokio](https://crates.io/crates/tokio) and [Smol](https://crates.io/crates/smol) projects.
+Currently there are good async implementations for TCP in the [Tokio](https://crates.io/crates/tokio) and [Smol](https://crates.io/crates/smol) projects.
 
 To be able to use them together with Tiberius on Windows platforms with SQL Server, you should make sure that the TCP protocol is enabled, as depending on the edition, this may not be the case. Standard and Enterprise editions will have the setting enabled by default, whereas Developer, Express editions and the Windows Internal Database feature of the Windows Server OS don't.
 To enable the TCP/IP protocol you may want to use  the [server settings](https://docs.microsoft.com/en-us/sql/database-engine/configure-windows/enable-or-disable-a-server-network-protocol) the [command line](https://docs.microsoft.com/en-us/sql/powershell/how-to-enable-tcp-sqlps).
