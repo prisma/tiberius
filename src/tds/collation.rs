@@ -74,7 +74,7 @@ impl fmt::Display for Collation {
 /// 1. (regex)replace: (.*?)\((.*?),(.*?)\) with $2 => $3
 /// 2. replace: Encoding.CP(.*?) with encoding::all::WINDOWS_$1
 /// 3. replace: Encoding.UNICODE with encoding::all::UTF16_LE
-//
+///
 /// the unimplemented!() one's are not supported by rust-encoding
 pub fn lcid_to_encoding(locale: u16) -> Option<&'static Encoding> {
     match locale {

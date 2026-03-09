@@ -2686,7 +2686,7 @@ where
 }
 
 #[test]
-#[cfg(feature = "sql-browser-async-std")]
+#[cfg(feature = "sql-browser-tokio")]
 fn cyrillic_collations_should_work() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();
@@ -2747,7 +2747,7 @@ fn cyrillic_collations_should_work() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "sql-browser-async-std")]
+#[cfg(feature = "sql-browser-tokio")]
 fn application_name_should_be_set_correctly() -> Result<()> {
     LOGGER_SETUP.call_once(|| {
         env_logger::init();

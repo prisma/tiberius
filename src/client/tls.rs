@@ -1,7 +1,5 @@
 #[cfg(any(
-    feature = "rustls",
-    feature = "native-tls",
-    feature = "vendored-openssl"
+    feature = "rustls"
 ))]
 use super::tls_stream::TlsStream;
 use crate::tds::{
@@ -22,26 +20,20 @@ use tracing::{event, Level};
 pub(crate) enum MaybeTlsStream<S: AsyncRead + AsyncWrite + Unpin + Send> {
     Raw(S),
     #[cfg(any(
-        feature = "rustls",
-        feature = "native-tls",
-        feature = "vendored-openssl"
+        feature = "rustls"
     ))]
     Tls(TlsStream<TlsPreloginWrapper<S>>),
 }
 
 #[cfg(any(
-    feature = "rustls",
-    feature = "native-tls",
-    feature = "vendored-openssl"
+    feature = "rustls"
 ))]
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> MaybeTlsStream<S> {
     pub fn into_inner(self) -> S {
         match self {
             Self::Raw(s) => s,
             #[cfg(any(
-                feature = "rustls",
-                feature = "native-tls",
-                feature = "vendored-openssl"
+                feature = "rustls"
             ))]
             Self::Tls(mut tls) => tls.get_mut().stream.take().unwrap(),
         }
@@ -57,9 +49,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for MaybeTlsStream<S> {
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_read(cx, buf),
             #[cfg(any(
-                feature = "rustls",
-                feature = "native-tls",
-                feature = "vendored-openssl"
+                feature = "rustls"
             ))]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_read(cx, buf),
         }
@@ -75,9 +65,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_write(cx, buf),
             #[cfg(any(
-                feature = "rustls",
-                feature = "native-tls",
-                feature = "vendored-openssl"
+                feature = "rustls"
             ))]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_write(cx, buf),
         }
@@ -87,9 +75,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_flush(cx),
             #[cfg(any(
-                feature = "rustls",
-                feature = "native-tls",
-                feature = "vendored-openssl"
+                feature = "rustls"
             ))]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_flush(cx),
         }
@@ -99,9 +85,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for MaybeTlsStream<S> 
         match self.get_mut() {
             MaybeTlsStream::Raw(s) => Pin::new(s).poll_close(cx),
             #[cfg(any(
-                feature = "rustls",
-                feature = "native-tls",
-                feature = "vendored-openssl"
+                feature = "rustls"
             ))]
             MaybeTlsStream::Tls(s) => Pin::new(s).poll_close(cx),
         }
@@ -127,9 +111,7 @@ pub(crate) struct TlsPreloginWrapper<S> {
 }
 
 #[cfg(any(
-    feature = "rustls",
-    feature = "native-tls",
-    feature = "vendored-openssl"
+    feature = "rustls"
 ))]
 impl<S> TlsPreloginWrapper<S> {
     pub fn new(stream: S) -> Self {
@@ -179,7 +161,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncRead for TlsPreloginWrapper<
             }
 
             let header = PacketHeader::decode(&mut BytesMut::from(&inner.header_buf[..]))
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+                .map_err(io::Error::other)?;
 
             // We only get pre-login packets in the handshake process.
             assert_eq!(header.r#type(), PacketType::PreLogin);

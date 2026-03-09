@@ -1,7 +1,5 @@
 #[cfg(any(
-    feature = "rustls",
-    feature = "native-tls",
-    feature = "vendored-openssl"
+    feature = "rustls"
 ))]
 use crate::client::{tls::TlsPreloginWrapper, tls_stream::create_tls_stream};
 use crate::{
@@ -127,9 +125,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     #[cfg(any(
-        feature = "rustls",
-        feature = "native-tls",
-        feature = "vendored-openssl"
+        feature = "rustls"
     ))]
     fn post_login_encryption(mut self, encryption: EncryptionLevel) -> Self {
         if let EncryptionLevel::Off = encryption {
@@ -147,9 +143,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     }
 
     #[cfg(not(any(
-        feature = "rustls",
-        feature = "native-tls",
-        feature = "vendored-openssl"
+        feature = "rustls"
     )))]
     fn post_login_encryption(self, _: EncryptionLevel) -> Self {
         self
@@ -285,7 +279,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
     #[allow(clippy::too_many_arguments)]
-    async fn login<'a>(
+    async fn login(
         mut self,
         auth: AuthMethod,
         encryption: EncryptionLevel,
@@ -435,9 +429,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(any(
-        feature = "rustls",
-        feature = "native-tls",
-        feature = "vendored-openssl"
+        feature = "rustls"
     ))]
     async fn tls_handshake(
         self,
@@ -480,9 +472,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Implements the TLS handshake with the SQL Server.
     #[cfg(not(any(
-        feature = "rustls",
-        feature = "native-tls",
-        feature = "vendored-openssl"
+        feature = "rustls"
     )))]
     async fn tls_handshake(self, _: &Config, _: EncryptionLevel) -> crate::Result<Self> {
         event!(

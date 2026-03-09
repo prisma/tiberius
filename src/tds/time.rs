@@ -25,6 +25,10 @@
 #[cfg_attr(feature = "docs", doc(cfg(feature = "chrono")))]
 pub mod chrono;
 
+#[allow(
+    clippy::module_inception,
+    reason = "tbd rename tds::time or this module"
+)]
 #[cfg(feature = "time")]
 #[cfg_attr(feature = "docs", doc(cfg(feature = "time")))]
 pub mod time;
@@ -163,7 +167,7 @@ impl Date {
     /// Construct a new `Date`
     ///
     /// # Panics
-    /// max value of 3 bytes (`u32::max_value() > 8`)
+    /// max value of 3 bytes (`u32::MAX > 8`)
     pub fn new(days: u32) -> Date {
         assert_eq!(days >> 24, 0);
         Date(days)

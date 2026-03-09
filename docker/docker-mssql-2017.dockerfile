@@ -1,5 +1,5 @@
 FROM mcr.microsoft.com/mssql/server:2017-latest
 
-COPY --chmod=440 certs/server.* /certs/
-COPY --chmod=440 certs/customCA.* /certs/
-COPY docker-mssql.conf /var/opt/mssql/mssql.conf
+COPY --chmod=440 mssql.crt /var/opt/mssql/server.crt
+COPY --chmod=440 mssql.key /var/opt/mssql/server.key
+COPY --chown=mssql docker/docker-mssql.conf /var/opt/mssql/mssql.conf

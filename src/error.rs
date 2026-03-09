@@ -87,20 +87,6 @@ impl From<uuid::Error> for Error {
     }
 }
 
-#[cfg(feature = "native-tls")]
-impl From<async_native_tls::Error> for Error {
-    fn from(v: async_native_tls::Error) -> Self {
-        Error::Tls(format!("{}", v))
-    }
-}
-
-#[cfg(feature = "vendored-openssl")]
-impl From<opentls::Error> for Error {
-    fn from(v: opentls::Error) -> Self {
-        Error::Tls(format!("{}", v))
-    }
-}
-
 impl From<Infallible> for Error {
     fn from(_: Infallible) -> Self {
         unreachable!()

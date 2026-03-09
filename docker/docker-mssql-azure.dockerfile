@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/mssql/server:2022-latest
+FROM mcr.microsoft.com/azure-sql-edge:latest
 
 COPY --chmod=440 mssql.crt /var/opt/mssql/server.crt
 COPY --chmod=440 mssql.key /var/opt/mssql/server.key
