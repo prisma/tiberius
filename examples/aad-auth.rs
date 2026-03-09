@@ -36,14 +36,15 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let mut config = Config::new();
     let server = env::var("SERVER").expect("Missing SERVER environment variable.");
-    config.host(server);
-    config.port(1433);
-    config.authentication(AuthMethod::AADToken(
-        token.access_token().secret().to_string(),
-    ));
-    config.trust_cert();
+    let config = Config::builder()
+        .host(server)
+        .port(1433)
+        .authentication(AuthMethod::AADToken(
+            token.access_token().secret().to_string(),
+        ))
+        .trust_cert()
+        .build();
 
     let tcp = TcpStream::connect(config.get_addr()).await?;
     tcp.set_nodelay(true)?;
