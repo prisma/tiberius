@@ -7,9 +7,7 @@ use std::sync::Once;
 use tiberius::{IntoSql, Result, TokenRow};
 
 #[cfg(all(feature = "tds73", feature = "chrono"))]
-use chrono::DateTime;
-#[cfg(all(feature = "tds73", feature = "chrono"))]
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, DateTime, NaiveDate};
 
 use runtimes_macro::test_on_runtimes;
 
@@ -217,4 +215,11 @@ test_bulk_type!(datetime2_7(
     "DATETIME2(7)",
     100,
     vec![DateTime::from_timestamp(1658524194, 123456789); 100].into_iter()
+));
+
+#[cfg(all(feature = "tds73", feature = "chrono"))]
+test_bulk_type!(date(
+    "DATE",
+    100,
+    vec![NaiveDate::from_ymd_opt(2020, 4, 20).unwrap(); 100].into_iter()
 ));
