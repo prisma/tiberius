@@ -445,7 +445,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         encryption: EncryptionLevel,
     ) -> crate::Result<Self> {
         if encryption != EncryptionLevel::NotSupported {
-            event!(Level::INFO, "Performing a TLS handshake");
+            event!(Level::DEBUG, "Performing a TLS handshake");
 
             let Self {
                 transport, context, ..
@@ -458,7 +458,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             };
 
             stream.get_mut().handshake_complete();
-            event!(Level::INFO, "TLS handshake successful");
+            event!(Level::DEBUG, "TLS handshake successful");
 
             let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
 
