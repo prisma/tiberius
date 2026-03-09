@@ -8,6 +8,8 @@ use futures_util::io::{AsyncRead, AsyncWrite};
 use std::fs;
 use tracing::{event, Level};
 
+use super::iter_certs::IterCertBundle;
+
 pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
     config: &Config,
     stream: S,
@@ -39,6 +41,11 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
                     kind: IoErrorKind::InvalidData,
                     message: "Could not read provided CA certificate!".to_string(),
                 });
+            }
+        }
+        TrustConfig::CaCertificateBundle(bundle) => {
+            for cert in IterCertBundle::new(bundle) {
+                builder = builder.add_root_certificate(Certificate::from_pem(cert)?);
             }
         }
         TrustConfig::TrustAll => {

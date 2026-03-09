@@ -4,21 +4,21 @@ use crate::{
     Error,
 };
 use futures_util::io::{AsyncRead, AsyncWrite};
+use tokio_rustls::rustls::client::WantsClientCert;
+use tokio_rustls::rustls::pki_types::{CertificateDer, ServerName};
 use std::{
     fs, io,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    time::SystemTime,
 };
 use tokio_rustls::{
     rustls::{
-        client::{
+        client::danger::{
             HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-            WantsTransparencyPolicyOrClientCert,
         },
-        Certificate, ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError,
-        RootCertStore, ServerName, WantsVerifier,
+        ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError,
+        RootCertStore, WantsVerifier,
     },
     TlsConnector,
 };
@@ -35,17 +35,17 @@ pub(crate) struct TlsStream<S: AsyncRead + AsyncWrite + Unpin + Send>(
     Compat<tokio_rustls::client::TlsStream<Compat<S>>>,
 );
 
+#[derive(Debug)]
 struct NoCertVerifier;
 
 impl ServerCertVerifier for NoCertVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &Certificate,
-        _intermediates: &[Certificate],
-        _server_name: &ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &tokio_rustls::rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
-        _now: SystemTime,
+        _now: tokio_rustls::rustls::pki_types::UnixTime,
     ) -> Result<ServerCertVerified, RustlsError> {
         Ok(ServerCertVerified::assertion())
     }
@@ -53,15 +53,43 @@ impl ServerCertVerifier for NoCertVerifier {
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
-        _cert: &Certificate,
+        _cert: &CertificateDer<'_>,
         _dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, RustlsError> {
         Ok(HandshakeSignatureValid::assertion())
     }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<tokio_rustls::rustls::SignatureScheme> {
+        use tokio_rustls::rustls::SignatureScheme::*;
+        vec![
+            RSA_PKCS1_SHA1,
+            ECDSA_SHA1_Legacy,
+            RSA_PKCS1_SHA256,
+            ECDSA_NISTP256_SHA256,
+            RSA_PKCS1_SHA384,
+            ECDSA_NISTP384_SHA384,
+            RSA_PKCS1_SHA512,
+            ECDSA_NISTP521_SHA512,
+            RSA_PSS_SHA256,
+            RSA_PSS_SHA384,
+            RSA_PSS_SHA512,
+            ED25519,
+            ED448,
+        ]
+    }
 }
 
-fn get_server_name(config: &Config) -> crate::Result<ServerName> {
-    match (ServerName::try_from(config.get_host()), &config.trust) {
+fn get_server_name(config: &Config) -> crate::Result<ServerName<'static>> {
+    match (ServerName::try_from(config.get_host().to_owned()), &config.trust) {
         (Ok(sn), _) => Ok(sn),
         (Err(_), TrustConfig::TrustAll) => {
             Ok(ServerName::try_from("placeholder.domain.com").unwrap())
@@ -74,7 +102,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
     pub(super) async fn new(config: &Config, stream: S) -> crate::Result<Self> {
         event!(Level::INFO, "Performing a TLS handshake");
 
-        let builder = ClientConfig::builder().with_safe_defaults();
+        let builder = ClientConfig::builder();
 
         let client_config = match &config.trust {
             TrustConfig::CaCertificateLocation(path) => {
@@ -92,10 +120,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                                         });
                                     }
 
-                                    Certificate(pem_cert.into_iter().next().unwrap())
+                                    CertificateDer::from(pem_cert.into_iter().next().unwrap())
                                 }
                             Some(ext) if ext.to_ascii_lowercase() == "der" => {
-                                Certificate(buf)
+                                CertificateDer::from(buf)
                             }
                             Some(_) | None => return Err(crate::Error::Io {
                                 kind: IoErrorKind::InvalidInput,
@@ -103,7 +131,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                             }),
                         };
                     let mut cert_store = RootCertStore::empty();
-                    cert_store.add(&cert)?;
+                    cert_store.add(cert)?;
                     builder
                         .with_root_certificates(cert_store)
                         .with_no_client_auth()
@@ -113,6 +141,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                         message: "Could not read provided CA certificate!".to_string(),
                     });
                 }
+            }
+            TrustConfig::CaCertificateBundle(bundle) => {
+                let mut cert_store = RootCertStore::empty();
+                let certs = rustls_pemfile::certs(&mut bundle.as_slice())?;
+                for cert in certs {
+                    cert_store.add(CertificateDer::from(cert))?;
+                }
+                builder
+                    .with_root_certificates(cert_store)
+                    .with_no_client_auth()
             }
             TrustConfig::TrustAll => {
                 event!(
@@ -181,19 +219,19 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsStream<S> {
 }
 
 trait ConfigBuilderExt {
-    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert>;
+    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsClientCert>;
 }
 
 impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
-    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert> {
+    fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsClientCert> {
         let mut roots = RootCertStore::empty();
         let mut valid_count = 0;
         let mut invalid_count = 0;
 
         for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs")
         {
-            let cert = Certificate(cert.0);
-            match roots.add(&cert) {
+            let c = CertificateDer::from_slice(&cert.0);
+            match roots.add(c) {
                 Ok(_) => valid_count += 1,
                 Err(err) => {
                     tracing::event!(Level::TRACE, "invalid cert der {:?}", cert.0);

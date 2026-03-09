@@ -38,6 +38,7 @@ pub struct Config {
 pub(crate) enum TrustConfig {
     #[allow(dead_code)]
     CaCertificateLocation(PathBuf),
+    CaCertificateBundle(Vec<u8>),
     TrustAll,
     Default,
 }
@@ -130,12 +131,12 @@ impl Config {
     /// storage (or use `trust_cert_ca` instead), using this setting is potentially dangerous.
     ///
     /// # Panics
-    /// Will panic in case `trust_cert_ca` was called before.
+    /// Will panic in case `trust_cert_ca` or `trust_cert_ca_bundle` was called before.
     ///
-    /// - Defaults to `default`, meaning server certificate is validated against system-truststore.
+    /// - Defaults to validating the server certificate is validated against system's certificate storage.
     pub fn trust_cert(&mut self) {
-        if let TrustConfig::CaCertificateLocation(_) = &self.trust {
-            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
+        if !matches!(&self.trust, TrustConfig::Default) {
+            panic!("'trust_cert'/'trust_cert_ca'/'trust_cert_ca_bundle' are mutual exclusive! Only use one.")
         }
         self.trust = TrustConfig::TrustAll;
     }
@@ -146,14 +147,30 @@ impl Config {
     /// trust-chain.
     ///
     /// # Panics
-    /// Will panic in case `trust_cert` was called before.
+    /// Will panic in case `trust_cert` or `trust_cert_ca_bundle` was called before.
     ///
     /// - Defaults to validating the server certificate is validated against system's certificate storage.
     pub fn trust_cert_ca(&mut self, path: impl ToString) {
-        if let TrustConfig::TrustAll = &self.trust {
-            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
+        if !matches!(&self.trust, TrustConfig::Default) {
+            panic!("'trust_cert'/'trust_cert_ca'/'trust_cert_ca_bundle' are mutual exclusive! Only use one.")
         } else {
-            self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()))
+            self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()));
+        }
+    }
+
+    /// If set, the server certificate will be validated against the given bundle of PEM-encoded CA certificates.
+    /// Useful when using self-signed certificates on the server without having to disable the
+    /// trust-chain.
+    ///
+    /// # Panics
+    /// Will panic in case `trust_cert` or `trust_cert_ca` was called before.
+    ///
+    /// - Defaults to validating the server certificate is validated against system's certificate storage.
+    pub fn trust_cert_ca_bundle(&mut self, bundle: Vec<u8>) {
+        if !matches!(&self.trust, TrustConfig::Default) {
+            panic!("'trust_cert'/'trust_cert_ca'/'trust_cert_ca_bundle' are mutual exclusive! Only use one.")
+        } else {
+            self.trust = TrustConfig::CaCertificateBundle(bundle);
         }
     }
 
