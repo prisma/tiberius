@@ -11,17 +11,14 @@ use std::{
     task::{Context, Poll},
     time::SystemTime,
 };
-use tokio_rustls::{
-    rustls::{
-        client::{
-            HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-            WantsTransparencyPolicyOrClientCert,
-        },
-        Certificate, ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError,
-        RootCertStore, ServerName, WantsVerifier,
+use tokio_rustls::{rustls::{
+    client::{
+        HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+        WantsTransparencyPolicyOrClientCert,
     },
-    TlsConnector,
-};
+    Certificate, ClientConfig, ConfigBuilder, DigitallySignedStruct, Error as RustlsError,
+    RootCertStore, ServerName, WantsVerifier,
+}, rustls, TlsConnector};
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{event, Level};
 
@@ -132,6 +129,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                 event!(Level::INFO, "Using default trust configuration.");
                 builder.with_native_roots().with_no_client_auth()
             }
+            #[cfg(feature = "rustls-webpki-roots")]
+            TrustConfig::WebPkiRoots => {
+                event!(Level::INFO, "Using webpki trust configuration.");
+                builder.with_webpki_roots().with_no_client_auth()
+            }
         };
 
         let connector = TlsConnector::from(Arc::new(client_config));
@@ -182,6 +184,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncWrite for TlsStream<S> {
 
 trait ConfigBuilderExt {
     fn with_native_roots(self) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert>;
+
+    #[cfg(feature = "rustls-webpki-roots")]
+    fn with_webpki_roots(self) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert>;
 }
 
 impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
@@ -210,6 +215,23 @@ impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
         );
         assert!(!roots.is_empty(), "no CA certificates found");
 
+        self.with_root_certificates(roots)
+    }
+
+    #[cfg(feature = "rustls-webpki-roots")]
+    fn with_webpki_roots(self) -> ConfigBuilder<ClientConfig, WantsTransparencyPolicyOrClientCert> {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add_trust_anchors(
+            webpki_roots::TLS_SERVER_ROOTS
+                .iter()
+                .map(|ta| {
+                    rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                        ta.subject,
+                        ta.spki,
+                        ta.name_constraints,
+                    )
+                }),
+        );
         self.with_root_certificates(roots)
     }
 }

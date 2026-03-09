@@ -34,12 +34,14 @@ pub struct Config {
     pub(crate) readonly: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum TrustConfig {
     #[allow(dead_code)]
     CaCertificateLocation(PathBuf),
     TrustAll,
     Default,
+    #[cfg(feature = "rustls-webpki-roots")]
+    WebPkiRoots
 }
 
 impl Default for Config {
@@ -130,12 +132,12 @@ impl Config {
     /// storage (or use `trust_cert_ca` instead), using this setting is potentially dangerous.
     ///
     /// # Panics
-    /// Will panic in case `trust_cert_ca` was called before.
+    /// Will panic in case `trust_cert_ca` or `trust_webpki_roots` was called before.
     ///
     /// - Defaults to `default`, meaning server certificate is validated against system-truststore.
     pub fn trust_cert(&mut self) {
-        if let TrustConfig::CaCertificateLocation(_) = &self.trust {
-            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
+        if TrustConfig::Default != self.trust {
+            panic!("'trust_webpki_roots'/'trust_cert'/'trust_cert_ca' are mutual exclusive! Only use one.")
         }
         self.trust = TrustConfig::TrustAll;
     }
@@ -146,15 +148,28 @@ impl Config {
     /// trust-chain.
     ///
     /// # Panics
-    /// Will panic in case `trust_cert` was called before.
+    /// Will panic in case `trust_cert` or `trust_webpki_roots` was called before.
     ///
     /// - Defaults to validating the server certificate is validated against system's certificate storage.
     pub fn trust_cert_ca(&mut self, path: impl ToString) {
-        if let TrustConfig::TrustAll = &self.trust {
-            panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
+        if TrustConfig::Default != self.trust {
+            panic!("'trust_webpki_roots'/'trust_cert'/'trust_cert_ca' are mutual exclusive! Only use one.")
         } else {
             self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()))
         }
+    }
+
+    /// If set, the server certificate will be validated against the webpki-roots.
+    ///
+    /// # Panics
+    /// Will panic in case `trust_cert` or `trust_cert_ca` was called before.
+    ///
+    #[cfg(feature = "rustls-webpki-roots")]
+    pub fn trust_webpki_roots(&mut self) {
+        if self.trust != TrustConfig::Default {
+            panic!("'trust_webpki_roots'/'trust_cert'/'trust_cert_ca' are mutual exclusive! Only use one.")
+        }
+        self.trust = TrustConfig::WebPkiRoots;
     }
 
     /// Sets the authentication method.
