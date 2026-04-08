@@ -72,6 +72,7 @@ impl PreloginMessage {
             | (EncryptionLevel::On, EncryptionLevel::NotSupported) => {
                 panic!("Server does not allow the requested encryption level.")
             }
+            (EncryptionLevel::Strict, _) => EncryptionLevel::Strict,
             (_, _) => EncryptionLevel::On,
         }
     }

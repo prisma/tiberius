@@ -32,6 +32,7 @@ pub struct Config {
     pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
     pub(crate) readonly: bool,
+    pub(crate) hostname_in_certificate: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +66,7 @@ impl Default for Config {
             trust: TrustConfig::Default,
             auth: AuthMethod::None,
             readonly: false,
+            hostname_in_certificate: None,
         }
     }
 }
@@ -149,12 +151,20 @@ impl Config {
     /// Will panic in case `trust_cert` was called before.
     ///
     /// - Defaults to validating the server certificate is validated against system's certificate storage.
-    pub fn trust_cert_ca(&mut self, path: impl ToString) {
+    pub fn trust_cert_ca(&mut self, path: impl Into<PathBuf>) {
         if let TrustConfig::TrustAll = &self.trust {
             panic!("'trust_cert' and 'trust_cert_ca' are mutual exclusive! Only use one.")
         } else {
-            self.trust = TrustConfig::CaCertificateLocation(PathBuf::from(path.to_string()))
+            self.trust = TrustConfig::CaCertificateLocation(path.into())
         }
+    }
+
+    /// Sets the hostname to be used for certificate validation.
+    /// If not set, the hostname from `host` will be used.
+    ///
+    /// - Defaults to the value of `host`.
+    pub fn hostname_in_certificate(&mut self, hostname: impl ToString) {
+        self.hostname_in_certificate = Some(hostname.to_string());
     }
 
     /// Sets the authentication method.
@@ -190,6 +200,12 @@ impl Config {
         }
     }
 
+    pub(crate) fn get_hostname_in_certificate(&self) -> &str {
+        self.hostname_in_certificate
+            .as_deref()
+            .unwrap_or_else(|| self.get_host())
+    }
+
     /// Get the host address including port
     pub fn get_addr(&self) -> String {
         format!("{}:{}", self.get_host(), self.get_port())
@@ -210,7 +226,7 @@ impl Config {
     /// |`database`|`<string>`|The name of the database.|
     /// |`TrustServerCertificate`|`true`,`false`,`yes`,`no`|Specifies whether the driver trusts the server certificate when connecting using TLS. Cannot be used toghether with `TrustServerCertificateCA`|
     /// |`TrustServerCertificateCA`|`<path>`|Path to a `pem`, `crt` or `der` certificate file. Cannot be used together with `TrustServerCertificate`|
-    /// |`encrypt`|`true`,`false`,`yes`,`no`,`DANGER_PLAINTEXT`|Specifies whether the driver uses TLS to encrypt communication.|
+    /// |`encrypt`|`strict`,`true`,`false`,`yes`,`no`,`DANGER_PLAINTEXT`|Specifies whether the driver uses TLS to encrypt communication.|
     /// |`Application Name`, `ApplicationName`|`<string>`|Sets the application name for the connection.|
     ///
     /// [ADO.NET connection string]: https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings
@@ -263,6 +279,10 @@ impl Config {
 
         if let Some(ca) = s.trust_cert_ca() {
             builder.trust_cert_ca(ca);
+        }
+
+        if let Some(hostname_in_cert) = s.host_name_in_certificate() {
+            builder.hostname_in_certificate(hostname_in_cert);
         }
 
         builder.encryption(s.encrypt()?);
@@ -346,6 +366,12 @@ pub(crate) trait ConfigString {
             .map(|ca| ca.to_string())
     }
 
+    fn host_name_in_certificate(&self) -> Option<String> {
+        self.dict()
+            .get("hostnameincertificate")
+            .map(|ca| ca.to_string())
+    }
+
     #[cfg(any(
         feature = "rustls",
         feature = "native-tls",
@@ -358,9 +384,10 @@ pub(crate) trait ConfigString {
                 Ok(true) => Ok(EncryptionLevel::Required),
                 Ok(false) => Ok(EncryptionLevel::Off),
                 Err(_) if val == "DANGER_PLAINTEXT" => Ok(EncryptionLevel::NotSupported),
+                Err(_) if val.eq_ignore_ascii_case("strict") => Ok(EncryptionLevel::Strict),
                 Err(e) => Err(e),
             })
-            .unwrap_or(Ok(EncryptionLevel::Off))
+            .unwrap_or(Ok(EncryptionLevel::Required))
     }
 
     #[cfg(not(any(

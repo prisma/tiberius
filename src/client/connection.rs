@@ -79,7 +79,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             context
         };
 
-        let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
+        // let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
+        let transport = match config.encryption {
+            EncryptionLevel::Strict => {
+                event!(Level::INFO, "Performing a TLS handshake");
+                let mut pre_login_stream = TlsPreloginWrapper::new(tcp_stream);
+                pre_login_stream.handshake_complete();
+                let stream = create_tls_stream(&config, pre_login_stream).await?;
+                event!(Level::INFO, "TLS handshake successful");
+                Framed::new(MaybeTlsStream::Tls(stream), PacketCodec)
+            }
+            _ => Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec),
+        };
 
         let mut connection = Self {
             transport,
@@ -444,37 +455,47 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         config: &Config,
         encryption: EncryptionLevel,
     ) -> crate::Result<Self> {
-        if encryption != EncryptionLevel::NotSupported {
-            event!(Level::INFO, "Performing a TLS handshake");
+        match encryption {
+            EncryptionLevel::NotSupported => {
+                event!(
+                    Level::WARN,
+                    "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
+                );
+                Ok(self)
+            }
+            EncryptionLevel::Strict => {
+                // In Strict mode, we should already be in TLS stream after prelogin, so just return self.
+                event!(
+                    Level::TRACE,
+                    "Already in TLS stream due to Strict encryption level, skipping handshake."
+                );
+                Ok(self)
+            }
+            EncryptionLevel::Off | EncryptionLevel::On | EncryptionLevel::Required => {
+                event!(Level::INFO, "Performing a TLS handshake");
 
-            let Self {
-                transport, context, ..
-            } = self;
-            let mut stream = match transport.into_inner() {
-                MaybeTlsStream::Raw(tcp) => {
-                    create_tls_stream(config, TlsPreloginWrapper::new(tcp)).await?
-                }
-                _ => unreachable!(),
-            };
+                let Self {
+                    transport, context, ..
+                } = self;
+                let mut stream = match transport.into_inner() {
+                    MaybeTlsStream::Raw(tcp) => {
+                        create_tls_stream(config, TlsPreloginWrapper::new(tcp)).await?
+                    }
+                    _ => unreachable!(),
+                };
 
-            stream.get_mut().handshake_complete();
-            event!(Level::INFO, "TLS handshake successful");
+                stream.get_mut().handshake_complete();
+                event!(Level::INFO, "TLS handshake successful");
 
-            let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
+                let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
 
-            Ok(Self {
-                transport,
-                context,
-                flushed: false,
-                buf: BytesMut::new(),
-            })
-        } else {
-            event!(
-                Level::WARN,
-                "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
-            );
-
-            Ok(self)
+                Ok(Self {
+                    transport,
+                    context,
+                    flushed: false,
+                    buf: BytesMut::new(),
+                })
+            }
         }
     }
 

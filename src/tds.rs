@@ -25,6 +25,8 @@ uint_enum! {
         NotSupported = 2,
         /// Encrypt everything and fail if not possible
         Required = 3,
+        /// Start encryption before TDS prelogin and encrypt everything, fail if not possible
+        Strict = 4,
     }
 
 }

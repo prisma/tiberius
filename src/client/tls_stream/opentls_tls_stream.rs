@@ -56,5 +56,7 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
         }
     }
 
-    Ok(builder.connect(config.get_host(), stream).await?)
+    Ok(builder
+        .connect(config.get_hostname_in_certificate(), stream)
+        .await?)
 }
