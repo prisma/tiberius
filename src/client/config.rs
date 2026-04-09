@@ -33,6 +33,7 @@ pub struct Config {
     pub(crate) auth: AuthMethod,
     pub(crate) readonly: bool,
     pub(crate) hostname_in_certificate: Option<String>,
+    pub(crate) client_name: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +68,7 @@ impl Default for Config {
             auth: AuthMethod::None,
             readonly: false,
             hostname_in_certificate: None,
+            client_name: None,
         }
     }
 }
@@ -165,6 +167,13 @@ impl Config {
     /// - Defaults to the value of `host`.
     pub fn hostname_in_certificate(&mut self, hostname: impl ToString) {
         self.hostname_in_certificate = Some(hostname.to_string());
+    }
+
+    /// Sets the client name to be sent to the server.
+    ///
+    /// - Defaults to the current workstation id (hostname).
+    pub fn client_name(&mut self, name: impl ToString) {
+        self.client_name = Some(name.to_string());
     }
 
     /// Sets the authentication method.
@@ -289,6 +298,10 @@ impl Config {
 
         builder.readonly(s.readonly());
 
+        if let Some(client_name) = s.client_name() {
+            builder.client_name(client_name);
+        }
+
         Ok(builder)
     }
 }
@@ -369,7 +382,15 @@ pub(crate) trait ConfigString {
     fn host_name_in_certificate(&self) -> Option<String> {
         self.dict()
             .get("hostnameincertificate")
+            .or_else(|| self.dict().get("hostname in certificate"))
             .map(|ca| ca.to_string())
+    }
+
+    fn client_name(&self) -> Option<String> {
+        self.dict()
+            .get("workstationid")
+            .or_else(|| self.dict().get("workstation id"))
+            .map(|name| name.to_string())
     }
 
     #[cfg(any(

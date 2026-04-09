@@ -108,17 +108,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         let connection = connection.tls_handshake(&config, encryption).await?;
 
-        let mut connection = connection
-            .login(
-                config.auth,
-                encryption,
-                config.database,
-                config.host,
-                config.application_name,
-                config.readonly,
-                prelogin,
-            )
-            .await?;
+        let mut connection = connection.login(config, encryption, prelogin).await?;
 
         connection.flush_done().await?;
 
@@ -294,34 +284,33 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
-    #[allow(clippy::too_many_arguments)]
-    async fn login<'a>(
+    async fn login(
         mut self,
-        auth: AuthMethod,
+        config: Config,
         encryption: EncryptionLevel,
-        db: Option<String>,
-        server_name: Option<String>,
-        application_name: Option<String>,
-        readonly: bool,
         prelogin: PreloginMessage,
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
 
-        if let Some(db) = db {
+        if let Some(db) = config.database {
             login_message.db_name(db);
         }
 
-        if let Some(server_name) = server_name {
+        if let Some(server_name) = config.host {
             login_message.server_name(server_name);
         }
 
-        if let Some(app_name) = application_name {
+        if let Some(app_name) = config.application_name {
             login_message.app_name(app_name);
         }
 
-        login_message.readonly(readonly);
+        if let Some(client_name) = config.client_name {
+            login_message.hostname(client_name);
+        }
 
-        match auth {
+        login_message.readonly(config.readonly);
+
+        match config.auth {
             #[cfg(all(windows, feature = "winauth"))]
             AuthMethod::Integrated => {
                 let mut client = NtlmSspiBuilder::new()

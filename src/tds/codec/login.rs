@@ -289,6 +289,10 @@ impl<'a> LoginMessage<'a> {
             self.type_flags.remove(LoginTypeFlag::ReadOnlyIntent);
         }
     }
+
+    pub fn hostname(&mut self, hostname: impl Into<Cow<'a, str>>) {
+        self.hostname = hostname.into();
+    }
 }
 
 impl<'a> Encode<BytesMut> for LoginMessage<'a> {
