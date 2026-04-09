@@ -79,7 +79,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             context
         };
 
-        // let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
         let transport = match config.encryption {
             EncryptionLevel::Strict => {
                 event!(Level::INFO, "Performing a TLS handshake");
