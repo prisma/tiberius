@@ -384,7 +384,9 @@ pub(crate) trait ConfigString {
                 Ok(true) => Ok(EncryptionLevel::Required),
                 Ok(false) => Ok(EncryptionLevel::Off),
                 Err(_) if val == "DANGER_PLAINTEXT" => Ok(EncryptionLevel::NotSupported),
-                Err(_) if val.eq_ignore_ascii_case("strict") => Ok(EncryptionLevel::Strict),
+                Err(_) if val.eq_ignore_ascii_case("strict") && cfg!(feature = "tds80") => {
+                    Ok(EncryptionLevel::Strict)
+                }
                 Err(e) => Err(e),
             })
             .unwrap_or(Ok(EncryptionLevel::Required))
