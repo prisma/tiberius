@@ -30,3 +30,26 @@ uint_enum! {
     }
 
 }
+
+impl EncryptionLevel {
+    pub(crate) fn as_wire_value(&self) -> u8 {
+        match self {
+            EncryptionLevel::Strict => EncryptionLevel::Required as u8,
+            other => *other as u8,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encryption_level_as_wire_value() {
+        assert_eq!(EncryptionLevel::Off.as_wire_value(), 0);
+        assert_eq!(EncryptionLevel::On.as_wire_value(), 1);
+        assert_eq!(EncryptionLevel::NotSupported.as_wire_value(), 2);
+        assert_eq!(EncryptionLevel::Required.as_wire_value(), 3);
+        assert_eq!(EncryptionLevel::Strict.as_wire_value(), 3);
+    }
+}
