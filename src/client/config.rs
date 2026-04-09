@@ -290,7 +290,7 @@ impl Config {
             builder.trust_cert_ca(ca);
         }
 
-        if let Some(hostname_in_cert) = s.host_name_in_certificate() {
+        if let Some(hostname_in_cert) = s.hostname_in_certificate() {
             builder.hostname_in_certificate(hostname_in_cert);
         }
 
@@ -379,7 +379,7 @@ pub(crate) trait ConfigString {
             .map(|ca| ca.to_string())
     }
 
-    fn host_name_in_certificate(&self) -> Option<String> {
+    fn hostname_in_certificate(&self) -> Option<String> {
         self.dict()
             .get("hostnameincertificate")
             .or_else(|| self.dict().get("hostname in certificate"))
@@ -410,7 +410,7 @@ pub(crate) trait ConfigString {
                 }
                 Err(e) => Err(e),
             })
-            .unwrap_or(Ok(EncryptionLevel::Required))
+            .unwrap_or(Ok(EncryptionLevel::Off))
     }
 
     #[cfg(not(any(
