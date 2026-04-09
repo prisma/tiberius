@@ -14,9 +14,8 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
 ) -> crate::Result<TlsStream<S>> {
     let mut builder = TlsConnector::new();
 
-    #[cfg(not(feature = "tds80"))]
-    {
-        builder = builder.max_protocol_version(Some(async_native_tls::Protocol::Tlsv12));
+    if matches!(config.encryption, crate::EncryptionLevel::Strict) {
+        builder = builder.request_alpns(&[super::TDS_ALPN_PROTOCOL_NAME]);
     }
 
     match &config.trust {

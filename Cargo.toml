@@ -60,7 +60,7 @@ libgssapi = { version = "0.8.1", optional = true, default-features = false }
 libc = "0.2"
 
 [dependencies.async-native-tls]
-version = "0.4"
+version = "0.5"
 features = ["runtime-async-std"]
 optional = true
 
@@ -192,7 +192,7 @@ all = [
     "bigdecimal",
     "native-tls",
 ]
-default = ["tds80", "winauth", "native-tls"]
+default = ["tds80", "winauth", "rustls"]
 tds80 = ["tds73"]
 tds73 = []
 docs = []

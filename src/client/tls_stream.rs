@@ -1,6 +1,8 @@
 use crate::Config;
 use futures_util::io::{AsyncRead, AsyncWrite};
 
+pub(crate) const TDS_ALPN_PROTOCOL_NAME: &str = "tds/8.0";
+
 #[cfg(feature = "native-tls")]
 mod native_tls_stream;
 

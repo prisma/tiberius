@@ -88,7 +88,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
 
         let builder = ClientConfig::builder().with_safe_defaults();
 
-        let client_config = match &config.trust {
+        let mut client_config = match &config.trust {
             TrustConfig::CaCertificateLocation(path) => {
                 if let Ok(buf) = fs::read(path) {
                     let cert = match path.extension() {
@@ -145,6 +145,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                 builder.with_native_roots().with_no_client_auth()
             }
         };
+
+        if matches!(config.encryption, crate::EncryptionLevel::Strict) {
+            client_config
+                .alpn_protocols
+                .push(super::TDS_ALPN_PROTOCOL_NAME.as_bytes().to_vec());
+        }
 
         let connector = TlsConnector::from(Arc::new(client_config));
 
