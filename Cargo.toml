@@ -192,7 +192,7 @@ all = [
     "bigdecimal",
     "native-tls",
 ]
-default = ["tds80", "winauth", "rustls"]
+default = ["tds80", "winauth", "native-tls"]
 tds80 = ["tds73"]
 tds73 = []
 docs = []
