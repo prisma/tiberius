@@ -58,13 +58,25 @@ impl ServerCertVerifier for NoCertVerifier {
     ) -> Result<HandshakeSignatureValid, RustlsError> {
         Ok(HandshakeSignatureValid::assertion())
     }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &Certificate,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
 }
 
 fn get_server_name(config: &Config) -> crate::Result<ServerName> {
-    match (ServerName::try_from(config.get_host()), &config.trust) {
+    match (
+        ServerName::try_from(config.get_hostname_in_certificate()),
+        &config.trust,
+    ) {
         (Ok(sn), _) => Ok(sn),
         (Err(_), TrustConfig::TrustAll) => {
-            Ok(ServerName::try_from("placeholder.domain.com").unwrap())
+            Ok(ServerName::try_from("placeholder.example.com").unwrap())
         }
         (Err(e), _) => Err(crate::Error::Tls(e.to_string())),
     }
@@ -76,13 +88,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
 
         let builder = ClientConfig::builder().with_safe_defaults();
 
-        let client_config = match &config.trust {
+        let mut client_config = match &config.trust {
             TrustConfig::CaCertificateLocation(path) => {
                 if let Ok(buf) = fs::read(path) {
                     let cert = match path.extension() {
                             Some(ext)
-                            if ext.to_ascii_lowercase() == "pem"
-                                || ext.to_ascii_lowercase() == "crt" =>
+                            if ext.eq_ignore_ascii_case("pem")
+                                || ext.eq_ignore_ascii_case("crt") =>
                                 {
                                     let pem_cert = rustls_pemfile::certs(&mut buf.as_slice())?;
                                     if pem_cert.len() != 1 {
@@ -94,7 +106,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
 
                                     Certificate(pem_cert.into_iter().next().unwrap())
                                 }
-                            Some(ext) if ext.to_ascii_lowercase() == "der" => {
+                            Some(ext) if ext.eq_ignore_ascii_case("der") => {
                                 Certificate(buf)
                             }
                             Some(_) | None => return Err(crate::Error::Io {
@@ -133,6 +145,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                 builder.with_native_roots().with_no_client_auth()
             }
         };
+
+        if matches!(config.encryption, crate::EncryptionLevel::Strict) {
+            client_config
+                .alpn_protocols
+                .push(super::TDS_ALPN_PROTOCOL_NAME.as_bytes().to_vec());
+        }
 
         let connector = TlsConnector::from(Arc::new(client_config));
 

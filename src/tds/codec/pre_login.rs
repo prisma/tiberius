@@ -72,6 +72,7 @@ impl PreloginMessage {
             | (EncryptionLevel::On, EncryptionLevel::NotSupported) => {
                 panic!("Server does not allow the requested encryption level.")
             }
+            (EncryptionLevel::Strict, _) => EncryptionLevel::Strict,
             (_, _) => EncryptionLevel::On,
         }
     }
@@ -110,7 +111,7 @@ impl Encode<BytesMut> for PreloginMessage {
 
         // encryption
         fields.push((PRELOGIN_ENCRYPTION, 0x01)); // encryption
-        data_cursor.write_u8(self.encryption as u8)?;
+        data_cursor.write_u8(self.encryption.as_wire_value())?;
 
         // threadid
         fields.push((PRELOGIN_THREADID, 0x04)); // thread id

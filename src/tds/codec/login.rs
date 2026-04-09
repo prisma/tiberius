@@ -183,8 +183,57 @@ impl<'a> LoginMessage<'a> {
             option_flags_2: OptionFlag2::InitLangFatal | OptionFlag2::OdbcDriver,
             option_flags_3: BitFlags::from_flag(OptionFlag3::UnknownCollationHandling),
             app_name: "tiberius".into(),
+            hostname: Self::get_hostname(),
             ..Default::default()
         }
+    }
+
+    fn get_hostname() -> Cow<'static, str> {
+        #[cfg(windows)]
+        fn get_computer_name() -> io::Result<String> {
+            unsafe extern "system" {
+                // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getcomputernamew
+                fn GetComputerNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
+            }
+
+            // MAX_COMPUTERNAME_LENGTH is 15 and we need 1 byte for the null terminator
+            let mut buffer = [0u16; 15 + 1];
+            let mut size = buffer.len() as u32;
+            let result = unsafe { GetComputerNameW(buffer.as_mut_ptr(), &mut size) };
+            if result == 0 {
+                let lerr = io::Error::last_os_error();
+                tracing::error!("GetComputerNameW failed: {lerr}");
+                Err(lerr)
+            } else {
+                Ok(String::from_utf16_lossy(&buffer[..size as usize]))
+            }
+        }
+
+        #[cfg(target_family = "unix")]
+        fn get_computer_name() -> io::Result<String> {
+            // Extract from the man page of gethostname():
+            // gethostname() returns the null-terminated hostname in the character array name, which has a length of len bytes.  If the null-terminated hostname is too large to fit, then  the
+            // name  is  truncated, and no error is returned (but see NOTES below).  POSIX.1 says that if such truncation occurs, then it is unspecified whether the returned buffer includes a
+            // terminating null byte.
+
+            let mut buffer = [0u8; 255 + 1];
+            let result =
+                unsafe { libc::gethostname(buffer.as_mut_ptr(), buffer.len() as libc::size_t) };
+            if result != 0 {
+                let lerr = io::Error::last_os_error();
+                tracing::error!("gethostname failed: {lerr}");
+                Err(lerr)
+            } else {
+                // Since the buffer *MAY* or *MAY NOT* be null-terminated, we need to either
+                // find the first null-byte or assume the entire buffer is the host name
+                match buffer.split(|b| *b == 0).next() {
+                    Some(hostname) => Ok(String::from_utf8_lossy(hostname).into_owned()),
+                    None => Ok(String::from_utf8_lossy(&buffer).into_owned()),
+                }
+            }
+        }
+
+        get_computer_name().map(Cow::Owned).unwrap_or_default()
     }
 
     #[cfg(any(all(unix, feature = "integrated-auth-gssapi"), windows))]
@@ -239,6 +288,10 @@ impl<'a> LoginMessage<'a> {
         } else {
             self.type_flags.remove(LoginTypeFlag::ReadOnlyIntent);
         }
+    }
+
+    pub fn hostname(&mut self, hostname: impl Into<Cow<'a, str>>) {
+        self.hostname = hostname.into();
     }
 }
 

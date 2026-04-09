@@ -14,17 +14,21 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
 ) -> crate::Result<TlsStream<S>> {
     let mut builder = TlsConnector::new();
 
+    if matches!(config.encryption, crate::EncryptionLevel::Strict) {
+        builder = builder.request_alpns(&[super::TDS_ALPN_PROTOCOL_NAME]);
+    }
+
     match &config.trust {
         TrustConfig::CaCertificateLocation(path) => {
             if let Ok(buf) = fs::read(path) {
                 let cert = match path.extension() {
                         Some(ext)
-                        if ext.to_ascii_lowercase() == "pem"
-                            || ext.to_ascii_lowercase() == "crt" =>
+                        if ext.eq_ignore_ascii_case("pem")
+                            || ext.eq_ignore_ascii_case("crt") =>
                             {
                                 Some(Certificate::from_pem(&buf)?)
                             }
-                        Some(ext) if ext.to_ascii_lowercase() == "der" => {
+                        Some(ext) if ext.eq_ignore_ascii_case("der") => {
                             Some(Certificate::from_der(&buf)?)
                         }
                         Some(_) | None => return Err(Error::Io {
@@ -56,5 +60,7 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
         }
     }
 
-    Ok(builder.connect(config.get_host(), stream).await?)
+    Ok(builder
+        .connect(config.get_hostname_in_certificate(), stream)
+        .await?)
 }

@@ -79,7 +79,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             context
         };
 
-        let transport = Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec);
+        let transport = match config.encryption {
+            EncryptionLevel::Strict => {
+                event!(Level::INFO, "Performing a TLS handshake");
+                let mut pre_login_stream = TlsPreloginWrapper::new(tcp_stream);
+                pre_login_stream.handshake_complete();
+                let stream = create_tls_stream(&config, pre_login_stream).await?;
+                event!(Level::INFO, "TLS handshake successful");
+                Framed::new(MaybeTlsStream::Tls(stream), PacketCodec)
+            }
+            _ => Framed::new(MaybeTlsStream::Raw(tcp_stream), PacketCodec),
+        };
 
         let mut connection = Self {
             transport,
@@ -98,17 +108,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         let connection = connection.tls_handshake(&config, encryption).await?;
 
-        let mut connection = connection
-            .login(
-                config.auth,
-                encryption,
-                config.database,
-                config.host,
-                config.application_name,
-                config.readonly,
-                prelogin,
-            )
-            .await?;
+        let mut connection = connection.login(config, encryption, prelogin).await?;
 
         connection.flush_done().await?;
 
@@ -284,34 +284,33 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
-    #[allow(clippy::too_many_arguments)]
-    async fn login<'a>(
+    async fn login(
         mut self,
-        auth: AuthMethod,
+        config: Config,
         encryption: EncryptionLevel,
-        db: Option<String>,
-        server_name: Option<String>,
-        application_name: Option<String>,
-        readonly: bool,
         prelogin: PreloginMessage,
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
 
-        if let Some(db) = db {
+        if let Some(db) = config.database {
             login_message.db_name(db);
         }
 
-        if let Some(server_name) = server_name {
+        if let Some(server_name) = config.host {
             login_message.server_name(server_name);
         }
 
-        if let Some(app_name) = application_name {
+        if let Some(app_name) = config.application_name {
             login_message.app_name(app_name);
         }
 
-        login_message.readonly(readonly);
+        if let Some(client_name) = config.client_name {
+            login_message.hostname(client_name);
+        }
 
-        match auth {
+        login_message.readonly(config.readonly);
+
+        match config.auth {
             #[cfg(all(windows, feature = "winauth"))]
             AuthMethod::Integrated => {
                 let mut client = NtlmSspiBuilder::new()
@@ -444,37 +443,47 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         config: &Config,
         encryption: EncryptionLevel,
     ) -> crate::Result<Self> {
-        if encryption != EncryptionLevel::NotSupported {
-            event!(Level::INFO, "Performing a TLS handshake");
+        match encryption {
+            EncryptionLevel::NotSupported => {
+                event!(
+                    Level::WARN,
+                    "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
+                );
+                Ok(self)
+            }
+            EncryptionLevel::Strict => {
+                // In Strict mode, we should already be in TLS stream after prelogin, so just return self.
+                event!(
+                    Level::TRACE,
+                    "Already in TLS stream due to Strict encryption level, skipping handshake."
+                );
+                Ok(self)
+            }
+            EncryptionLevel::Off | EncryptionLevel::On | EncryptionLevel::Required => {
+                event!(Level::INFO, "Performing a TLS handshake");
 
-            let Self {
-                transport, context, ..
-            } = self;
-            let mut stream = match transport.into_inner() {
-                MaybeTlsStream::Raw(tcp) => {
-                    create_tls_stream(config, TlsPreloginWrapper::new(tcp)).await?
-                }
-                _ => unreachable!(),
-            };
+                let Self {
+                    transport, context, ..
+                } = self;
+                let mut stream = match transport.into_inner() {
+                    MaybeTlsStream::Raw(tcp) => {
+                        create_tls_stream(config, TlsPreloginWrapper::new(tcp)).await?
+                    }
+                    _ => unreachable!(),
+                };
 
-            stream.get_mut().handshake_complete();
-            event!(Level::INFO, "TLS handshake successful");
+                stream.get_mut().handshake_complete();
+                event!(Level::INFO, "TLS handshake successful");
 
-            let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
+                let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
 
-            Ok(Self {
-                transport,
-                context,
-                flushed: false,
-                buf: BytesMut::new(),
-            })
-        } else {
-            event!(
-                Level::WARN,
-                "TLS encryption is not enabled. All traffic including the login credentials are not encrypted."
-            );
-
-            Ok(self)
+                Ok(Self {
+                    transport,
+                    context,
+                    flushed: false,
+                    buf: BytesMut::new(),
+                })
+            }
         }
     }
 
