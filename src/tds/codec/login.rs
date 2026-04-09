@@ -191,36 +191,34 @@ impl<'a> LoginMessage<'a> {
     fn get_hostname() -> Cow<'static, str> {
         #[cfg(windows)]
         fn get_computer_name() -> io::Result<String> {
-            unsafe extern "C" {
-                // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getcomputernamea
-                fn GetComputerNameA(lpBuffer: *mut u8, nSize: *mut u32) -> i32;
+            unsafe extern "system" {
+                // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getcomputernamew
+                fn GetComputerNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
             }
 
             // MAX_COMPUTERNAME_LENGTH is 15 and we need 1 byte for the null terminator
-            let mut buffer = [0u8; 15 + 1];
+            let mut buffer = [0u16; 15 + 1];
             let mut size = buffer.len() as u32;
-            let result = unsafe { GetComputerNameA(buffer.as_mut_ptr(), &mut size) };
+            let result = unsafe { GetComputerNameW(buffer.as_mut_ptr(), &mut size) };
             if result == 0 {
                 let lerr = io::Error::last_os_error();
-                tracing::error!("GetComputerNameA failed: {lerr}");
+                tracing::error!("GetComputerNameW failed: {lerr}");
                 Err(lerr)
             } else {
-                Ok(String::from_utf8_lossy(&buffer[..size as usize]).into_owned())
+                Ok(String::from_utf16_lossy(&buffer[..size as usize]))
             }
         }
 
         #[cfg(target_family = "unix")]
         fn get_computer_name() -> io::Result<String> {
-            unsafe extern "C" {
-                // Extract from the man page of gethostname():
-                // gethostname() returns the null-terminated hostname in the character array name, which has a length of len bytes.  If the null-terminated hostname is too large to fit, then  the
-                // name  is  truncated, and no error is returned (but see NOTES below).  POSIX.1 says that if such truncation occurs, then it is unspecified whether the returned buffer includes a
-                // terminating null byte.
-                fn gethostname(name: *mut u8, len: libc::size_t) -> i32;
-            }
+            // Extract from the man page of gethostname():
+            // gethostname() returns the null-terminated hostname in the character array name, which has a length of len bytes.  If the null-terminated hostname is too large to fit, then  the
+            // name  is  truncated, and no error is returned (but see NOTES below).  POSIX.1 says that if such truncation occurs, then it is unspecified whether the returned buffer includes a
+            // terminating null byte.
 
             let mut buffer = [0u8; 255 + 1];
-            let result = unsafe { gethostname(buffer.as_mut_ptr(), buffer.len() as libc::size_t) };
+            let result =
+                unsafe { libc::gethostname(buffer.as_mut_ptr(), buffer.len() as libc::size_t) };
             if result != 0 {
                 let lerr = io::Error::last_os_error();
                 tracing::error!("gethostname failed: {lerr}");
