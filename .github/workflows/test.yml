@@ -8,30 +8,32 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-            components: clippy
-            override: true
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
       - name: Install dependencies
         run: sudo apt install -y openssl libkrb5-dev
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --features=all
+      - name: Clippy
+        run: cargo clippy --features=all -- -D warnings
 
   format:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+        with:
+          toolchain: stable
           components: rustfmt
-          override: true
-      - uses: mbrobbel/rustfmt-check@master
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Rustfmt
+        run: cargo fmt --check
 
   cargo-test-linux:
     runs-on: ubuntu-latest
@@ -57,20 +59,27 @@ jobs:
       RUSTFLAGS: "-Dwarnings"
 
     steps:
-      - uses: actions/checkout@v2
-
-      - uses: actions-rs/toolchain@v1
-
-      - uses: actions/cache@v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ matrix.features }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+        with:
+          toolchain: stable
+
+      - name: Compute cache key
+        shell: bash
+        run: |
+          key="${{ matrix.features }}"
+          key="${key//,/+}"
+          echo "RUST_CACHE_KEY=$key" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+        with:
+          shared-key: ${{ env.RUST_CACHE_KEY }}
 
       - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-${{matrix.database}}
 
       - name: Install dependencies
         run: sudo apt install -y openssl libkrb5-dev
@@ -96,41 +105,39 @@ jobs:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:127.0.0.1,1433;IntegratedSecurity=true;TrustServerCertificate=true"
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+        with:
+          toolchain: stable
+
+      - name: Compute cache key
+        shell: bash
+        run: |
+          key="${{ matrix.features }}"
+          key="${key//,/+}"
+          echo "RUST_CACHE_KEY=$key" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+        with:
+          shared-key: ${{ env.RUST_CACHE_KEY }}
 
       - name: Set required PowerShell modules
         id: psmodulecache
-        uses: potatoqualitee/psmodulecache@v1
+        uses: potatoqualitee/psmodulecache@ee5e9494714abf56f6efbfa51527b2aec5c761b8  # v6.2.1
         with:
           modules-to-cache: SqlServer
 
-      - name: Setup PowerShell module cache
-        id: cacher
-        uses: actions/cache@v2
-        with:
-            path: ${{ steps.psmodulecache.outputs.modulepath }}
-            key: ${{ steps.psmodulecache.outputs.keygen }}
-
       - name: Setup Chocolatey download cache
         id: chococache
-        uses: actions/cache@v2
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: C:\Users\runneradmin\AppData\Local\Temp\chocolatey\
           key: chocolatey-install
 
-      - name: Setup Cargo build cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            C:\Users\runneradmin\.cargo\registry
-            C:\Users\runneradmin\.cargo\git
-            target
-          key: ${{ runner.os }}-cargo
-
       - name: Install required PowerShell modules
-        if: steps.cacher.outputs.cache-hit != 'true'
         shell: powershell
         run: |
             Set-PSRepository PSGallery -InstallationPolicy Trusted
@@ -189,7 +196,7 @@ jobs:
         run: cargo test ${{matrix.features}}
 
   cargo-test-macos:
-    runs-on: macos-12
+    runs-on: macos-26-intel
 
     strategy:
       fail-fast: false
@@ -204,14 +211,32 @@ jobs:
       TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9  # v1
+        with:
+          toolchain: stable
 
-      - uses: docker-practice/actions-setup-docker@master
+      - name: Compute cache key
+        shell: bash
+        run: |
+          key="${{ matrix.features }}"
+          key="${key//,/+}"
+          echo "RUST_CACHE_KEY=$key" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+        with:
+          shared-key: ${{ env.RUST_CACHE_KEY }}
+
+      - uses: docker/setup-docker-action@b2189fbf2a6592b51fee7cdd93ee2bfaeba733db  # v5.1.0
+
+      - name: Install docker compose plugin
+        run: brew install docker-compose
 
       - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml up -d mssql-${{matrix.database}}
+        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-${{matrix.database}}
 
       - name: Run tests
         run: cargo test ${{matrix.features}}

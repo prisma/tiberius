@@ -1,6 +1,7 @@
 version: "3"
 services:
   mssql-2022:
+    platform: linux/amd64
     build:
       context: docker/
       dockerfile: docker-mssql-2022.dockerfile
@@ -12,6 +13,7 @@ services:
       - "1433:1433"
 
   mssql-2019:
+    platform: linux/amd64
     build:
       context: docker/
       dockerfile: docker-mssql-2019.dockerfile
@@ -23,6 +25,7 @@ services:
       - "1433:1433"
 
   mssql-2017:
+    platform: linux/amd64
     build:
       context: docker/
       dockerfile: docker-mssql-2017.dockerfile
@@ -34,6 +37,7 @@ services:
       - "1433:1433"
 
   mssql-azure-sql-edge:
+    platform: linux/amd64
     build:
       context: docker/
       dockerfile: docker-azure-sql-edge.dockerfile
