@@ -112,8 +112,11 @@ impl PacketHeader {
         self.status = status;
     }
 
-    // Only called from the TLS prelogin path; unused on no-TLS builds.
-    #[allow(dead_code)]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
     pub fn set_type(&mut self, ty: PacketType) {
         self.ty = ty;
     }
