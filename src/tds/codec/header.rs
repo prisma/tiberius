@@ -112,6 +112,11 @@ impl PacketHeader {
         self.status = status;
     }
 
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
     pub fn set_type(&mut self, ty: PacketType) {
         self.ty = ty;
     }

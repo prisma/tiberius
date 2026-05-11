@@ -118,16 +118,11 @@ version = "1.12.0"
 optional = true
 
 [dependencies.tokio-rustls]
-version = "0.24.0"
-optional = true
-features = ["dangerous_configuration"]
-
-[dependencies.rustls-pemfile]
-version = "1"
+version = "0.26"
 optional = true
 
 [dependencies.rustls-native-certs]
-version = "0.6"
+version = "0.8"
 optional = true
 
 [dependencies.opentls]
@@ -199,6 +194,6 @@ sql-browser-tokio = ["tokio", "tokio-util"]
 sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
 bigdecimal = ["bigdecimal_"]
-rustls = ["tokio-rustls", "tokio-util", "rustls-pemfile", "rustls-native-certs"]
+rustls = ["tokio-rustls", "tokio-util", "rustls-native-certs"]
 native-tls = ["async-native-tls"]
 vendored-openssl = ["opentls"]
