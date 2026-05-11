@@ -5,8 +5,10 @@ set -o pipefail
 
 # Skript creates a custom-signed certificate
 # Parameter1 = name of the cert
+# Parameter2 = validity in days (default 1825)
 
 CERT_KEY_NAME=$1
+CERT_DAYS=${2:-1825}
 CERT_FILE=$CERT_KEY_NAME.crt
 
 export CERT_CN=$CERT_KEY_NAME
@@ -32,7 +34,7 @@ openssl x509 -req \
   -CAserial customCA.srl \
   -out $CERT_FILE \
   -passin file:passphrase.txt \
-  -days 200
+  -days $CERT_DAYS
 
 echo Generating PEM format
 openssl rsa -in ${CERT_KEY_NAME}.key -out ${CERT_KEY_NAME}-nopassword.key
