@@ -119,6 +119,8 @@ impl Config {
     ///
     /// - With `tls` feature, defaults to `Required`.
     /// - Without `tls` feature, defaults to `NotSupported`.
+    /// - Use `Strict` for TDS 8 strict transport encryption (required for
+    ///   Microsoft Fabric endpoints and SQL Server 2022+ strict mode).
     pub fn encryption(&mut self, encryption: EncryptionLevel) {
         self.encryption = encryption;
     }
@@ -210,7 +212,7 @@ impl Config {
     /// |`database`|`<string>`|The name of the database.|
     /// |`TrustServerCertificate`|`true`,`false`,`yes`,`no`|Specifies whether the driver trusts the server certificate when connecting using TLS. Cannot be used toghether with `TrustServerCertificateCA`|
     /// |`TrustServerCertificateCA`|`<path>`|Path to a `pem`, `crt` or `der` certificate file. Cannot be used together with `TrustServerCertificate`|
-    /// |`encrypt`|`true`,`false`,`yes`,`no`,`DANGER_PLAINTEXT`|Specifies whether the driver uses TLS to encrypt communication.|
+    /// |`encrypt`|`true`,`false`,`yes`,`no`,`strict`,`DANGER_PLAINTEXT`|Specifies whether the driver uses TLS to encrypt communication. `strict` enables TDS 8 strict transport encryption (required for Microsoft Fabric).|
     /// |`Application Name`, `ApplicationName`|`<string>`|Sets the application name for the connection.|
     ///
     /// [ADO.NET connection string]: https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/connection-strings
@@ -357,7 +359,10 @@ pub(crate) trait ConfigString {
             .map(|val| match Self::parse_bool(val) {
                 Ok(true) => Ok(EncryptionLevel::Required),
                 Ok(false) => Ok(EncryptionLevel::Off),
-                Err(_) if val == "DANGER_PLAINTEXT" => Ok(EncryptionLevel::NotSupported),
+                Err(_) if val.eq_ignore_ascii_case("DANGER_PLAINTEXT") => {
+                    Ok(EncryptionLevel::NotSupported)
+                }
+                Err(_) if val.eq_ignore_ascii_case("strict") => Ok(EncryptionLevel::Strict),
                 Err(e) => Err(e),
             })
             .unwrap_or(Ok(EncryptionLevel::Off))

@@ -25,6 +25,9 @@ uint_enum! {
         NotSupported = 2,
         /// Encrypt everything and fail if not possible
         Required = 3,
+        /// TDS 8 strict transport encryption: TLS handshake occurs before any
+        /// TDS traffic (required for Microsoft Fabric endpoints).
+        Strict = 4,
     }
 
 }

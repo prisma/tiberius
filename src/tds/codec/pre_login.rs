@@ -64,6 +64,8 @@ impl PreloginMessage {
     ))]
     pub fn negotiated_encryption(&self, expected: EncryptionLevel) -> EncryptionLevel {
         match (expected, self.encryption) {
+            // TDS 8 strict mode is non-negotiable
+            (EncryptionLevel::Strict, _) => EncryptionLevel::Strict,
             (EncryptionLevel::NotSupported, EncryptionLevel::NotSupported) => {
                 EncryptionLevel::NotSupported
             }
@@ -110,7 +112,13 @@ impl Encode<BytesMut> for PreloginMessage {
 
         // encryption
         fields.push((PRELOGIN_ENCRYPTION, 0x01)); // encryption
-        data_cursor.write_u8(self.encryption as u8)?;
+        // In TDS 8 strict mode, TLS is already established before PRELOGIN.
+        // Send ENCRYPT_ON (0x01) on the wire since strict is not a valid wire value.
+        let encryption_wire_value = match self.encryption {
+            EncryptionLevel::Strict => EncryptionLevel::On as u8,
+            other => other as u8,
+        };
+        data_cursor.write_u8(encryption_wire_value)?;
 
         // threadid
         fields.push((PRELOGIN_THREADID, 0x04)); // thread id

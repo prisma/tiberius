@@ -471,6 +471,36 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    fn encryption_parsing_strict() -> crate::Result<()> {
+        let test_str = "encrypt=strict";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(EncryptionLevel::Strict, ado.encrypt()?);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    fn encryption_parsing_strict_case_insensitive() -> crate::Result<()> {
+        let test_str = "encrypt=Strict";
+        let ado: AdoNetConfig = test_str.parse()?;
+
+        assert_eq!(EncryptionLevel::Strict, ado.encrypt()?);
+
+        Ok(())
+    }
+
+    #[test]
     fn application_name_parsing() -> crate::Result<()> {
         let test_str = "Application Name=meow";
         let ado: AdoNetConfig = test_str.parse()?;

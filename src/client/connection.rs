@@ -88,6 +88,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             buf: BytesMut::new(),
         };
 
+        // TDS 8 strict mode: TLS handshake first, then PRELOGIN inside TLS
+        if config.encryption == EncryptionLevel::Strict {
+            let connection = connection.tls_handshake_strict(&config).await?;
+            let mut connection = Self::finish_connect_after_tls(connection, config).await?;
+            connection.flush_done().await?;
+            return Ok(connection);
+        }
+
         let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
 
         let prelogin = connection
@@ -111,6 +119,33 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             .await?;
 
         connection.flush_done().await?;
+
+        Ok(connection)
+    }
+
+    /// Complete connection setup after TLS is established (for strict mode).
+    /// In TDS 8, PRELOGIN and LOGIN both happen inside the TLS tunnel.
+    async fn finish_connect_after_tls(
+        mut connection: Self,
+        config: Config,
+    ) -> crate::Result<Self> {
+        let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
+
+        let prelogin = connection
+            .prelogin(config.encryption, fed_auth_required)
+            .await?;
+
+        let connection = connection
+            .login(
+                config.auth,
+                EncryptionLevel::Strict,
+                config.database,
+                config.host,
+                config.application_name,
+                config.readonly,
+                prelogin,
+            )
+            .await?;
 
         Ok(connection)
     }
@@ -476,6 +511,61 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
             Ok(self)
         }
+    }
+
+    /// Implements TDS 8 strict TLS handshake: TLS is established directly on
+    /// the raw TCP stream without any TDS packet wrapping. This is required
+    /// for Microsoft Fabric and SQL Server 2022+ strict mode.
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    async fn tls_handshake_strict(self, config: &Config) -> crate::Result<Self> {
+        event!(
+            Level::INFO,
+            "Performing a TDS 8 strict TLS handshake (TLS-first)"
+        );
+
+        let Self {
+            transport, context, ..
+        } = self;
+
+        let stream = match transport.into_inner() {
+            MaybeTlsStream::Raw(tcp) => {
+                // In strict mode, create the wrapper but immediately mark handshake
+                // as complete so it acts as a transparent passthrough. This means
+                // the TLS handshake goes directly over the TCP stream without any
+                // TDS packet wrapping - exactly what TDS 8 requires.
+                let mut wrapper = TlsPreloginWrapper::new(tcp);
+                wrapper.handshake_complete();
+                create_tls_stream(config, wrapper).await?
+            }
+            _ => unreachable!(),
+        };
+
+        event!(Level::INFO, "TDS 8 strict TLS handshake successful");
+
+        let transport = Framed::new(MaybeTlsStream::Tls(stream), PacketCodec);
+
+        Ok(Self {
+            transport,
+            context,
+            flushed: false,
+            buf: BytesMut::new(),
+        })
+    }
+
+    /// Implements TDS 8 strict TLS handshake (no-op when TLS features are disabled).
+    #[cfg(not(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    )))]
+    async fn tls_handshake_strict(self, _: &Config) -> crate::Result<Self> {
+        Err(crate::Error::Protocol(
+            "TDS 8 strict encryption requires a TLS feature (rustls, native-tls, or vendored-openssl) to be enabled".into()
+        ))
     }
 
     /// Implements the TLS handshake with the SQL Server.

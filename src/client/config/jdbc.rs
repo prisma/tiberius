@@ -320,6 +320,21 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(
+        feature = "rustls",
+        feature = "native-tls",
+        feature = "vendored-openssl"
+    ))]
+    fn encryption_parsing_strict() -> crate::Result<()> {
+        let test_str = "jdbc:sqlserver://my-server.com:4200;encrypt=strict;";
+        let jdbc: JdbcConfig = test_str.parse()?;
+
+        assert_eq!(EncryptionLevel::Strict, jdbc.encrypt()?);
+
+        Ok(())
+    }
+
+    #[test]
     fn application_name_parsing() -> crate::Result<()> {
         let test_str = "jdbc:sqlserver://my-server.com:4200;Application Name=meow";
         let jdbc: JdbcConfig = test_str.parse()?;
