@@ -147,6 +147,9 @@ pub(crate) const FEA_EXT_AZURESQLSUPPORT: u8 = 0x08u8;
 pub(crate) const FEA_EXT_UTF8_SUPPORT: u8 = 0x0Au8;
 pub(crate) const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
 pub(crate) const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
+/// MSAL/ADAL library type for Azure AD token authentication.
+/// Used when providing pre-obtained JWT access tokens from MSAL or az CLI.
+pub(crate) const FED_AUTH_LIBRARY_MSAL: u8 = 0x02;
 
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/773a62b6-ee89-4c02-9e5e-344882630aac
 #[derive(Debug, Clone, Default)]

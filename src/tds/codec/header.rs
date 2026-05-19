@@ -112,6 +112,14 @@ impl PacketHeader {
         self.status = status;
     }
 
+    pub fn id(&self) -> u8 {
+        self.id
+    }
+
+    pub fn set_id(&mut self, id: u8) {
+        self.id = id;
+    }
+
     pub fn set_type(&mut self, ty: PacketType) {
         self.ty = ty;
     }

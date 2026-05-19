@@ -13,11 +13,12 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
     config: &Config,
     stream: S,
 ) -> crate::Result<TlsStream<S>> {
-    // For TDS 8 strict mode, we need to set ALPN to "ms-tds" so the gateway
-    // knows to proxy the connection rather than just redirecting.
+    // For TDS 8 strict mode, we perform a direct TLS handshake (no TDS
+    // wrapping). We use the native-tls builder directly for more control.
+    // Note: ALPN "ms-tds" is NOT sent — Azure SQL Database gateways reject
+    // connections that advertise it. Fabric works fine without it too.
     if config.encryption == EncryptionLevel::Strict {
         let mut native_builder = native_tls_crate::TlsConnector::builder();
-        native_builder.request_alpns(&["ms-tds"]);
 
         match &config.trust {
             TrustConfig::CaCertificateLocation(path) => {

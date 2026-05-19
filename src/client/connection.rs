@@ -149,8 +149,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let is_backend = config.instance_name.is_some();
         let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
 
+        // In TDS 8 strict mode, send ENCRYPT_STRICT (0x08) on the wire.
+        // TLS is already established, and the PRELOGIN encryption field signals
+        // to the server that this is a TDS 8 strict mode connection.
+        let prelogin_encryption = config.encryption;
+
         let prelogin = connection
-            .prelogin(config.encryption, fed_auth_required, config.instance_name.clone(), is_backend)
+            .prelogin(prelogin_encryption, fed_auth_required, config.instance_name.clone(), is_backend)
             .await?;
 
         // Use login_server_name if set (for routed connections, this is the
@@ -273,6 +278,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let login_id = connection.context.next_packet_id();
         let mut login_header = PacketHeader::login(login_id);
 
+        let mut is_first_login_pkt = true;
         while !login_payload.is_empty() {
             let writable = cmp::min(login_payload.len(), packet_size);
             let split_payload = login_payload.split_to(writable);
@@ -282,6 +288,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             } else {
                 login_header.set_status(PacketStatus::NormalMessage);
             }
+
+            // Per MS-TDS 2.2.3.1: PacketID increments by 1 within a message
+            if !is_first_login_pkt {
+                login_header.set_id(login_header.id().wrapping_add(1));
+            }
+            is_first_login_pkt = false;
 
             connection
                 .feed_to_wire(login_header, split_payload)
@@ -359,6 +371,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let mut payload = BytesMut::new();
         item.encode(&mut payload)?;
 
+        let mut is_first = true;
+
         while !payload.is_empty() {
             let writable = cmp::min(payload.len(), packet_size);
             let split_payload = payload.split_to(writable);
@@ -369,20 +383,27 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 header.set_status(PacketStatus::NormalMessage);
             }
 
+            // Per MS-TDS 2.2.3.1: PacketID is incremented by 1 (mod 256)
+            // for each packet within a message. The first packet uses the
+            // ID from the header as-is; subsequent packets increment.
+            if !is_first {
+                header.set_id(header.id().wrapping_add(1));
+            }
+            is_first = false;
+
             event!(
                 Level::TRACE,
-                "Sending a packet ({} bytes)",
+                "Sending a packet ({} bytes, id={})",
                 split_payload.len() + HEADER_BYTES,
+                header.id(),
             );
 
-            // Buffer the packet without flushing. This ensures multi-packet
-            // messages are sent in a single TLS write, which is required by
-            // some backends (e.g., Microsoft Fabric).
+            // Send each packet individually (feed + flush). In TDS 8 strict
+            // mode, each TDS packet must be written as a separate TLS record.
+            // Using send() (vs feed + batch flush) ensures this.
             let packet = Packet::new(header, split_payload);
-            self.transport.feed(packet).await?;
+            self.transport.send(packet).await?;
         }
-
-        self.flush_sink().await?;
 
         Ok(())
     }
@@ -538,16 +559,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
 
-        // MS-TDS spec: TDS 8.0 strict mode requires version 0x08000000 in
-        // LOGIN7. This tells the server the client supports the TDS 8 transport.
+        // TDS 8 strict mode: the transport uses TLS-first, but the LOGIN7
+        // protocol version remains TDS 7.4 (SqlServerN = 0x74000004). The TDS 8
+        // "version" is a transport-mode indicator, not a protocol version.
+        // Azure SQL gateways may not recognize 0x08000000 and misparse the LOGIN.
         if encryption == EncryptionLevel::Strict {
-            login_message.tds_version(FeatureLevel::SqlServer2022);
-            // Azure SQL / Fabric backends require the AZURESQLSUPPORT feature
-            // extension to indicate the client can handle Azure-specific tokens.
-            login_message.azure_sql_support();
+            login_message.tds_version(FeatureLevel::SqlServerN);
             // Set client interface name — ODBC sends "ODBC"; some backends
             // may require a non-empty value.
             login_message.clt_int_name("tiberius");
+            // Azure SQL / Fabric backends require the AZURESQLSUPPORT feature
+            // extension to indicate the client can handle Azure-specific tokens.
+            login_message.azure_sql_support();
         }
 
         if let Some(db) = db {
