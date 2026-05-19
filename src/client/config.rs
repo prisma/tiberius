@@ -41,6 +41,10 @@ pub struct Config {
     /// the original gateway hostname so the backend knows which endpoint
     /// the client intended to reach.
     pub(crate) login_server_name: Option<String>,
+    /// Tracks whether encryption was explicitly set by the user (via
+    /// `encryption()` method or connection string `encrypt=` key). When false,
+    /// the connection layer may auto-detect strict mode from the hostname.
+    pub(crate) encryption_explicit: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +80,7 @@ impl Default for Config {
             readonly: false,
             strict_pipelined: false,
             login_server_name: None,
+            encryption_explicit: false,
         }
     }
 }
@@ -132,8 +137,12 @@ impl Config {
     /// - Without `tls` feature, defaults to `NotSupported`.
     /// - Use `Strict` for TDS 8 strict transport encryption (required for
     ///   Microsoft Fabric endpoints and SQL Server 2022+ strict mode).
+    ///
+    /// When not explicitly set, the client will auto-detect strict mode for
+    /// known endpoints (e.g., `*.datawarehouse.fabric.microsoft.com`).
     pub fn encryption(&mut self, encryption: EncryptionLevel) {
         self.encryption = encryption;
+        self.encryption_explicit = true;
     }
 
     /// If set, the server certificate will not be validated and it is accepted
@@ -211,6 +220,34 @@ impl Config {
     /// If not set, defaults to the value of `host()`.
     pub fn login_server_name(&mut self, name: impl Into<String>) {
         self.login_server_name = Some(name.into());
+    }
+
+    /// Resolves the effective encryption level, applying auto-detection when
+    /// the user did not explicitly configure encryption.
+    ///
+    /// Currently detects:
+    /// - `*.datawarehouse.fabric.microsoft.com` → `EncryptionLevel::Strict`
+    ///
+    /// Returns the (possibly upgraded) encryption level.
+    pub(crate) fn resolve_encryption(&mut self) -> EncryptionLevel {
+        if self.encryption_explicit {
+            return self.encryption;
+        }
+
+        if let Some(host) = &self.host {
+            if Self::host_requires_strict(host) {
+                self.encryption = EncryptionLevel::Strict;
+            }
+        }
+
+        self.encryption
+    }
+
+    /// Returns true if the given hostname is known to require TDS 8 strict mode.
+    fn host_requires_strict(host: &str) -> bool {
+        let host_lower = host.to_ascii_lowercase();
+        host_lower.ends_with(".datawarehouse.fabric.microsoft.com")
+            || host_lower.ends_with(".pbidedicated.windows.net")
     }
 
     pub(crate) fn get_host(&self) -> &str {
@@ -307,7 +344,9 @@ impl Config {
             builder.trust_cert_ca(ca);
         }
 
-        builder.encryption(s.encrypt()?);
+        if s.has_encrypt_key() {
+            builder.encryption(s.encrypt()?);
+        }
 
         builder.readonly(s.readonly());
 
@@ -325,6 +364,12 @@ pub(crate) trait ConfigString {
     fn dict(&self) -> &HashMap<String, String>;
 
     fn server(&self) -> crate::Result<ServerDefinition>;
+
+    /// Returns true if the `encrypt` key was explicitly present in the
+    /// connection string.
+    fn has_encrypt_key(&self) -> bool {
+        self.dict().contains_key("encrypt")
+    }
 
     fn authentication(&self) -> crate::Result<AuthMethod> {
         let user = self
@@ -432,5 +477,108 @@ pub(crate) trait ConfigString {
             .get("applicationintent")
             .filter(|val| *val == "ReadOnly")
             .is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_detects_strict_for_fabric_host() {
+        let mut config = Config::new();
+        config.host("myworkspace-abc123.datawarehouse.fabric.microsoft.com");
+        // encryption_explicit is false (default)
+        assert!(!config.encryption_explicit);
+
+        let resolved = config.resolve_encryption();
+        assert_eq!(resolved, EncryptionLevel::Strict);
+        assert_eq!(config.encryption, EncryptionLevel::Strict);
+    }
+
+    #[test]
+    fn auto_detects_strict_for_pbidedicated_host() {
+        let mut config = Config::new();
+        config.host("abc123.pbidedicated.windows.net");
+
+        let resolved = config.resolve_encryption();
+        assert_eq!(resolved, EncryptionLevel::Strict);
+    }
+
+    #[test]
+    fn no_auto_detect_for_regular_sql_server() {
+        let mut config = Config::new();
+        config.host("myserver.database.windows.net");
+
+        let resolved = config.resolve_encryption();
+        // Should stay at the default (Required with TLS features)
+        assert_eq!(resolved, EncryptionLevel::Required);
+    }
+
+    #[test]
+    fn no_auto_detect_for_localhost() {
+        let mut config = Config::new();
+        config.host("localhost");
+
+        let resolved = config.resolve_encryption();
+        assert_eq!(resolved, EncryptionLevel::Required);
+    }
+
+    #[test]
+    fn explicit_encryption_not_overridden() {
+        let mut config = Config::new();
+        config.host("myworkspace-abc123.datawarehouse.fabric.microsoft.com");
+        // User explicitly sets Required (not Strict)
+        config.encryption(EncryptionLevel::Required);
+        assert!(config.encryption_explicit);
+
+        let resolved = config.resolve_encryption();
+        // Should respect the explicit setting, not auto-upgrade
+        assert_eq!(resolved, EncryptionLevel::Required);
+    }
+
+    #[test]
+    fn explicit_strict_stays_strict() {
+        let mut config = Config::new();
+        config.host("custom-server.example.com");
+        config.encryption(EncryptionLevel::Strict);
+
+        let resolved = config.resolve_encryption();
+        assert_eq!(resolved, EncryptionLevel::Strict);
+    }
+
+    #[test]
+    fn connection_string_without_encrypt_auto_detects_fabric() {
+        // ADO string with no encrypt= key, but a Fabric host
+        let config = Config::from_ado_string(
+            "server=tcp:myworkspace.datawarehouse.fabric.microsoft.com,1433;database=mydb",
+        )
+        .unwrap();
+        // encrypt not specified → encryption_explicit should be false
+        assert!(!config.encryption_explicit);
+    }
+
+    #[test]
+    fn connection_string_with_encrypt_marks_explicit() {
+        let config = Config::from_ado_string(
+            "server=tcp:myworkspace.datawarehouse.fabric.microsoft.com,1433;encrypt=true;database=mydb",
+        )
+        .unwrap();
+        assert!(config.encryption_explicit);
+        assert_eq!(config.encryption, EncryptionLevel::Required);
+    }
+
+    #[test]
+    fn host_requires_strict_case_insensitive() {
+        assert!(Config::host_requires_strict(
+            "MyWorkspace.DATAWAREHOUSE.FABRIC.MICROSOFT.COM"
+        ));
+        assert!(Config::host_requires_strict(
+            "ABC.Datawarehouse.Fabric.Microsoft.Com"
+        ));
+        assert!(!Config::host_requires_strict("fabric.microsoft.com"));
+        assert!(!Config::host_requires_strict(
+            "something.database.windows.net"
+        ));
     }
 }

@@ -653,3 +653,72 @@ async fn fabric_strict_token_provider() -> anyhow::Result<()> {
     eprintln!("Fabric strict connection with TokenProvider: OK");
     Ok(())
 }
+
+/// Test: Connect to Fabric WITHOUT explicitly setting `encrypt=strict`.
+///
+/// Verifies that the auto-detection heuristic recognizes the Fabric hostname
+/// and automatically upgrades to TDS 8 strict encryption.
+#[tokio::test]
+async fn fabric_auto_detect_strict_from_hostname() -> anyhow::Result<()> {
+    skip_if_no_fabric!();
+
+    let endpoint = env::var("FABRIC_ENDPOINT")?;
+    let database = env::var("FABRIC_DATABASE")?;
+    let token = get_aad_token().await?;
+
+    // Build config WITHOUT encrypt=strict — rely on auto-detection
+    let mut config = Config::new();
+    config.host(&endpoint);
+    config.port(1433);
+    config.database(&database);
+    config.authentication(AuthMethod::aad_token(&token));
+    // Note: NOT calling config.encryption(EncryptionLevel::Strict)
+
+    let tcp = TcpStream::connect(config.get_addr()).await?;
+    tcp.set_nodelay(true)?;
+
+    let client_result = Client::connect(config, tcp.compat_write()).await;
+
+    let mut client = match client_result {
+        Ok(client) => client,
+        Err(Error::Routing { host, port }) => {
+            eprintln!(
+                "Auto-detect test: routing redirect to {}:{}, reconnecting...",
+                host, port
+            );
+
+            let backend_host = host.split('\\').next().unwrap_or(&host);
+            let instance_name = host.split('\\').nth(1);
+
+            // Backend config also without explicit encrypt=strict
+            let mut backend_config = Config::new();
+            backend_config.host(backend_host);
+            backend_config.port(port);
+            // Auto-detection will recognize .pbidedicated.windows.net too
+            backend_config.authentication(AuthMethod::aad_token(&token));
+            backend_config.database(&database);
+            if let Some(inst) = instance_name {
+                backend_config.instance_name(inst);
+            }
+            backend_config.login_server_name(&endpoint);
+
+            let tcp = TcpStream::connect(backend_config.get_addr()).await?;
+            tcp.set_nodelay(true)?;
+
+            Client::connect(backend_config, tcp.compat_write()).await?
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Verify we can query
+    let row = client
+        .query("SELECT 100 AS auto_detect_test", &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    assert_eq!(Some(100i32), row.get("auto_detect_test"));
+
+    eprintln!("Fabric auto-detect strict encryption from hostname: OK");
+    Ok(())
+}

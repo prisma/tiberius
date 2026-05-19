@@ -72,7 +72,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Debug for Connection<S> {
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Creates a new connection
-    pub(crate) async fn connect(config: Config, tcp_stream: S) -> crate::Result<Connection<S>> {
+    pub(crate) async fn connect(mut config: Config, tcp_stream: S) -> crate::Result<Connection<S>> {
         let context = {
             let mut context = Context::new();
             context.set_spn(config.get_host(), config.get_port());
@@ -87,6 +87,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             flushed: false,
             buf: BytesMut::new(),
         };
+
+        // Auto-detect strict mode from hostname when encryption wasn't
+        // explicitly configured by the caller.
+        let resolved = config.resolve_encryption();
+        if resolved == EncryptionLevel::Strict && !config.encryption_explicit {
+            event!(
+                Level::INFO,
+                host = config.get_host(),
+                "Auto-detected TDS 8 strict encryption from hostname"
+            );
+        }
 
         // TDS 8 strict mode: TLS handshake first, then PRELOGIN inside TLS.
         if config.encryption == EncryptionLevel::Strict {
