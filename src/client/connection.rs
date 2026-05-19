@@ -113,7 +113,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
 
         let prelogin = connection
-            .prelogin(config.encryption, fed_auth_required, config.instance_name.clone(), false)
+            .prelogin(
+                config.encryption,
+                fed_auth_required,
+                config.instance_name.clone(),
+                false,
+            )
             .await?;
 
         let encryption = prelogin.negotiated_encryption(config.encryption);
@@ -139,10 +144,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Complete connection setup after TLS is established (for strict mode).
     /// In TDS 8, PRELOGIN and LOGIN both happen inside the TLS tunnel.
-    async fn finish_connect_after_tls(
-        mut connection: Self,
-        config: Config,
-    ) -> crate::Result<Self> {
+    async fn finish_connect_after_tls(mut connection: Self, config: Config) -> crate::Result<Self> {
         // For backend connections (routing reconnect), we still need to send
         // FEDAUTHREQUIRED if using AAD auth — the backend needs it to prepare
         // for processing the FEDAUTH token in LOGIN.
@@ -155,7 +157,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let prelogin_encryption = config.encryption;
 
         let prelogin = connection
-            .prelogin(prelogin_encryption, fed_auth_required, config.instance_name.clone(), is_backend)
+            .prelogin(
+                prelogin_encryption,
+                fed_auth_required,
+                config.instance_name.clone(),
+                is_backend,
+            )
             .await?;
 
         // Use login_server_name if set (for routed connections, this is the
@@ -258,8 +265,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         }
 
         // 3. Feed PRELOGIN packet(s) to the transport buffer (no flush yet)
-        let packet_size =
-            (connection.context.packet_size() as usize) - crate::tds::HEADER_BYTES;
+        let packet_size = (connection.context.packet_size() as usize) - crate::tds::HEADER_BYTES;
 
         let mut prelogin_payload = BytesMut::new();
         prelogin_msg.encode(&mut prelogin_payload)?;
@@ -295,9 +301,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             }
             is_first_login_pkt = false;
 
-            connection
-                .feed_to_wire(login_header, split_payload)
-                .await?;
+            connection.feed_to_wire(login_header, split_payload).await?;
         }
 
         // 5. Single flush: send PRELOGIN+LOGIN together in one TLS write
@@ -429,34 +433,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
     /// Feeds a packet to the transport buffer WITHOUT flushing.
     /// Use `flush_sink()` after feeding all packets to send them in one batch.
-    #[allow(dead_code)]
-    async fn feed_to_wire(
-        &mut self,
-        header: PacketHeader,
-        data: BytesMut,
-    ) -> crate::Result<()> {
+    async fn feed_to_wire(&mut self, header: PacketHeader, data: BytesMut) -> crate::Result<()> {
         self.flushed = false;
-
-        // Debug: dump the raw TDS frame (header + payload) to a file
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/opencode/tiberius_raw_tds.bin")
-        {
-            use std::io::Write as _;
-            // Encode the header + data as the PacketCodec would
-            let mut hdr_buf = BytesMut::with_capacity(8);
-            use bytes::BufMut as _;
-            let pkt_len = (data.len() + 8) as u16;
-            hdr_buf.put_u8(header.r#type() as u8);
-            hdr_buf.put_u8(header.status() as u8);
-            hdr_buf.put_u16(pkt_len);
-            hdr_buf.put_u16(0); // spid
-            hdr_buf.put_u8(0); // id placeholder (not accessible)
-            hdr_buf.put_u8(0); // window
-            let _ = f.write_all(&hdr_buf);
-            let _ = f.write_all(&data);
-        }
 
         let packet = Packet::new(header, data);
         self.transport.feed(packet).await?;
@@ -547,7 +525,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Defines the login record rules with SQL Server. Authentication with
     /// connection options.
     #[allow(clippy::too_many_arguments)]
-    async fn login<'a>(
+    async fn login(
         mut self,
         auth: AuthMethod,
         encryption: EncryptionLevel,

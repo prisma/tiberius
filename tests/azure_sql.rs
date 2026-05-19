@@ -116,10 +116,7 @@ async fn connect_to_azure_sql_regular(
     match Client::connect(config, tcp.compat_write()).await {
         Ok(client) => Ok(client),
         Err(Error::Routing { host, port }) => {
-            eprintln!(
-                "Routing redirect to {}:{}, reconnecting...",
-                host, port
-            );
+            eprintln!("Routing redirect to {}:{}, reconnecting...", host, port);
 
             let backend_host = host.split('\\').next().unwrap_or(&host);
 
@@ -196,7 +193,10 @@ async fn azure_sql_strict_server_metadata() -> anyhow::Result<()> {
         "Should be Azure SQL, got: {}",
         ver
     );
-    assert_eq!(db_name, database, "Should connect to the requested database");
+    assert_eq!(
+        db_name, database,
+        "Should connect to the requested database"
+    );
     eprintln!("Version: {}", &ver[..ver.find('\n').unwrap_or(ver.len())]);
     eprintln!("Database: {}", db_name);
     eprintln!("Login: {}", login_name);
@@ -288,9 +288,7 @@ async fn azure_sql_strict_ddl_dml() -> anyhow::Result<()> {
 
     // Create a temp table (must consume result before next command)
     client
-        .simple_query(
-            "CREATE TABLE #tds8_test (id INT, name NVARCHAR(50), value DECIMAL(10,2))",
-        )
+        .simple_query("CREATE TABLE #tds8_test (id INT, name NVARCHAR(50), value DECIMAL(10,2))")
         .await?
         .into_results()
         .await?;
@@ -401,10 +399,7 @@ async fn azure_sql_strict_verify_encryption() -> anyhow::Result<()> {
     );
     assert_eq!(net_transport, "TCP");
     // Azure SQL with AAD token uses NTML at transport but AAD at auth layer
-    assert!(
-        !auth_scheme.is_empty(),
-        "Should have an auth scheme"
-    );
+    assert!(!auth_scheme.is_empty(), "Should have an auth scheme");
 
     eprintln!(
         "Azure SQL encryption verified: option={}, scheme={}, transport={}",

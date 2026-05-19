@@ -53,8 +53,8 @@ async fn get_aad_token() -> anyhow::Result<String> {
         .map_err(|_| anyhow::anyhow!("Neither FABRIC_AAD_TOKEN nor FABRIC_CLIENT_ID is set"))?;
     let client_secret = env::var("FABRIC_CLIENT_SECRET")
         .map_err(|_| anyhow::anyhow!("FABRIC_CLIENT_SECRET not set"))?;
-    let tenant_id = env::var("FABRIC_TENANT_ID")
-        .map_err(|_| anyhow::anyhow!("FABRIC_TENANT_ID not set"))?;
+    let tenant_id =
+        env::var("FABRIC_TENANT_ID").map_err(|_| anyhow::anyhow!("FABRIC_TENANT_ID not set"))?;
 
     use azure_identity::client_credentials_flow;
     use oauth2::{ClientId, ClientSecret};
@@ -353,10 +353,7 @@ async fn fabric_strict_ddl_dml() -> anyhow::Result<()> {
 
     // DELETE
     let rows_affected = client
-        .execute(
-            format!("DELETE FROM {table_name} WHERE id = @P1"),
-            &[&2i32],
-        )
+        .execute(format!("DELETE FROM {table_name} WHERE id = @P1"), &[&2i32])
         .await?
         .total();
     assert_eq!(rows_affected, 1);
@@ -414,21 +411,19 @@ async fn fabric_strict_large_result() -> anyhow::Result<()> {
              CAST(l_quantity AS DECIMAL(10,2)) AS l_quantity, \
              CAST(l_extendedprice AS DECIMAL(12,2)) AS l_extendedprice, \
              l_shipdate, l_comment \
-         FROM lineitem ORDER BY l_orderkey, l_linenumber".to_string()
+         FROM lineitem ORDER BY l_orderkey, l_linenumber"
+            .to_string()
     } else {
         // Generate 1000 rows via cross join (no OPTION hints — Fabric DW disallows them)
         "SELECT TOP 1000 ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS row_num, \
              REPLICATE('X', 200) AS padding \
          FROM (VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)) AS t1(n) \
          CROSS JOIN (VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)) AS t2(n) \
-         CROSS JOIN (VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)) AS t3(n)".to_string()
+         CROSS JOIN (VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)) AS t3(n)"
+            .to_string()
     };
 
-    let rows: Vec<_> = client
-        .query(query, &[])
-        .await?
-        .into_first_result()
-        .await?;
+    let rows: Vec<_> = client.query(query, &[]).await?.into_first_result().await?;
 
     assert_eq!(rows.len(), 1000, "Should get exactly 1000 rows");
     eprintln!(

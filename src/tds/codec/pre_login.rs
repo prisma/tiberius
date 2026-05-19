@@ -115,8 +115,8 @@ impl Encode<BytesMut> for PreloginMessage {
 
         // encryption
         fields.push((PRELOGIN_ENCRYPTION, 0x01)); // encryption
-        // In TDS 8 strict mode, the wire value must be ENCRYPT_STRICT (0x08)
-        // per MS-TDS spec. Other values map directly to their enum discriminant.
+                                                  // In TDS 8 strict mode, the wire value must be ENCRYPT_STRICT (0x08)
+                                                  // per MS-TDS spec. Other values map directly to their enum discriminant.
         let encryption_wire_value = match self.encryption {
             EncryptionLevel::Strict => 0x08u8,
             other => other as u8,
@@ -228,9 +228,7 @@ impl Decode<BytesMut> for PreloginMessage {
                         tds::EncryptionLevel::Strict
                     } else {
                         tds::EncryptionLevel::try_from(encrypt).map_err(|_| {
-                            Error::Protocol(
-                                format!("invalid encryption value: {}", encrypt).into(),
-                            )
+                            Error::Protocol(format!("invalid encryption value: {}", encrypt).into())
                         })?
                     };
                     ret.encryption = level;

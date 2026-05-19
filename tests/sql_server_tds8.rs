@@ -55,17 +55,14 @@ macro_rules! skip_if_no_sql_server {
 }
 
 /// Connect to SQL Server with TDS 8 strict encryption (TLS-first, no routing).
-async fn connect_strict(
-) -> anyhow::Result<Client<tokio_util::compat::Compat<TcpStream>>> {
+async fn connect_strict() -> anyhow::Result<Client<tokio_util::compat::Compat<TcpStream>>> {
     let host = env::var("SQL_SERVER_HOST").unwrap_or_else(|_| "localhost".to_string());
     let port = env::var("SQL_SERVER_PORT").unwrap_or_else(|_| "1434".to_string());
     let user = env::var("SQL_SERVER_USER").unwrap_or_else(|_| "sa".to_string());
     let password = env::var("SQL_SERVER_PASSWORD")?;
 
     let conn_str = if let Ok(ca_path) = env::var("SQL_SERVER_CA_CERT") {
-        format!(
-            "server=tcp:{host},{port};encrypt=strict;database=master;Certificate={ca_path}"
-        )
+        format!("server=tcp:{host},{port};encrypt=strict;database=master;Certificate={ca_path}")
     } else {
         format!(
             "server=tcp:{host},{port};encrypt=strict;TrustServerCertificate=true;database=master"
@@ -133,10 +130,7 @@ async fn sql_server_strict_server_metadata() -> anyhow::Result<()> {
     );
     assert_eq!(db_name, "master");
     assert_eq!(transport, "TCP");
-    eprintln!(
-        "Version: {}",
-        &ver[..ver.find('\n').unwrap_or(ver.len())]
-    );
+    eprintln!("Version: {}", &ver[..ver.find('\n').unwrap_or(ver.len())]);
     eprintln!("Database: {}, Login: {}", db_name, login_name);
 
     Ok(())
@@ -268,20 +262,14 @@ async fn sql_server_strict_ddl_dml() -> anyhow::Result<()> {
 
     // Delete
     let rows_affected = client
-        .execute(
-            "DELETE FROM #tds8_strict_test WHERE id > @P1",
-            &[&2i32],
-        )
+        .execute("DELETE FROM #tds8_strict_test WHERE id > @P1", &[&2i32])
         .await?
         .total();
     assert_eq!(rows_affected, 2);
 
     // Verify final state
     let rows: Vec<_> = client
-        .query(
-            "SELECT id, value FROM #tds8_strict_test ORDER BY id",
-            &[],
-        )
+        .query("SELECT id, value FROM #tds8_strict_test ORDER BY id", &[])
         .await?
         .into_first_result()
         .await?;
@@ -383,9 +371,8 @@ async fn sql_server_strict_ca_cert_validation() -> anyhow::Result<()> {
     let user = env::var("SQL_SERVER_USER").unwrap_or_else(|_| "sa".to_string());
     let password = env::var("SQL_SERVER_PASSWORD")?;
 
-    let conn_str = format!(
-        "server=tcp:{host},{port};encrypt=strict;database=master;Certificate={ca_cert}"
-    );
+    let conn_str =
+        format!("server=tcp:{host},{port};encrypt=strict;database=master;Certificate={ca_cert}");
 
     let mut config = Config::from_ado_string(&conn_str)?;
     config.authentication(AuthMethod::sql_server(&user, &password));

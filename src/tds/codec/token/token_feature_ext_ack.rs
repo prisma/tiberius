@@ -1,4 +1,7 @@
-use crate::{SqlReadBytes, FEA_EXT_AZURESQLSUPPORT, FEA_EXT_COLUMNENCRYPTION, FEA_EXT_FEDAUTH, FEA_EXT_TERMINATOR, FEA_EXT_UTF8_SUPPORT};
+use crate::{
+    SqlReadBytes, FEA_EXT_AZURESQLSUPPORT, FEA_EXT_COLUMNENCRYPTION, FEA_EXT_FEDAUTH,
+    FEA_EXT_TERMINATOR, FEA_EXT_UTF8_SUPPORT,
+};
 use futures_util::AsyncReadExt;
 
 #[derive(Debug)]
@@ -23,7 +26,10 @@ pub enum FeatureAck {
     /// UTF-8 Support acknowledgment.
     Utf8Support(Vec<u8>),
     /// Unknown feature — stored for forward-compatibility.
-    Unknown { feature_id: u8, data: Vec<u8> },
+    Unknown {
+        feature_id: u8,
+        data: Vec<u8>,
+    },
 }
 
 impl TokenFeatureExtAck {

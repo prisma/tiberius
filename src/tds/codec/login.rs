@@ -33,8 +33,7 @@ impl FeatureLevel {
     pub fn done_row_count_bytes(self) -> u8 {
         // TDS 8.0 (0x08000000) is numerically lower than 7.x versions but is
         // functionally equivalent to SqlServerN for row count encoding.
-        if self == FeatureLevel::SqlServer2022
-            || self as u32 >= FeatureLevel::SqlServer2005 as u32
+        if self == FeatureLevel::SqlServer2022 || self as u32 >= FeatureLevel::SqlServer2005 as u32
         {
             8
         } else {
@@ -44,8 +43,7 @@ impl FeatureLevel {
 
     /// Returns true if this version uses modern (post-2005) wire formats.
     pub fn is_modern(self) -> bool {
-        self == FeatureLevel::SqlServer2022
-            || self as u32 >= FeatureLevel::SqlServer2005 as u32
+        self == FeatureLevel::SqlServer2022 || self as u32 >= FeatureLevel::SqlServer2005 as u32
     }
 }
 
@@ -323,9 +321,9 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
             &self.password,
             &self.app_name,
             &self.server_name,
-            &"".into(), // 5. ibExtension
+            &"".into(),         // 5. ibExtension
             &self.clt_int_name, // ibCltIntName
-            &"".into(), // ibLanguage
+            &"".into(),         // ibLanguage
             &self.db_name,
             &"".into(), // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong (4=2*2) and can insert it at the correct position
             &"".into(), // 10. ibSSPI
