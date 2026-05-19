@@ -8,8 +8,8 @@ use crate::{
     client::{tls::MaybeTlsStream, AuthMethod, Config},
     tds::{
         codec::{
-            self, Encode, LoginMessage, Packet, PacketCodec, PacketHeader, PacketStatus,
-            PreloginMessage, TokenDone,
+            self, Encode, FeatureLevel, LoginMessage, Packet, PacketCodec, PacketHeader,
+            PacketStatus, PreloginMessage, TokenDone,
         },
         stream::TokenStream,
         Context, HEADER_BYTES,
@@ -88,9 +88,23 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             buf: BytesMut::new(),
         };
 
-        // TDS 8 strict mode: TLS handshake first, then PRELOGIN inside TLS
+        // TDS 8 strict mode: TLS handshake first, then PRELOGIN inside TLS.
         if config.encryption == EncryptionLevel::Strict {
             let connection = connection.tls_handshake_strict(&config).await?;
+
+            if config.strict_pipelined {
+                // Backend reconnection after routing: pipeline PRELOGIN+LOGIN
+                // without waiting for the PRELOGIN response (required by Fabric
+                // backend servers).
+                let mut connection =
+                    Self::finish_connect_strict_pipelined(connection, config).await?;
+                connection.flush_done().await?;
+                return Ok(connection);
+            }
+
+            // Gateway (first connection): sequential PRELOGIN → LOGIN.
+            // The gateway will respond with a routing token, which propagates
+            // as Error::Routing for the caller to handle reconnection.
             let mut connection = Self::finish_connect_after_tls(connection, config).await?;
             connection.flush_done().await?;
             return Ok(connection);
@@ -99,7 +113,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
 
         let prelogin = connection
-            .prelogin(config.encryption, fed_auth_required)
+            .prelogin(config.encryption, fed_auth_required, config.instance_name.clone(), false)
             .await?;
 
         let encryption = prelogin.negotiated_encryption(config.encryption);
@@ -129,24 +143,162 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         mut connection: Self,
         config: Config,
     ) -> crate::Result<Self> {
+        // For backend connections (routing reconnect), we still need to send
+        // FEDAUTHREQUIRED if using AAD auth — the backend needs it to prepare
+        // for processing the FEDAUTH token in LOGIN.
+        let is_backend = config.instance_name.is_some();
         let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
 
         let prelogin = connection
-            .prelogin(config.encryption, fed_auth_required)
+            .prelogin(config.encryption, fed_auth_required, config.instance_name.clone(), is_backend)
             .await?;
+
+        // Use login_server_name if set (for routed connections, this is the
+        // original gateway hostname), otherwise fall back to host.
+        let server_name = config.login_server_name.or(config.host);
 
         let connection = connection
             .login(
                 config.auth,
                 EncryptionLevel::Strict,
                 config.database,
-                config.host,
+                server_name,
                 config.application_name,
                 config.readonly,
                 prelogin,
             )
             .await?;
 
+        Ok(connection)
+    }
+
+    /// Complete connection to a strict-mode backend after routing redirect.
+    ///
+    /// Fabric (and SQL Server 2022+ strict) backends require PRELOGIN and LOGIN
+    /// to be sent back-to-back (pipelined) without waiting for the PRELOGIN
+    /// response. This matches the behavior of the ODBC Driver 18.
+    ///
+    /// The flow is:
+    /// 1. Encode PRELOGIN and LOGIN packets
+    /// 2. Write all packets to the wire in a single flush
+    /// 3. Read PRELOGIN response
+    /// 4. Caller reads LOGIN response via flush_done()
+    async fn finish_connect_strict_pipelined(
+        mut connection: Self,
+        config: Config,
+    ) -> crate::Result<Self> {
+        // 1. Build PRELOGIN — match ODBC Driver 18 format:
+        //    6 options: VERSION, ENCRYPTION, INSTOPT, THREADID, MARS, TRACEID
+        //    NO FEDAUTHREQUIRED (ODBC doesn't send it to backends)
+        let mut prelogin_msg = PreloginMessage::new();
+        prelogin_msg.encryption = EncryptionLevel::Strict;
+        // Do NOT set fed_auth_required — ODBC omits it for backend PRELOGIN
+        prelogin_msg.fed_auth_required = false;
+        // Include TRACEID (36 bytes) — ODBC always sends this
+        prelogin_msg.include_trace_id = true;
+        // Include instance name from routing redirect in PRELOGIN to backend.
+        // The backend uses this to identify which database instance to connect to.
+        prelogin_msg.instance_name = config.instance_name.clone();
+
+        // 2. Build LOGIN (using assumed fed_auth_required=true, nonce=None —
+        //    standard for Fabric backends).
+        // MS-TDS spec says TDS 8.0 (0x08000000) for strict mode.
+        let mut login_message = LoginMessage::new();
+        login_message.tds_version(FeatureLevel::SqlServer2022);
+        // Azure SQL / Fabric backends require the AZURESQLSUPPORT feature
+        // extension to indicate the client can handle Azure-specific tokens.
+        login_message.azure_sql_support();
+
+        // Keep the LOGIN minimal — match gateway LOGIN structure exactly.
+        // No hostname, clt_int_name, client_pid, or client_prog_ver overrides.
+
+        if let Some(db) = config.database {
+            login_message.db_name(db);
+        }
+
+        // Use login_server_name if set (original gateway hostname for routed
+        // connections), otherwise fall back to the connection host.
+        let server_name = config.login_server_name.or(config.host);
+        if let Some(sn) = server_name {
+            login_message.server_name(sn);
+        }
+
+        if let Some(app_name) = config.application_name {
+            login_message.app_name(app_name);
+        }
+
+        login_message.readonly(config.readonly);
+
+        match config.auth {
+            AuthMethod::AADToken(token) => {
+                event!(
+                    Level::INFO,
+                    token_len = token.len(),
+                    "Sending pipelined LOGIN with AAD token (fed_auth_required=true, nonce=None)"
+                );
+                login_message.aad_token(token, true, None);
+            }
+            AuthMethod::SqlServer(auth) => {
+                login_message.user_name(auth.user().to_string());
+                login_message.password(auth.password().to_string());
+            }
+            AuthMethod::None => {}
+            #[cfg(any(windows, feature = "integrated-auth-gssapi"))]
+            _ => {
+                return Err(crate::Error::Protocol(
+                    "Integrated auth not supported for strict-mode pipelined backend connection"
+                        .into(),
+                ));
+            }
+        }
+
+        // 3. Feed PRELOGIN packet(s) to the transport buffer (no flush yet)
+        let packet_size =
+            (connection.context.packet_size() as usize) - crate::tds::HEADER_BYTES;
+
+        let mut prelogin_payload = BytesMut::new();
+        prelogin_msg.encode(&mut prelogin_payload)?;
+
+        let prelogin_id = connection.context.next_packet_id();
+        let mut prelogin_header = PacketHeader::pre_login(prelogin_id);
+        prelogin_header.set_status(PacketStatus::EndOfMessage);
+        connection
+            .feed_to_wire(prelogin_header, prelogin_payload)
+            .await?;
+
+        // 4. Feed LOGIN packet(s) to the transport buffer (no flush yet)
+        let mut login_payload = BytesMut::new();
+        login_message.encode(&mut login_payload)?;
+
+        let login_id = connection.context.next_packet_id();
+        let mut login_header = PacketHeader::login(login_id);
+
+        while !login_payload.is_empty() {
+            let writable = cmp::min(login_payload.len(), packet_size);
+            let split_payload = login_payload.split_to(writable);
+
+            if login_payload.is_empty() {
+                login_header.set_status(PacketStatus::EndOfMessage);
+            } else {
+                login_header.set_status(PacketStatus::NormalMessage);
+            }
+
+            connection
+                .feed_to_wire(login_header, split_payload)
+                .await?;
+        }
+
+        // 5. Single flush: send PRELOGIN+LOGIN together in one TLS write
+        connection.flush_sink().await?;
+
+        // 6. Read PRELOGIN response
+        let _prelogin_response: PreloginMessage = codec::collect_from(&mut connection).await?;
+
+        // The PRELOGIN response packet has EOM status which sets `flushed = true`.
+        // Reset it because we still expect the LOGIN response tokens to follow.
+        connection.flushed = false;
+
+        // 7. The LOGIN response tokens will be read by flush_done() in the caller
         Ok(connection)
     }
 
@@ -223,7 +375,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 split_payload.len() + HEADER_BYTES,
             );
 
-            self.write_to_wire(header, split_payload).await?;
+            // Buffer the packet without flushing. This ensures multi-packet
+            // messages are sent in a single TLS write, which is required by
+            // some backends (e.g., Microsoft Fabric).
+            let packet = Packet::new(header, split_payload);
+            self.transport.feed(packet).await?;
         }
 
         self.flush_sink().await?;
@@ -246,6 +402,43 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         let packet = Packet::new(header, data);
         self.transport.send(packet).await?;
+
+        Ok(())
+    }
+
+    /// Feeds a packet to the transport buffer WITHOUT flushing.
+    /// Use `flush_sink()` after feeding all packets to send them in one batch.
+    #[allow(dead_code)]
+    async fn feed_to_wire(
+        &mut self,
+        header: PacketHeader,
+        data: BytesMut,
+    ) -> crate::Result<()> {
+        self.flushed = false;
+
+        // Debug: dump the raw TDS frame (header + payload) to a file
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/opencode/tiberius_raw_tds.bin")
+        {
+            use std::io::Write as _;
+            // Encode the header + data as the PacketCodec would
+            let mut hdr_buf = BytesMut::with_capacity(8);
+            use bytes::BufMut as _;
+            let pkt_len = (data.len() + 8) as u16;
+            hdr_buf.put_u8(header.r#type() as u8);
+            hdr_buf.put_u8(header.status() as u8);
+            hdr_buf.put_u16(pkt_len);
+            hdr_buf.put_u16(0); // spid
+            hdr_buf.put_u8(0); // id placeholder (not accessible)
+            hdr_buf.put_u8(0); // window
+            let _ = f.write_all(&hdr_buf);
+            let _ = f.write_all(&data);
+        }
+
+        let packet = Packet::new(header, data);
+        self.transport.feed(packet).await?;
 
         Ok(())
     }
@@ -303,10 +496,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         &mut self,
         encryption: EncryptionLevel,
         fed_auth_required: bool,
+        instance_name: Option<String>,
+        include_trace_id: bool,
     ) -> crate::Result<PreloginMessage> {
         let mut msg = PreloginMessage::new();
         msg.encryption = encryption;
         msg.fed_auth_required = fed_auth_required;
+        msg.instance_name = instance_name.clone();
+        msg.include_trace_id = include_trace_id;
 
         let id = self.context.next_packet_id();
         self.send(PacketHeader::pre_login(id), msg).await?;
@@ -314,6 +511,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         let response: PreloginMessage = codec::collect_from(self).await?;
         // threadid (should be empty when sent from server to client)
         debug_assert_eq!(response.thread_id, 0);
+        event!(
+            Level::INFO,
+            version = response.version,
+            sub_build = response.sub_build,
+            encryption = ?response.encryption,
+            fed_auth_required = response.fed_auth_required,
+            has_nonce = response.nonce.is_some(),
+            "PRELOGIN response received"
+        );
         Ok(response)
     }
 
@@ -331,6 +537,18 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         prelogin: PreloginMessage,
     ) -> crate::Result<Self> {
         let mut login_message = LoginMessage::new();
+
+        // MS-TDS spec: TDS 8.0 strict mode requires version 0x08000000 in
+        // LOGIN7. This tells the server the client supports the TDS 8 transport.
+        if encryption == EncryptionLevel::Strict {
+            login_message.tds_version(FeatureLevel::SqlServer2022);
+            // Azure SQL / Fabric backends require the AZURESQLSUPPORT feature
+            // extension to indicate the client can handle Azure-specific tokens.
+            login_message.azure_sql_support();
+            // Set client interface name — ODBC sends "ODBC"; some backends
+            // may require a non-empty value.
+            login_message.clt_int_name("tiberius");
+        }
 
         if let Some(db) = db {
             login_message.db_name(db);
@@ -458,7 +676,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 self = self.post_login_encryption(encryption);
             }
             AuthMethod::AADToken(token) => {
+                event!(
+                    Level::INFO,
+                    fed_auth_echo = prelogin.fed_auth_required,
+                    has_nonce = prelogin.nonce.is_some(),
+                    token_len = token.len(),
+                    "Sending LOGIN with AAD token"
+                );
                 login_message.aad_token(token, prelogin.fed_auth_required, prelogin.nonce);
+
                 let id = self.context.next_packet_id();
                 self.send(PacketHeader::login(id), login_message).await?;
                 self = self.post_login_encryption(encryption);
@@ -594,13 +820,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Stream for Connection<S> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        match ready!(this.transport.try_poll_next_unpin(cx)) {
-            Some(Ok(packet)) => {
+        match this.transport.try_poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(packet))) => {
                 this.flushed = packet.is_last();
                 Poll::Ready(Some(Ok(packet)))
             }
-            Some(Err(e)) => Poll::Ready(Some(Err(e))),
-            None => Poll::Ready(None),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }

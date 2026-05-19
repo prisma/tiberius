@@ -32,6 +32,15 @@ pub struct Config {
     pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
     pub(crate) readonly: bool,
+    /// When true, PRELOGIN and LOGIN are sent back-to-back without waiting
+    /// for the PRELOGIN response. Required for TDS 8 strict mode backend
+    /// reconnection after receiving a routing redirect from the gateway.
+    pub(crate) strict_pipelined: bool,
+    /// Override the `server_name` field sent in the TDS LOGIN message.
+    /// When reconnecting to a backend after routing, this should be set to
+    /// the original gateway hostname so the backend knows which endpoint
+    /// the client intended to reach.
+    pub(crate) login_server_name: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +74,8 @@ impl Default for Config {
             trust: TrustConfig::Default,
             auth: AuthMethod::None,
             readonly: false,
+            strict_pipelined: false,
+            login_server_name: None,
         }
     }
 }
@@ -171,6 +182,35 @@ impl Config {
     /// - Defaults to `false`.
     pub fn readonly(&mut self, readnoly: bool) {
         self.readonly = readnoly;
+    }
+
+    /// Enable pipelined PRELOGIN+LOGIN for TDS 8 strict mode backend
+    /// reconnection.
+    ///
+    /// When connecting to a Microsoft Fabric (or SQL Server 2022+ strict mode)
+    /// endpoint, the gateway returns a routing redirect. The client must
+    /// disconnect and reconnect to the backend host. The backend requires
+    /// PRELOGIN and LOGIN to be sent back-to-back (pipelined) without waiting
+    /// for the PRELOGIN response.
+    ///
+    /// Call this method on the `Config` used for the backend reconnection after
+    /// receiving [`Error::Routing`].
+    ///
+    /// - Defaults to `false`.
+    pub fn strict_pipelined(&mut self) {
+        self.strict_pipelined = true;
+    }
+
+    /// Override the `server_name` field in the TDS LOGIN message.
+    ///
+    /// When reconnecting to a backend after routing, set this to the original
+    /// gateway/endpoint hostname. The backend uses this to identify which
+    /// workspace/database the client intended to reach, since the backend host
+    /// is an internal pool address.
+    ///
+    /// If not set, defaults to the value of `host()`.
+    pub fn login_server_name(&mut self, name: impl Into<String>) {
+        self.login_server_name = Some(name.into());
     }
 
     pub(crate) fn get_host(&self) -> &str {

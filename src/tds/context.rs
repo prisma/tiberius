@@ -17,7 +17,7 @@ impl Context {
         Context {
             version: FeatureLevel::SqlServerN,
             packet_size: 4096,
-            packet_id: 0,
+            packet_id: 1,
             transaction_desc: [0; 8],
             last_meta: None,
             spn: None,

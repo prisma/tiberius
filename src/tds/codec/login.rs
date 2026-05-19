@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use std::{borrow::Cow, io};
 
 uint_enum! {
-    #[repr(u32)]
+     #[repr(u32)]
     #[derive(PartialOrd)]
     pub enum FeatureLevel {
         SqlServerV7 = 0x70000000,
@@ -18,6 +18,8 @@ uint_enum! {
         SqlServer2008R2 = 0x730B0003,
         /// 2012, 2014, 2016
         SqlServerN = 0x74000004,
+        /// TDS 8.0 strict transport encryption (required for Microsoft Fabric)
+        SqlServer2022 = 0x08000000,
     }
 }
 
@@ -29,11 +31,21 @@ impl Default for FeatureLevel {
 
 impl FeatureLevel {
     pub fn done_row_count_bytes(self) -> u8 {
-        if self as u32 >= FeatureLevel::SqlServer2005 as u32 {
+        // TDS 8.0 (0x08000000) is numerically lower than 7.x versions but is
+        // functionally equivalent to SqlServerN for row count encoding.
+        if self == FeatureLevel::SqlServer2022
+            || self as u32 >= FeatureLevel::SqlServer2005 as u32
+        {
             8
         } else {
             4
         }
+    }
+
+    /// Returns true if this version uses modern (post-2005) wire formats.
+    pub fn is_modern(self) -> bool {
+        self == FeatureLevel::SqlServer2022
+            || self as u32 >= FeatureLevel::SqlServer2005 as u32
     }
 }
 
@@ -130,6 +142,9 @@ pub enum LoginTypeFlag {
 }
 
 pub(crate) const FEA_EXT_FEDAUTH: u8 = 0x02u8;
+pub(crate) const FEA_EXT_COLUMNENCRYPTION: u8 = 0x04u8;
+pub(crate) const FEA_EXT_AZURESQLSUPPORT: u8 = 0x08u8;
+pub(crate) const FEA_EXT_UTF8_SUPPORT: u8 = 0x0Au8;
 pub(crate) const FEA_EXT_TERMINATOR: u8 = 0xFFu8;
 pub(crate) const FED_AUTH_LIBRARYSECURITYTOKEN: u8 = 0x01;
 
@@ -172,15 +187,22 @@ pub struct LoginMessage<'a> {
     server_name: Cow<'a, str>,
     /// the default database to connect to
     db_name: Cow<'a, str>,
+    /// client interface name (e.g., "ODBC")
+    clt_int_name: Cow<'a, str>,
     fed_auth_ext: Option<FedAuthExt<'a>>,
+    /// Whether to include AZURESQLSUPPORT (0x08) feature extension.
+    /// Required for Azure SQL Database and Microsoft Fabric backends.
+    azure_sql_support: bool,
 }
 
 impl<'a> LoginMessage<'a> {
     pub fn new() -> LoginMessage<'a> {
         Self {
             packet_size: 4096,
+            client_lcid: 0x0409, // English US — required by some Azure backends
             option_flags_1: OptionFlag1::UseDbNotify | OptionFlag1::InitDbFatal,
             option_flags_2: OptionFlag2::InitLangFatal | OptionFlag2::OdbcDriver,
+            type_flags: BitFlags::from_flag(LoginTypeFlag::UseTSQL),
             option_flags_3: BitFlags::from_flag(OptionFlag3::UnknownCollationHandling),
             app_name: "tiberius".into(),
             ..Default::default()
@@ -208,6 +230,10 @@ impl<'a> LoginMessage<'a> {
 
     pub fn server_name(&mut self, server_name: impl Into<Cow<'a, str>>) {
         self.server_name = server_name.into();
+    }
+
+    pub fn tds_version(&mut self, version: FeatureLevel) {
+        self.tds_version = version;
     }
 
     pub fn user_name(&mut self, user_name: impl Into<Cow<'a, str>>) {
@@ -240,6 +266,30 @@ impl<'a> LoginMessage<'a> {
             self.type_flags.remove(LoginTypeFlag::ReadOnlyIntent);
         }
     }
+
+    pub fn hostname(&mut self, hostname: impl Into<Cow<'a, str>>) {
+        self.hostname = hostname.into();
+    }
+
+    pub fn client_pid(&mut self, pid: u32) {
+        self.client_pid = pid;
+    }
+
+    pub fn client_prog_ver(&mut self, ver: u32) {
+        self.client_prog_ver = ver;
+    }
+
+    pub fn clt_int_name(&mut self, name: impl Into<Cow<'a, str>>) {
+        self.clt_int_name = name.into();
+    }
+
+    /// Enable the AZURESQLSUPPORT (0x08) feature extension.
+    /// Required by Azure SQL Database and Microsoft Fabric backends.
+    /// Signals the client supports federated auth info tokens and DNS caching.
+    pub fn azure_sql_support(&mut self) {
+        self.option_flags_3.insert(OptionFlag3::ExtensionUsed);
+        self.azure_sql_support = true;
+    }
 }
 
 impl<'a> Encode<BytesMut> for LoginMessage<'a> {
@@ -271,7 +321,7 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
             &self.app_name,
             &self.server_name,
             &"".into(), // 5. ibExtension
-            &"".into(), // ibCltIntName
+            &self.clt_int_name, // ibCltIntName
             &"".into(), // ibLanguage
             &self.db_name,
             &"".into(), // 9. ClientId (6 bytes); this is included in var_data so we don't lack the bytes of cbSspiLong (4=2*2) and can insert it at the correct position
@@ -349,9 +399,10 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
         // cbSSPILong
         cursor.write_u32::<LittleEndian>(0)?;
 
-        // FeatureExt
-        if let Some(fed_auth_ext) = self.fed_auth_ext {
-            // update fea_ext_offset
+        // FeatureExt — written when either FEDAUTH or AZURESQLSUPPORT is needed
+        let has_feature_ext = self.fed_auth_ext.is_some() || self.azure_sql_support;
+        if has_feature_ext {
+            // update fea_ext_offset (ibExtension offset/length in variable data header)
             cursor.set_position(fea_ext_offset);
             cursor.write_u16::<LittleEndian>(data_offset as u16)?;
             cursor.write_u16::<LittleEndian>(4)?;
@@ -360,32 +411,45 @@ impl<'a> Encode<BytesMut> for LoginMessage<'a> {
             data_offset += 4;
             cursor.write_u32::<LittleEndian>(data_offset as u32)?;
 
-            cursor.write_u8(FEA_EXT_FEDAUTH)?;
+            // Write FEDAUTH feature extension if present
+            if let Some(fed_auth_ext) = self.fed_auth_ext {
+                cursor.write_u8(FEA_EXT_FEDAUTH)?;
 
-            let mut token = Cursor::new(Vec::new());
-            for codepoint in fed_auth_ext.fed_auth_token.encode_utf16() {
-                token.write_u16::<LittleEndian>(codepoint)?;
+                let mut token = Cursor::new(Vec::new());
+                for codepoint in fed_auth_ext.fed_auth_token.encode_utf16() {
+                    token.write_u16::<LittleEndian>(codepoint)?;
+                }
+                let token = token.into_inner();
+
+                // options (1) + TokenLength(4) + Token.length + nonce.length
+                let feature_ext_length =
+                    1 + 4 + token.len() + if fed_auth_ext.nonce.is_some() { 32 } else { 0 };
+
+                cursor.write_u32::<LittleEndian>(feature_ext_length as u32)?;
+
+                let mut options: u8 = FED_AUTH_LIBRARYSECURITYTOKEN << 1;
+                if fed_auth_ext.fed_auth_echo {
+                    options |= 1 // fFedAuthEcho
+                }
+
+                cursor.write_u8(options)?;
+
+                cursor.write_u32::<LittleEndian>(token.len() as u32)?;
+                cursor.write_all(token.as_slice())?;
+
+                if let Some(nonce) = fed_auth_ext.nonce {
+                    cursor.write_all(nonce.as_ref())?;
+                }
             }
-            let token = token.into_inner();
 
-            // options (1) + TokenLength(4) + Token.length + nonce.length
-            let feature_ext_length =
-                1 + 4 + token.len() + if fed_auth_ext.nonce.is_some() { 32 } else { 0 };
-
-            cursor.write_u32::<LittleEndian>(feature_ext_length as u32)?;
-
-            let mut options: u8 = FED_AUTH_LIBRARYSECURITYTOKEN << 1;
-            if fed_auth_ext.fed_auth_echo {
-                options |= 1 // fFedAuthEcho
-            }
-
-            cursor.write_u8(options)?;
-
-            cursor.write_u32::<LittleEndian>(token.len() as u32)?;
-            cursor.write_all(token.as_slice())?;
-
-            if let Some(nonce) = fed_auth_ext.nonce {
-                cursor.write_all(nonce.as_ref())?;
+            // Write AZURESQLSUPPORT feature extension if enabled
+            if self.azure_sql_support {
+                cursor.write_u8(FEA_EXT_AZURESQLSUPPORT)?;
+                // Feature data length: 1 byte
+                cursor.write_u32::<LittleEndian>(1)?;
+                // Feature data: 0x01 = fSQLDNSCaching (client supports
+                // federated auth info token and DNS caching)
+                cursor.write_u8(0x01)?;
             }
 
             cursor.write_u8(FEA_EXT_TERMINATOR)?;
@@ -546,6 +610,14 @@ mod tests {
                             nonce,
                         };
                         ret.fed_auth_ext = Some(fed_auth_ext);
+                    } else if fe == FEA_EXT_COLUMNENCRYPTION
+                        || fe == FEA_EXT_AZURESQLSUPPORT
+                        || fe == FEA_EXT_UTF8_SUPPORT
+                    {
+                        // Skip known extensions by reading their length + data
+                        let fea_ext_len = cursor.read_u32::<LittleEndian>()?;
+                        let pos = cursor.position();
+                        cursor.set_position(pos + fea_ext_len as u64);
                     } else {
                         unimplemented!("unsupported feature ext {:?}", fe);
                     }

@@ -1,4 +1,4 @@
-use crate::{tds::codec::FeatureLevel, SqlReadBytes};
+use crate::SqlReadBytes;
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -32,7 +32,7 @@ impl TokenError {
         let server = src.read_b_varchar().await?;
         let procedure = src.read_b_varchar().await?;
 
-        let line = if src.context().version() > FeatureLevel::SqlServer2005 {
+        let line = if src.context().version().is_modern() {
             src.read_u32_le().await?
         } else {
             src.read_u16_le().await? as u32

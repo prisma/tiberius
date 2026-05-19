@@ -23,6 +23,10 @@ path = "tests/query.rs"
 name = "query"
 
 [[test]]
+path = "tests/fabric.rs"
+name = "fabric"
+
+[[test]]
 path = "tests/named-instance-async.rs"
 name = "named-instance-async"
 required-features = ["sql-browser-async-std"]
@@ -50,7 +54,7 @@ asynchronous-codec = "0.6"
 async-trait = "0.1"
 connection-string = "0.2"
 num-traits = "0.2"
-uuid = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
 winauth = { version = "0.0.4", optional = true }
@@ -62,6 +66,12 @@ libgssapi = { version = "0.8.1", optional = true, default-features = false }
 version = "0.4"
 features = ["runtime-async-std"]
 optional = true
+
+[dependencies.native-tls-crate]
+version = "0.2.18"
+optional = true
+features = ["alpn"]
+package = "native-tls"
 
 [dependencies.tokio]
 version = "1.0"
@@ -200,5 +210,5 @@ sql-browser-smol = ["async-io", "async-net", "futures-lite"]
 integrated-auth-gssapi = ["libgssapi"]
 bigdecimal = ["bigdecimal_"]
 rustls = ["tokio-rustls", "tokio-util", "rustls-pemfile", "rustls-native-certs"]
-native-tls = ["async-native-tls"]
+native-tls = ["async-native-tls", "native-tls-crate"]
 vendored-openssl = ["opentls"]

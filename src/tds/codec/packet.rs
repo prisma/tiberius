@@ -25,11 +25,18 @@ impl Encode<BytesMut> for Packet {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         let size = (self.payload.len() as u16 + HEADER_BYTES as u16).to_be_bytes();
 
+        // Remember offset where this packet starts. When multiple packets
+        // are buffered before a flush (pipelining), dst may already contain
+        // previously encoded packets.
+        let offset = dst.len();
+
         self.header.encode(dst)?;
         dst.extend(self.payload);
 
-        dst[2] = size[0];
-        dst[3] = size[1];
+        // Patch the length field (bytes 2-3 of the TDS header) at the
+        // correct position within this packet, not at absolute buffer start.
+        dst[offset + 2] = size[0];
+        dst[offset + 3] = size[1];
 
         Ok(())
     }

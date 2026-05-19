@@ -4,7 +4,7 @@ use crate::{tds, Error, Result};
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use bytes::{BufMut, BytesMut};
 use std::convert::TryFrom;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 use tds::EncryptionLevel;
 use uuid::Uuid;
 
@@ -34,8 +34,10 @@ pub struct PreloginMessage {
     pub thread_id: u32,
     /// token=0x04
     pub mars: bool,
-    /// token=0x05
+    /// token=0x05: TRACEID — connection GUID (16) + activity GUID (16) + sequence (4) = 36 bytes
     pub activity_id: Option<ActivityId>,
+    /// token=0x05: If true, encode TRACEID with random GUIDs in the client PRELOGIN
+    pub include_trace_id: bool,
     /// token=0x06
     pub fed_auth_required: bool,
     pub nonce: Option<[u8; 32]>,
@@ -52,6 +54,7 @@ impl PreloginMessage {
             thread_id: 0,
             mars: false,
             activity_id: None,
+            include_trace_id: false,
             fed_auth_required: false,
             nonce: None,
         }
@@ -112,13 +115,25 @@ impl Encode<BytesMut> for PreloginMessage {
 
         // encryption
         fields.push((PRELOGIN_ENCRYPTION, 0x01)); // encryption
-        // In TDS 8 strict mode, TLS is already established before PRELOGIN.
-        // Send ENCRYPT_ON (0x01) on the wire since strict is not a valid wire value.
+        // In TDS 8 strict mode, the wire value must be ENCRYPT_STRICT (0x08)
+        // per MS-TDS spec. Other values map directly to their enum discriminant.
         let encryption_wire_value = match self.encryption {
-            EncryptionLevel::Strict => EncryptionLevel::On as u8,
+            EncryptionLevel::Strict => 0x08u8,
             other => other as u8,
         };
         data_cursor.write_u8(encryption_wire_value)?;
+
+        // instance name (INSTOPT) — null-terminated ASCII string
+        {
+            let inst_bytes: Vec<u8> = match &self.instance_name {
+                Some(name) => name.as_bytes().to_vec(),
+                None => Vec::new(),
+            };
+            // length = instance name bytes + null terminator
+            fields.push((PRELOGIN_INSTOPT, (inst_bytes.len() + 1) as u16));
+            data_cursor.write_all(&inst_bytes)?;
+            data_cursor.write_u8(0x00)?; // null terminator
+        }
 
         // threadid
         fields.push((PRELOGIN_THREADID, 0x04)); // thread id
@@ -127,6 +142,25 @@ impl Encode<BytesMut> for PreloginMessage {
         // MARS
         fields.push((PRELOGIN_MARS, 0x01)); // MARS
         data_cursor.write_u8(self.mars as u8)?;
+
+        // TRACEID: connection GUID (16) + activity GUID (16) + sequence (4) = 36 bytes
+        // ODBC Driver 18 always sends TRACEID to Fabric backends.
+        if self.include_trace_id {
+            fields.push((PRELOGIN_TRACEID, 36));
+            // Generate random connection and activity GUIDs
+            let conn_id = Uuid::new_v4();
+            let activity_id = Uuid::new_v4();
+            // Write connection ID as MS-ordered GUID (reordered bytes)
+            let mut conn_bytes = *conn_id.as_bytes();
+            reorder_bytes(&mut conn_bytes);
+            data_cursor.write_all(&conn_bytes)?;
+            // Write activity ID as MS-ordered GUID
+            let mut act_bytes = *activity_id.as_bytes();
+            reorder_bytes(&mut act_bytes);
+            data_cursor.write_all(&act_bytes)?;
+            // Sequence number (u32 LE)
+            data_cursor.write_u32::<LittleEndian>(0)?;
+        }
 
         // fed auth
         if self.fed_auth_required {
@@ -189,9 +223,17 @@ impl Decode<BytesMut> for PreloginMessage {
                 // encryption
                 PRELOGIN_ENCRYPTION => {
                     let encrypt = cursor.read_u8()?;
-                    ret.encryption = tds::EncryptionLevel::try_from(encrypt).map_err(|_| {
-                        Error::Protocol(format!("invalid encryption value: {}", encrypt).into())
-                    })?;
+                    // Wire value 0x08 = ENCRYPT_STRICT (TDS 8.0), maps to our Strict variant
+                    let level = if encrypt == 0x08 {
+                        tds::EncryptionLevel::Strict
+                    } else {
+                        tds::EncryptionLevel::try_from(encrypt).map_err(|_| {
+                            Error::Protocol(
+                                format!("invalid encryption value: {}", encrypt).into(),
+                            )
+                        })?
+                    };
+                    ret.encryption = level;
                 }
                 // instance name
                 PRELOGIN_INSTOPT => {
