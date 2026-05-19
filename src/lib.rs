@@ -269,7 +269,7 @@ mod tds;
 
 mod sql_browser;
 
-pub use client::{AuthMethod, Client, Config};
+pub use client::{AuthMethod, Client, Config, TokenProvider};
 pub(crate) use error::Error;
 pub use from_sql::{FromSql, FromSqlOwned};
 pub use query::Query;

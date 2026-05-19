@@ -110,7 +110,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             return Ok(connection);
         }
 
-        let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
+        let fed_auth_required = config.auth.is_aad();
 
         let prelogin = connection
             .prelogin(
@@ -149,7 +149,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         // FEDAUTHREQUIRED if using AAD auth — the backend needs it to prepare
         // for processing the FEDAUTH token in LOGIN.
         let is_backend = config.instance_name.is_some();
-        let fed_auth_required = matches!(config.auth, AuthMethod::AADToken(_));
+        let fed_auth_required = config.auth.is_aad();
 
         // In TDS 8 strict mode, send ENCRYPT_STRICT (0x08) on the wire.
         // TLS is already established, and the PRELOGIN encryption field signals
@@ -247,6 +247,17 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                     Level::INFO,
                     token_len = token.len(),
                     "Sending pipelined LOGIN with AAD token (fed_auth_required=true, nonce=None)"
+                );
+                login_message.aad_token(token, true, None);
+            }
+            AuthMethod::AADTokenProvider(provider) => {
+                let token = provider.get_token().await.map_err(|e| {
+                    crate::Error::Protocol(format!("Token provider failed: {}", e).into())
+                })?;
+                event!(
+                    Level::INFO,
+                    token_len = token.len(),
+                    "Sending pipelined LOGIN with provider token (fed_auth_required=true, nonce=None)"
                 );
                 login_message.aad_token(token, true, None);
             }
@@ -683,6 +694,23 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                     has_nonce = prelogin.nonce.is_some(),
                     token_len = token.len(),
                     "Sending LOGIN with AAD token"
+                );
+                login_message.aad_token(token, prelogin.fed_auth_required, prelogin.nonce);
+
+                let id = self.context.next_packet_id();
+                self.send(PacketHeader::login(id), login_message).await?;
+                self = self.post_login_encryption(encryption);
+            }
+            AuthMethod::AADTokenProvider(provider) => {
+                let token = provider.get_token().await.map_err(|e| {
+                    crate::Error::Protocol(format!("Token provider failed: {}", e).into())
+                })?;
+                event!(
+                    Level::INFO,
+                    fed_auth_echo = prelogin.fed_auth_required,
+                    has_nonce = prelogin.nonce.is_some(),
+                    token_len = token.len(),
+                    "Sending LOGIN with provider token"
                 );
                 login_message.aad_token(token, prelogin.fed_auth_required, prelogin.nonce);
 

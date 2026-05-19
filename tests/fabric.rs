@@ -552,3 +552,104 @@ async fn fabric_strict_string_operations() -> anyhow::Result<()> {
     eprintln!("String/unicode operations over Fabric strict connection: OK");
     Ok(())
 }
+
+/// Test: Connect to Fabric using a TokenProvider (dynamic token refresh).
+///
+/// This verifies the AADTokenProvider auth path end-to-end through the full
+/// gateway → routing → pipelined backend reconnect flow.
+#[tokio::test]
+async fn fabric_strict_token_provider() -> anyhow::Result<()> {
+    skip_if_no_fabric!();
+
+    use async_trait::async_trait;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tiberius::TokenProvider;
+
+    /// A test token provider that wraps a static token and counts invocations.
+    struct CountingTokenProvider {
+        token: String,
+        call_count: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl TokenProvider for CountingTokenProvider {
+        async fn get_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            Ok(self.token.clone())
+        }
+    }
+
+    let endpoint = env::var("FABRIC_ENDPOINT")?;
+    let database = env::var("FABRIC_DATABASE")?;
+    let token = get_aad_token().await?;
+
+    let provider = Arc::new(CountingTokenProvider {
+        token,
+        call_count: AtomicUsize::new(0),
+    });
+
+    // Connect using the provider-based auth
+    let mut config = fabric_config(&endpoint, &database)?;
+    config.authentication(AuthMethod::token_provider(provider.clone()));
+
+    let tcp = TcpStream::connect(config.get_addr()).await?;
+    tcp.set_nodelay(true)?;
+
+    let client_result = Client::connect(config, tcp.compat_write()).await;
+
+    let mut client = match client_result {
+        Ok(client) => client,
+        Err(Error::Routing { host, port }) => {
+            eprintln!(
+                "Provider test: routing redirect to {}:{}, reconnecting...",
+                host, port
+            );
+
+            let backend_host = host.split('\\').next().unwrap_or(&host);
+            let instance_name = host.split('\\').nth(1);
+
+            let mut backend_config = Config::new();
+            backend_config.host(backend_host);
+            backend_config.port(port);
+            backend_config.encryption(EncryptionLevel::Strict);
+            backend_config.authentication(AuthMethod::token_provider(provider.clone()));
+            backend_config.database(&*database);
+            if let Some(inst) = instance_name {
+                backend_config.instance_name(inst);
+            }
+            backend_config.login_server_name(&*endpoint);
+
+            let tcp = TcpStream::connect(backend_config.get_addr()).await?;
+            tcp.set_nodelay(true)?;
+
+            Client::connect(backend_config, tcp.compat_write()).await?
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    // Verify we can query
+    let row = client
+        .query("SELECT 42 AS provider_test", &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    assert_eq!(Some(42i32), row.get("provider_test"));
+
+    // The provider should have been called at least once (gateway),
+    // and typically twice (gateway + backend after routing)
+    let calls = provider.call_count.load(Ordering::SeqCst);
+    eprintln!(
+        "TokenProvider was called {} time(s) during connection",
+        calls
+    );
+    assert!(
+        calls >= 1,
+        "TokenProvider should be called at least once, got {}",
+        calls
+    );
+
+    eprintln!("Fabric strict connection with TokenProvider: OK");
+    Ok(())
+}
