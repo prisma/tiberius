@@ -101,7 +101,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         // TDS 8 strict mode: TLS handshake first, then PRELOGIN inside TLS.
         if config.encryption == EncryptionLevel::Strict {
-            let connection = connection.tls_handshake_strict(&config).await?;
+            let connection = match connection.tls_handshake_strict(&config).await {
+                Ok(c) => c,
+                Err(e) => {
+                    return Err(Self::wrap_strict_tls_error(e, config.get_host()));
+                }
+            };
 
             if config.strict_pipelined {
                 // Backend reconnection after routing: pipeline PRELOGIN+LOGIN
@@ -849,6 +854,33 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         Ok(self)
     }
 
+    /// Wraps a TLS handshake error with context about strict mode requirements.
+    ///
+    /// When TDS 8 strict TLS fails, the raw error (connection reset, handshake
+    /// failure) is often confusing. This adds actionable guidance.
+    fn wrap_strict_tls_error(err: crate::Error, host: &str) -> crate::Error {
+        match &err {
+            crate::Error::Tls(msg) => crate::Error::Tls(format!(
+                "TDS 8 strict TLS handshake with '{}' failed: {}. \
+                 The server may not support TDS 8 strict mode \
+                 (requires SQL Server 2025+ with forcestrict=1, Azure SQL, or Microsoft Fabric). \
+                 For servers that don't support strict mode, use encrypt=true instead of encrypt=strict.",
+                host, msg
+            )),
+            crate::Error::Io { kind, message } => crate::Error::Io {
+                kind: *kind,
+                message: format!(
+                    "TDS 8 strict TLS handshake with '{}' failed: {}. \
+                     The server may not support TDS 8 strict mode \
+                     (requires SQL Server 2025+ with forcestrict=1, Azure SQL, or Microsoft Fabric). \
+                     For servers that don't support strict mode, use encrypt=true instead of encrypt=strict.",
+                    host, message
+                ),
+            },
+            _ => err,
+        }
+    }
+
     pub(crate) async fn close(mut self) -> crate::Result<()> {
         self.transport.close().await
     }
@@ -929,5 +961,62 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> SqlReadBytes for Connection<S> {
     /// A mutable reference to the current execution context.
     fn context_mut(&mut self) -> &mut Context {
         &mut self.context
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::ErrorKind;
+
+    #[test]
+    fn wrap_strict_tls_error_wraps_tls_error() {
+        let original = crate::Error::Tls("handshake failure".to_string());
+        let wrapped =
+            Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(original, "myserver.example.com");
+
+        let msg = wrapped.to_string();
+        assert!(msg.contains("myserver.example.com"), "should contain host");
+        assert!(msg.contains("handshake failure"), "should contain original error");
+        assert!(msg.contains("strict"), "should mention strict mode");
+        assert!(
+            msg.contains("encrypt=true"),
+            "should suggest alternative: {}",
+            msg
+        );
+        assert!(
+            msg.contains("SQL Server 2025"),
+            "should mention version requirement: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn wrap_strict_tls_error_wraps_io_error() {
+        let original = crate::Error::Io {
+            kind: ErrorKind::ConnectionReset,
+            message: "connection reset by peer".to_string(),
+        };
+        let wrapped =
+            Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(original, "10.0.0.1");
+
+        let msg = wrapped.to_string();
+        assert!(msg.contains("10.0.0.1"), "should contain host");
+        assert!(
+            msg.contains("connection reset by peer"),
+            "should contain original: {}",
+            msg
+        );
+        assert!(msg.contains("strict"), "should mention strict mode");
+    }
+
+    #[test]
+    fn wrap_strict_tls_error_passes_through_other_errors() {
+        let original = crate::Error::Protocol("something else".into());
+        let wrapped =
+            Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(original.clone(), "host");
+
+        // Non-TLS/IO errors should pass through unchanged
+        assert_eq!(wrapped, original);
     }
 }

@@ -393,3 +393,58 @@ async fn sql_server_strict_ca_cert_validation() -> anyhow::Result<()> {
     eprintln!("CA cert validation with strict mode: OK");
     Ok(())
 }
+
+/// Test: Verify improved error message when strict TLS handshake fails.
+///
+/// This spins up a local TCP listener that immediately closes the connection,
+/// simulating a server that doesn't support TDS 8 strict mode. The error
+/// message should contain actionable guidance.
+#[tokio::test]
+async fn strict_error_message_on_non_strict_server() -> anyhow::Result<()> {
+    use tokio::net::TcpListener;
+
+    // Start a local TCP listener that immediately drops incoming connections
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+
+    tokio::spawn(async move {
+        // Accept one connection and immediately drop it (simulates non-TLS server)
+        if let Ok((conn, _)) = listener.accept().await {
+            drop(conn);
+        }
+    });
+
+    let mut config = Config::new();
+    config.host("my-server.example.com");
+    config.port(port);
+    config.encryption(tiberius::EncryptionLevel::Strict);
+    config.authentication(AuthMethod::sql_server("sa", "dummy"));
+    config.trust_cert();
+
+    let tcp = TcpStream::connect(format!("127.0.0.1:{}", port)).await?;
+    tcp.set_nodelay(true)?;
+
+    let result = Client::connect(config, tcp.compat_write()).await;
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+
+    // The error should mention strict mode and provide guidance
+    assert!(
+        err_msg.contains("strict") || err_msg.contains("TDS 8"),
+        "Error message should mention strict mode, got: {}",
+        err_msg
+    );
+    assert!(
+        err_msg.contains("my-server.example.com"),
+        "Error message should contain the hostname, got: {}",
+        err_msg
+    );
+    assert!(
+        err_msg.contains("encrypt=true"),
+        "Error message should suggest alternative, got: {}",
+        err_msg
+    );
+
+    eprintln!("Strict TLS error message: {}", err_msg);
+    Ok(())
+}
