@@ -4,6 +4,12 @@ use crate::{
 };
 use futures_util::AsyncReadExt;
 
+/// Maximum allowed payload size for a single FEATUREEXTACK feature data field.
+/// In practice these are small (0-32 bytes for FedAuth nonce, 1 byte for
+/// AzureSqlSupport, etc.), so 1 MiB is a generous upper bound that guards
+/// against malformed packets causing large allocations.
+const MAX_FEATURE_ACK_DATA_LEN: usize = 1 << 20;
+
 #[derive(Debug)]
 pub struct TokenFeatureExtAck {
     pub features: Vec<FeatureAck>,
@@ -54,42 +60,52 @@ impl TokenFeatureExtAck {
                 } else if data_len == 0 {
                     None
                 } else {
-                    panic!("invalid Feature_Ext_Ack token");
+                    return Err(crate::Error::Protocol(
+                        format!(
+                            "FEATUREEXTACK FEDAUTH: unexpected data_len {data_len} (expected 0 or 32)"
+                        )
+                        .into(),
+                    ));
                 };
 
                 features.push(FeatureAck::FedAuth(FedAuthAck::SecurityToken { nonce }))
             } else if feature_id == FEA_EXT_AZURESQLSUPPORT {
-                let data_len = src.read_u32_le().await? as usize;
-                let mut data = vec![0u8; data_len];
-                if data_len > 0 {
-                    src.read_exact(&mut data).await?;
-                }
+                let data = Self::read_feature_data(src).await?;
                 features.push(FeatureAck::AzureSqlSupport(data));
             } else if feature_id == FEA_EXT_COLUMNENCRYPTION {
-                let data_len = src.read_u32_le().await? as usize;
-                let mut data = vec![0u8; data_len];
-                if data_len > 0 {
-                    src.read_exact(&mut data).await?;
-                }
+                let data = Self::read_feature_data(src).await?;
                 features.push(FeatureAck::ColumnEncryption(data));
             } else if feature_id == FEA_EXT_UTF8_SUPPORT {
-                let data_len = src.read_u32_le().await? as usize;
-                let mut data = vec![0u8; data_len];
-                if data_len > 0 {
-                    src.read_exact(&mut data).await?;
-                }
+                let data = Self::read_feature_data(src).await?;
                 features.push(FeatureAck::Utf8Support(data));
             } else {
                 // Unknown feature — skip gracefully by reading data_len bytes
-                let data_len = src.read_u32_le().await? as usize;
-                let mut data = vec![0u8; data_len];
-                if data_len > 0 {
-                    src.read_exact(&mut data).await?;
-                }
+                let data = Self::read_feature_data(src).await?;
                 features.push(FeatureAck::Unknown { feature_id, data });
             }
         }
 
         Ok(TokenFeatureExtAck { features })
+    }
+
+    /// Read a feature data payload with a size guard against malformed packets.
+    async fn read_feature_data<R>(src: &mut R) -> crate::Result<Vec<u8>>
+    where
+        R: SqlReadBytes + Unpin,
+    {
+        let data_len = src.read_u32_le().await? as usize;
+        if data_len > MAX_FEATURE_ACK_DATA_LEN {
+            return Err(crate::Error::Protocol(
+                format!(
+                    "FEATUREEXTACK payload too large: {data_len} bytes (max {MAX_FEATURE_ACK_DATA_LEN})"
+                )
+                .into(),
+            ));
+        }
+        let mut data = vec![0u8; data_len];
+        if data_len > 0 {
+            src.read_exact(&mut data).await?;
+        }
+        Ok(data)
     }
 }

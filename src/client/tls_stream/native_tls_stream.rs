@@ -57,6 +57,9 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
                 );
                 native_builder.danger_accept_invalid_certs(true);
                 native_builder.danger_accept_invalid_hostnames(true);
+                // SNI remains enabled (unlike the non-strict TrustAll path) because
+                // cloud endpoints (Azure SQL, Fabric) use SNI to route the TLS
+                // connection to the correct tenant/gateway even in trust-all mode.
             }
             TrustConfig::Default => {
                 event!(Level::INFO, "Using default trust configuration.");

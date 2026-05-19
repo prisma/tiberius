@@ -38,15 +38,15 @@ macro_rules! skip_if_no_fabric_sqldb {
 }
 
 fn get_endpoint() -> String {
-    env::var("FABRIC_SQLDB_ENDPOINT").unwrap()
+    env::var("FABRIC_SQLDB_ENDPOINT").expect("FABRIC_SQLDB_ENDPOINT must be set")
 }
 
 fn get_database() -> String {
-    env::var("FABRIC_SQLDB_DATABASE").unwrap()
+    env::var("FABRIC_SQLDB_DATABASE").expect("FABRIC_SQLDB_DATABASE must be set")
 }
 
 fn get_token() -> String {
-    env::var("FABRIC_SQLDB_TOKEN").unwrap()
+    env::var("FABRIC_SQLDB_TOKEN").expect("FABRIC_SQLDB_TOKEN must be set")
 }
 
 /// Connect to Fabric SQL Database with encrypt=strict (TDS 8).
