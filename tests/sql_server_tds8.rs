@@ -38,7 +38,7 @@
 //! ```
 
 use std::env;
-use tiberius::{AuthMethod, Client, Config};
+use tiberius::{AuthMethod, Client, Config, EncryptionLevel};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
@@ -446,5 +446,46 @@ async fn strict_error_message_on_non_strict_server() -> anyhow::Result<()> {
     );
 
     eprintln!("Strict TLS error message: {}", err_msg);
+    Ok(())
+}
+
+/// Test: connection_encryption() returns Strict for TDS 8 strict connections.
+#[tokio::test]
+async fn connection_encryption_reports_strict() -> anyhow::Result<()> {
+    skip_if_no_sql_server!();
+
+    let client = connect_strict().await?;
+
+    assert_eq!(
+        client.connection_encryption(),
+        EncryptionLevel::Strict,
+        "SQL Server with forcestrict=1 should report Strict encryption"
+    );
+
+    eprintln!("connection_encryption() = {:?}", client.connection_encryption());
+    Ok(())
+}
+
+/// Test: is_healthy() succeeds on a live strict connection.
+#[tokio::test]
+async fn is_healthy_on_strict_connection() -> anyhow::Result<()> {
+    skip_if_no_sql_server!();
+
+    let mut client = connect_strict().await?;
+
+    // First health check
+    client.is_healthy().await?;
+
+    // Run a real query in between
+    let _ = client
+        .query("SELECT @@VERSION", &[])
+        .await?
+        .into_row()
+        .await?;
+
+    // Second health check — still healthy after use
+    client.is_healthy().await?;
+
+    eprintln!("is_healthy() passed on strict connection");
     Ok(())
 }

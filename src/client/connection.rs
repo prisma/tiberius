@@ -57,6 +57,8 @@ where
     flushed: bool,
     context: Context,
     buf: BytesMut,
+    /// The encryption level used for this connection.
+    pub(crate) encryption: EncryptionLevel,
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Debug for Connection<S> {
@@ -86,6 +88,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             context,
             flushed: false,
             buf: BytesMut::new(),
+            encryption: EncryptionLevel::Off,
         };
 
         // Auto-detect strict mode from hostname when encryption wasn't
@@ -98,6 +101,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 "Auto-detected TDS 8 strict encryption from hostname"
             );
         }
+
+        // Record the resolved encryption level for later inspection.
+        connection.encryption = config.encryption;
 
         // TDS 8 strict mode: TLS handshake first, then PRELOGIN inside TLS.
         if config.encryption == EncryptionLevel::Strict {
@@ -139,7 +145,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         let encryption = prelogin.negotiated_encryption(config.encryption);
 
-        let connection = connection.tls_handshake(&config, encryption).await?;
+        let mut connection = connection.tls_handshake(&config, encryption).await?;
+
+        // Update to the actual negotiated encryption level.
+        connection.encryption = encryption;
 
         let mut connection = connection
             .login(
@@ -773,6 +782,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 context,
                 flushed: false,
                 buf: BytesMut::new(),
+                encryption: self.encryption,
             })
         } else {
             event!(
@@ -824,6 +834,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
             context,
             flushed: false,
             buf: BytesMut::new(),
+            encryption: self.encryption,
         })
     }
 

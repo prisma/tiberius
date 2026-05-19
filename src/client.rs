@@ -21,7 +21,7 @@ use crate::{
         codec::{self, IteratorJoin},
         stream::{QueryStream, TokenStream},
     },
-    BulkLoadRequest, ColumnFlag, SqlReadBytes, ToSql,
+    BulkLoadRequest, ColumnFlag, EncryptionLevel, SqlReadBytes, ToSql,
 };
 use codec::{BatchRequest, ColumnData, PacketHeader, RpcParam, RpcProcId, TokenRpcRequest};
 use enumflags2::BitFlags;
@@ -350,6 +350,61 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Client<S> {
     /// Closes this database connection explicitly.
     pub async fn close(self) -> crate::Result<()> {
         self.connection.close().await
+    }
+
+    /// Returns the encryption level negotiated for this connection.
+    ///
+    /// This is useful for connection pool implementations that need to verify
+    /// the connection's security properties, or for logging/diagnostics.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use tiberius::{Client, Config, EncryptionLevel};
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = Config::new();
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # let client = Client::connect(config, tcp.compat_write()).await?;
+    /// match client.connection_encryption() {
+    ///     EncryptionLevel::Strict => println!("TDS 8 strict mode"),
+    ///     EncryptionLevel::Required => println!("Encrypted (TLS upgrade)"),
+    ///     _ => println!("Other encryption level"),
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn connection_encryption(&self) -> EncryptionLevel {
+        self.connection.encryption
+    }
+
+    /// Validates the connection by executing a lightweight query (`SELECT 1`).
+    ///
+    /// Returns `Ok(())` if the server responds successfully, or an error if
+    /// the connection is broken. This is intended for use by connection pool
+    /// `is_valid` / health-check hooks.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use tiberius::{Client, Config};
+    /// # use tokio_util::compat::TokioAsyncWriteCompatExt;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = Config::new();
+    /// # let tcp = tokio::net::TcpStream::connect(config.get_addr()).await?;
+    /// # let mut client = Client::connect(config, tcp.compat_write()).await?;
+    /// if client.is_healthy().await.is_err() {
+    ///     // Connection is broken, discard and create a new one
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn is_healthy(&mut self) -> crate::Result<()> {
+        let stream = self.simple_query("SELECT 1").await?;
+        stream.into_results().await?;
+        Ok(())
     }
 
     pub(crate) fn rpc_params<'a>(query: impl Into<Cow<'a, str>>) -> Vec<RpcParam<'a>> {
