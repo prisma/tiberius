@@ -330,3 +330,132 @@ async fn azure_sql_strict_ddl_dml() -> anyhow::Result<()> {
     eprintln!("DDL/DML over strict gateway connection: OK");
     Ok(())
 }
+
+/// Test: Large result set over Azure SQL strict connection to stress TLS framing.
+#[tokio::test]
+async fn azure_sql_strict_large_result() -> anyhow::Result<()> {
+    skip_if_no_azure_sql!();
+
+    let endpoint = env::var("AZURE_SQL_ENDPOINT")?;
+    let database = env::var("AZURE_SQL_DATABASE")?;
+    let token = env::var("AZURE_SQL_TOKEN")?;
+
+    let mut client = connect_to_azure_sql(&endpoint, &database, &token).await?;
+
+    // Generate a large result set to exercise TLS framing across multiple packets
+    let rows: Vec<_> = client
+        .query(
+            "SELECT TOP 1000 \
+                ROW_NUMBER() OVER (ORDER BY a.object_id) AS row_num, \
+                REPLICATE(N'X', 200) AS padding \
+             FROM sys.all_objects a CROSS JOIN sys.all_objects b",
+            &[],
+        )
+        .await?
+        .into_first_result()
+        .await?;
+
+    assert_eq!(rows.len(), 1000, "Should get exactly 1000 rows");
+
+    // Verify first and last row
+    assert_eq!(rows[0].get::<i64, _>("row_num"), Some(1));
+    assert_eq!(rows[999].get::<i64, _>("row_num"), Some(1000));
+
+    let padding: &str = rows[0].get("padding").unwrap();
+    assert_eq!(padding.len(), 200, "Padding should be 200 chars");
+
+    eprintln!("Large result set (1000 rows) over Azure SQL strict connection: OK");
+    Ok(())
+}
+
+/// Test: Verify encryption status via sys.dm_exec_connections on Azure SQL.
+#[tokio::test]
+async fn azure_sql_strict_verify_encryption() -> anyhow::Result<()> {
+    skip_if_no_azure_sql!();
+
+    let endpoint = env::var("AZURE_SQL_ENDPOINT")?;
+    let database = env::var("AZURE_SQL_DATABASE")?;
+    let token = env::var("AZURE_SQL_TOKEN")?;
+
+    let mut client = connect_to_azure_sql(&endpoint, &database, &token).await?;
+
+    let row = client
+        .query(
+            "SELECT encrypt_option, auth_scheme, protocol_type, net_transport \
+             FROM sys.dm_exec_connections WHERE session_id = @@SPID",
+            &[],
+        )
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    let encrypt_option: &str = row.get("encrypt_option").unwrap();
+    let auth_scheme: &str = row.get("auth_scheme").unwrap();
+    let net_transport: &str = row.get("net_transport").unwrap();
+
+    assert!(
+        encrypt_option == "TRUE" || encrypt_option == "STRICT",
+        "Expected encrypted connection, got encrypt_option='{}'",
+        encrypt_option
+    );
+    assert_eq!(net_transport, "TCP");
+    // Azure SQL with AAD token uses NTML at transport but AAD at auth layer
+    assert!(
+        !auth_scheme.is_empty(),
+        "Should have an auth scheme"
+    );
+
+    eprintln!(
+        "Azure SQL encryption verified: option={}, scheme={}, transport={}",
+        encrypt_option, auth_scheme, net_transport
+    );
+    Ok(())
+}
+
+/// Test: String and unicode operations over Azure SQL strict connection.
+#[tokio::test]
+async fn azure_sql_strict_string_operations() -> anyhow::Result<()> {
+    skip_if_no_azure_sql!();
+
+    let endpoint = env::var("AZURE_SQL_ENDPOINT")?;
+    let database = env::var("AZURE_SQL_DATABASE")?;
+    let token = env::var("AZURE_SQL_TOKEN")?;
+
+    let mut client = connect_to_azure_sql(&endpoint, &database, &token).await?;
+
+    // Test unicode handling over TDS 8 strict TLS
+    let row = client
+        .query(
+            "SELECT CONCAT(@P1, N' ', @P2) AS greeting",
+            &[&"Hello", &"TDS8"],
+        )
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    assert_eq!(Some("Hello TDS8"), row.get::<&str, _>("greeting"));
+
+    // Unicode characters
+    let row = client
+        .query("SELECT @P1 AS unicode_text", &[&"日本語テスト 🚀"])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    assert_eq!(Some("日本語テスト 🚀"), row.get::<&str, _>("unicode_text"));
+
+    // Long string that spans multiple TDS packets
+    let long_string = "A".repeat(8000);
+    let row = client
+        .query("SELECT @P1 AS long_text", &[&long_string.as_str()])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    let result: &str = row.get("long_text").unwrap();
+    assert_eq!(result.len(), 8000);
+
+    eprintln!("String/unicode operations over Azure SQL strict connection: OK");
+    Ok(())
+}

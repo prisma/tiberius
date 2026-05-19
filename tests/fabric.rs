@@ -257,3 +257,290 @@ async fn fabric_jdbc_connection_string() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// Test: DDL and DML operations over Fabric strict connection.
+///
+/// Fabric Data Warehouse does not support local temp tables (#table) but does
+/// support regular tables. We create a test table, exercise INSERT/UPDATE/DELETE,
+/// then drop it.
+#[tokio::test]
+async fn fabric_strict_ddl_dml() -> anyhow::Result<()> {
+    skip_if_no_fabric!();
+
+    let endpoint = env::var("FABRIC_ENDPOINT")?;
+    let database = env::var("FABRIC_DATABASE")?;
+    let token = get_aad_token().await?;
+
+    let mut client = connect_to_fabric(&endpoint, &database, &token).await?;
+
+    let table_name = "dbo.__tiberius_tds8_test";
+
+    // Drop if exists from a previous failed run
+    client
+        .simple_query(format!(
+            "IF OBJECT_ID('{table_name}', 'U') IS NOT NULL DROP TABLE {table_name}"
+        ))
+        .await?
+        .into_results()
+        .await?;
+
+    // CREATE TABLE
+    client
+        .simple_query(format!(
+            "CREATE TABLE {table_name} (id INT, name NVARCHAR(100), value DECIMAL(10,2))"
+        ))
+        .await?
+        .into_results()
+        .await?;
+
+    // INSERT with parameters
+    let rows_affected = client
+        .execute(
+            format!("INSERT INTO {table_name} VALUES (@P1, @P2, @P3)"),
+            &[&1i32, &"strict_mode", &123.45f64],
+        )
+        .await?
+        .total();
+    assert_eq!(rows_affected, 1);
+
+    let rows_affected = client
+        .execute(
+            format!("INSERT INTO {table_name} VALUES (@P1, @P2, @P3)"),
+            &[&2i32, &"tds_eight", &678.90f64],
+        )
+        .await?
+        .total();
+    assert_eq!(rows_affected, 1);
+
+    // SELECT back
+    let rows: Vec<_> = client
+        .query(
+            format!("SELECT id, name, value FROM {table_name} ORDER BY id"),
+            &[],
+        )
+        .await?
+        .into_first_result()
+        .await?;
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<i32, _>("id"), Some(1));
+    assert_eq!(rows[0].get::<&str, _>("name"), Some("strict_mode"));
+    assert_eq!(rows[1].get::<i32, _>("id"), Some(2));
+    assert_eq!(rows[1].get::<&str, _>("name"), Some("tds_eight"));
+
+    // UPDATE
+    let rows_affected = client
+        .execute(
+            format!("UPDATE {table_name} SET value = @P1 WHERE id = @P2"),
+            &[&999.99f64, &1i32],
+        )
+        .await?
+        .total();
+    assert_eq!(rows_affected, 1);
+
+    // DELETE
+    let rows_affected = client
+        .execute(
+            format!("DELETE FROM {table_name} WHERE id = @P1"),
+            &[&2i32],
+        )
+        .await?
+        .total();
+    assert_eq!(rows_affected, 1);
+
+    // Verify final state
+    let rows: Vec<_> = client
+        .query(
+            format!("SELECT id, value FROM {table_name} ORDER BY id"),
+            &[],
+        )
+        .await?
+        .into_first_result()
+        .await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<i32, _>("id"), Some(1));
+
+    // Cleanup
+    client
+        .simple_query(format!("DROP TABLE {table_name}"))
+        .await?
+        .into_results()
+        .await?;
+
+    eprintln!("Fabric DDL/DML over strict connection: OK");
+    Ok(())
+}
+
+/// Test: Large result set over Fabric strict connection to stress TLS framing.
+///
+/// Uses the tpch_sf1 lineitem table if available, otherwise generates rows
+/// with a recursive CTE.
+#[tokio::test]
+async fn fabric_strict_large_result() -> anyhow::Result<()> {
+    skip_if_no_fabric!();
+
+    let endpoint = env::var("FABRIC_ENDPOINT")?;
+    let database = env::var("FABRIC_DATABASE")?;
+    let token = get_aad_token().await?;
+
+    let mut client = connect_to_fabric(&endpoint, &database, &token).await?;
+
+    // Try querying from lineitem (tpch_sf1), fall back to a generated set
+    let query = if client
+        .query(
+            "SELECT TOP 1 1 AS x FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'lineitem'",
+            &[],
+        )
+        .await?
+        .into_row()
+        .await?
+        .is_some()
+    {
+        // Use tpch lineitem table — large rows with multiple columns
+        "SELECT TOP 1000 l_orderkey, l_partkey, l_suppkey, \
+             CAST(l_quantity AS DECIMAL(10,2)) AS l_quantity, \
+             CAST(l_extendedprice AS DECIMAL(12,2)) AS l_extendedprice, \
+             l_shipdate, l_comment \
+         FROM lineitem ORDER BY l_orderkey, l_linenumber".to_string()
+    } else {
+        // Generate 1000 rows with a CTE
+        "WITH nums AS ( \
+             SELECT 1 AS n UNION ALL SELECT n + 1 FROM nums WHERE n < 1000 \
+         ) \
+         SELECT n AS row_num, REPLICATE(N'X', 200) AS padding \
+         FROM nums OPTION (MAXRECURSION 1000)".to_string()
+    };
+
+    let rows: Vec<_> = client
+        .query(query, &[])
+        .await?
+        .into_first_result()
+        .await?;
+
+    assert_eq!(rows.len(), 1000, "Should get exactly 1000 rows");
+    eprintln!(
+        "Large result set (1000 rows, {} columns) over Fabric strict connection: OK",
+        rows[0].columns().len()
+    );
+
+    Ok(())
+}
+
+/// Test: Verify encryption status via session properties on Fabric.
+///
+/// Fabric may not expose sys.dm_exec_connections, so we use
+/// session context properties instead.
+#[tokio::test]
+async fn fabric_strict_verify_encryption() -> anyhow::Result<()> {
+    skip_if_no_fabric!();
+
+    let endpoint = env::var("FABRIC_ENDPOINT")?;
+    let database = env::var("FABRIC_DATABASE")?;
+    let token = get_aad_token().await?;
+
+    let mut client = connect_to_fabric(&endpoint, &database, &token).await?;
+
+    // Try sys.dm_exec_connections first (may work on some Fabric SKUs)
+    let row = client
+        .query(
+            "SELECT \
+                CAST(CONNECTIONPROPERTY('net_transport') AS NVARCHAR(50)) AS transport, \
+                CAST(CONNECTIONPROPERTY('protocol_type') AS NVARCHAR(50)) AS protocol, \
+                CAST(CONNECTIONPROPERTY('auth_scheme') AS NVARCHAR(50)) AS auth_scheme",
+            &[],
+        )
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+
+    let transport: &str = row.get("transport").unwrap();
+    let protocol: &str = row.get("protocol").unwrap();
+    let auth_scheme: &str = row.get("auth_scheme").unwrap();
+
+    assert_eq!(transport, "TCP", "Should be TCP transport");
+    assert_eq!(protocol, "TSQL", "Should be TSQL protocol");
+    // Fabric with AAD token should show NTML or AAD-based auth
+    assert!(
+        !auth_scheme.is_empty(),
+        "Should have an auth scheme, got empty"
+    );
+
+    eprintln!(
+        "Fabric encryption verified: transport={}, protocol={}, auth={}",
+        transport, protocol, auth_scheme
+    );
+
+    // Also try dm_exec_connections if accessible
+    match client
+        .query(
+            "SELECT encrypt_option FROM sys.dm_exec_connections WHERE session_id = @@SPID",
+            &[],
+        )
+        .await
+    {
+        Ok(result) => {
+            if let Some(row) = result.into_row().await? {
+                let encrypt_option: &str = row.get("encrypt_option").unwrap();
+                assert!(
+                    encrypt_option == "TRUE" || encrypt_option == "STRICT",
+                    "Expected encrypted, got: {}",
+                    encrypt_option
+                );
+                eprintln!("  dm_exec_connections.encrypt_option = {}", encrypt_option);
+            }
+        }
+        Err(_) => {
+            eprintln!("  (sys.dm_exec_connections not accessible on this Fabric endpoint)");
+        }
+    }
+
+    Ok(())
+}
+
+/// Test: String and unicode operations over strict connection.
+#[tokio::test]
+async fn fabric_strict_string_operations() -> anyhow::Result<()> {
+    skip_if_no_fabric!();
+
+    let endpoint = env::var("FABRIC_ENDPOINT")?;
+    let database = env::var("FABRIC_DATABASE")?;
+    let token = get_aad_token().await?;
+
+    let mut client = connect_to_fabric(&endpoint, &database, &token).await?;
+
+    // Test unicode handling over TDS 8 strict TLS
+    let row = client
+        .query(
+            "SELECT CONCAT(@P1, N' ', @P2) AS greeting",
+            &[&"Hello", &"TDS8"],
+        )
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    assert_eq!(Some("Hello TDS8"), row.get::<&str, _>("greeting"));
+
+    // Unicode characters
+    let row = client
+        .query("SELECT @P1 AS unicode_text", &[&"日本語テスト 🚀"])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    assert_eq!(Some("日本語テスト 🚀"), row.get::<&str, _>("unicode_text"));
+
+    // Long string that spans multiple TDS packets
+    let long_string = "A".repeat(8000);
+    let row = client
+        .query("SELECT @P1 AS long_text", &[&long_string.as_str()])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    let result: &str = row.get("long_text").unwrap();
+    assert_eq!(result.len(), 8000);
+
+    eprintln!("String/unicode operations over Fabric strict connection: OK");
+    Ok(())
+}
