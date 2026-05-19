@@ -93,8 +93,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
 
         // Auto-detect strict mode from hostname when encryption wasn't
         // explicitly configured by the caller.
-        let resolved = config.resolve_encryption();
-        if resolved == EncryptionLevel::Strict && !config.encryption_explicit {
+        config.resolve_encryption();
+        if config.encryption == EncryptionLevel::Strict && !config.encryption_explicit {
             event!(
                 Level::INFO,
                 host = config.get_host(),
@@ -170,11 +170,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
     /// Complete connection setup after TLS is established (for strict mode).
     /// In TDS 8, PRELOGIN and LOGIN both happen inside the TLS tunnel.
     async fn finish_connect_after_tls(mut connection: Self, config: Config) -> crate::Result<Self> {
-        // For backend connections (routing reconnect), we still need to send
-        // FEDAUTHREQUIRED if using AAD auth — the backend needs it to prepare
-        // for processing the FEDAUTH token in LOGIN.
-        let is_backend = config.instance_name.is_some();
         let fed_auth_required = config.auth.is_aad();
+
+        // Include TRACEID in PRELOGIN for backend (routing reconnect) connections.
+        let include_trace_id = config.instance_name.is_some();
 
         // In TDS 8 strict mode, send ENCRYPT_STRICT (0x08) on the wire.
         // TLS is already established, and the PRELOGIN encryption field signals
@@ -186,7 +185,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
                 prelogin_encryption,
                 fed_auth_required,
                 config.instance_name.clone(),
-                is_backend,
+                include_trace_id,
             )
             .await?;
 
@@ -983,12 +982,17 @@ mod tests {
     #[test]
     fn wrap_strict_tls_error_wraps_tls_error() {
         let original = crate::Error::Tls("handshake failure".to_string());
-        let wrapped =
-            Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(original, "myserver.example.com");
+        let wrapped = Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(
+            original,
+            "myserver.example.com",
+        );
 
         let msg = wrapped.to_string();
         assert!(msg.contains("myserver.example.com"), "should contain host");
-        assert!(msg.contains("handshake failure"), "should contain original error");
+        assert!(
+            msg.contains("handshake failure"),
+            "should contain original error"
+        );
         assert!(msg.contains("strict"), "should mention strict mode");
         assert!(
             msg.contains("encrypt=true"),
@@ -1008,8 +1012,9 @@ mod tests {
             kind: ErrorKind::ConnectionReset,
             message: "connection reset by peer".to_string(),
         };
-        let wrapped =
-            Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(original, "10.0.0.1");
+        let wrapped = Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(
+            original, "10.0.0.1",
+        );
 
         let msg = wrapped.to_string();
         assert!(msg.contains("10.0.0.1"), "should contain host");
@@ -1024,8 +1029,10 @@ mod tests {
     #[test]
     fn wrap_strict_tls_error_passes_through_other_errors() {
         let original = crate::Error::Protocol("something else".into());
-        let wrapped =
-            Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(original.clone(), "host");
+        let wrapped = Connection::<futures_util::io::Cursor<Vec<u8>>>::wrap_strict_tls_error(
+            original.clone(),
+            "host",
+        );
 
         // Non-TLS/IO errors should pass through unchanged
         assert_eq!(wrapped, original);

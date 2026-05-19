@@ -462,7 +462,10 @@ async fn connection_encryption_reports_strict() -> anyhow::Result<()> {
         "SQL Server with forcestrict=1 should report Strict encryption"
     );
 
-    eprintln!("connection_encryption() = {:?}", client.connection_encryption());
+    eprintln!(
+        "connection_encryption() = {:?}",
+        client.connection_encryption()
+    );
     Ok(())
 }
 

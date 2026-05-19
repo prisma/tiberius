@@ -227,6 +227,7 @@ impl Config {
     ///
     /// Currently detects:
     /// - `*.datawarehouse.fabric.microsoft.com` → `EncryptionLevel::Strict`
+    /// - `*.pbidedicated.windows.net` → `EncryptionLevel::Strict`
     ///
     /// Returns the (possibly upgraded) encryption level.
     pub(crate) fn resolve_encryption(&mut self) -> EncryptionLevel {

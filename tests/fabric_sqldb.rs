@@ -250,7 +250,10 @@ async fn fabric_sqldb_ddl_dml() -> anyhow::Result<()> {
 
     // Query
     let rows = client
-        .query("SELECT id, name, value FROM dbo.tiberius_test ORDER BY id", &[])
+        .query(
+            "SELECT id, name, value FROM dbo.tiberius_test ORDER BY id",
+            &[],
+        )
         .await?
         .into_first_result()
         .await?;
@@ -260,9 +263,7 @@ async fn fabric_sqldb_ddl_dml() -> anyhow::Result<()> {
     assert_eq!(rows[1].get::<&str, _>("name"), Some("world"));
 
     // Cleanup
-    client
-        .execute("DROP TABLE dbo.tiberius_test", &[])
-        .await?;
+    client.execute("DROP TABLE dbo.tiberius_test", &[]).await?;
 
     eprintln!("Fabric SQL DB DDL/DML: OK");
     Ok(())
