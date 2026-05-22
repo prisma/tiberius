@@ -56,5 +56,8 @@ pub(crate) async fn create_tls_stream<S: AsyncRead + AsyncWrite + Unpin + Send>(
         }
     }
 
-    Ok(builder.connect(config.get_host(), stream).await?)
+    Ok(builder
+        .min_protocol_version(None)
+        .connect(config.get_host(), stream)
+        .await?)
 }
