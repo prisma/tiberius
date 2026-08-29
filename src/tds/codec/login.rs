@@ -8,7 +8,7 @@ use std::{borrow::Cow, io};
 
 uint_enum! {
     #[repr(u32)]
-    #[derive(PartialOrd)]
+    #[derive(PartialOrd, Default)]
     pub enum FeatureLevel {
         SqlServerV7 = 0x70000000,
         SqlServer2000 = 0x71000000,
@@ -17,13 +17,8 @@ uint_enum! {
         SqlServer2008 = 0x730A0003,
         SqlServer2008R2 = 0x730B0003,
         /// 2012, 2014, 2016
+        #[default]
         SqlServerN = 0x74000004,
-    }
-}
-
-impl Default for FeatureLevel {
-    fn default() -> Self {
-        Self::SqlServerN
     }
 }
 
