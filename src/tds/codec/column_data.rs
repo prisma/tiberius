@@ -459,9 +459,7 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                             true,
                         );
                         if let encoding_rs::EncoderResult::Unmappable(_) = res {
-                            return Err(crate::Error::Encoding(
-                                "unrepresentable character".into(),
-                            ));
+                            return Err(crate::Error::Encoding("unrepresentable character".into()));
                         }
 
                         dst.put_u32_le(bytes.len() as u32);

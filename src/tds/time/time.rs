@@ -154,7 +154,10 @@ mod tests {
         // A date well before 1900, at the lower edge of the `datetime` range.
         let expected = Date::from_calendar_date(1850, Month::January, 1).unwrap();
         let days = to_days(expected, 1900);
-        assert!(days < 0, "expected a negative day offset for pre-1900 dates");
+        assert!(
+            days < 0,
+            "expected a negative day offset for pre-1900 dates"
+        );
 
         // Rebuilding from the (negative) day offset must not overflow.
         assert_eq!(from_days(days, 1900), expected);
@@ -169,8 +172,8 @@ mod tests {
 
         // Reconstruct the way the `from_sql!` mapping does for `ColumnData::DateTime`.
         let dt = crate::tds::time::DateTime::new(days, 0);
-        let decoded =
-            from_days(dt.days() as i64, 1900).with_time(from_sec_fragments(dt.seconds_fragments() as u64));
+        let decoded = from_days(dt.days() as i64, 1900)
+            .with_time(from_sec_fragments(dt.seconds_fragments() as u64));
 
         assert_eq!(decoded.date(), expected_date);
         assert_eq!(decoded.time(), Time::from_hms(0, 0, 0).unwrap());

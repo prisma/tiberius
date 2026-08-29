@@ -41,8 +41,11 @@ impl TokenFeatureExtAck {
                     None
                 } else {
                     return Err(Error::Protocol(
-                        format!("invalid Feature_Ext_Ack token: invalid data length {}", data_len)
-                            .into(),
+                        format!(
+                            "invalid Feature_Ext_Ack token: invalid data length {}",
+                            data_len
+                        )
+                        .into(),
                     ));
                 };
 
