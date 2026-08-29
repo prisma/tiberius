@@ -559,6 +559,44 @@ mod tests {
     }
 
     #[test]
+    fn readonly_intent_sets_type_flag_bit() {
+        // The TypeFlags byte is the third of the four flag bytes, which follow
+        // the length + five u32 header fields:
+        //   4 (length) + 5 * 4 (header) = 24, then OptionFlags1, OptionFlags2,
+        //   TypeFlags at byte offset 26.
+        const TYPE_FLAGS_OFFSET: usize = 26;
+
+        let mut payload = BytesMut::new();
+        let mut login = LoginMessage::new();
+        login.readonly(true);
+        login
+            .clone()
+            .encode(&mut payload)
+            .expect("encode should succeed");
+
+        assert_eq!(
+            payload[TYPE_FLAGS_OFFSET] & LoginTypeFlag::ReadOnlyIntent as u8,
+            LoginTypeFlag::ReadOnlyIntent as u8,
+            "fReadOnlyIntent bit must be set in the encoded LOGIN7 TypeFlags byte"
+        );
+
+        // Round-trips back into the decoded message.
+        let decoded = LoginMessage::decode(&mut payload).expect("decode should succeed");
+        assert!(decoded.type_flags.contains(LoginTypeFlag::ReadOnlyIntent));
+
+        // And when not requested, the bit stays clear.
+        let mut payload = BytesMut::new();
+        let mut login = LoginMessage::new();
+        login.readonly(false);
+        login.encode(&mut payload).expect("encode should succeed");
+        assert_eq!(
+            payload[TYPE_FLAGS_OFFSET] & LoginTypeFlag::ReadOnlyIntent as u8,
+            0,
+            "fReadOnlyIntent bit must be clear when read-only intent is not requested"
+        );
+    }
+
+    #[test]
     fn login_message_round_trip() {
         let mut payload = BytesMut::new();
         let mut login = LoginMessage::new();
