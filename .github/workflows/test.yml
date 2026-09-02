@@ -204,14 +204,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        database:
-          - 2019
         features:
           - "--no-default-features --features=rustls,chrono,time,tds73,sql-browser-async-std,sql-browser-tokio,sql-browser-smol,integrated-auth-gssapi,rust_decimal,bigdecimal"
           - "--no-default-features --features=vendored-openssl"
-
-    env:
-      TIBERIUS_TEST_CONNECTION_STRING: "server=tcp:localhost,1433;user=SA;password=<YourStrong@Passw0rd>;TrustServerCertificate=true"
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -233,13 +228,11 @@ jobs:
         with:
           shared-key: ${{ env.RUST_CACHE_KEY }}
 
-      - uses: docker/setup-docker-action@b2189fbf2a6592b51fee7cdd93ee2bfaeba733db  # v5.1.0
+      # macOS runners can't host the Linux SQL Server container, so this lane is
+      # compile + library unit tests only (no server-dependent integration tests,
+      # which run on the Linux and Windows lanes).
+      - name: Build
+        run: cargo build ${{matrix.features}}
 
-      - name: Install docker compose plugin
-        run: brew install docker-compose
-
-      - name: Start SQL Server ${{matrix.database}}
-        run: DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml up -d mssql-${{matrix.database}}
-
-      - name: Run tests
-        run: cargo test ${{matrix.features}}
+      - name: Run library unit tests
+        run: cargo test --lib ${{matrix.features}}
