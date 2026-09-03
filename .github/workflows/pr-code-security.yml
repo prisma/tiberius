@@ -4,13 +4,25 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   secret-detection:
     name: Secret Detection
-    if: github.event_name == 'pull_request'
-    uses: prisma/.github/.github/workflows/secret_detection.yml@main
-    secrets: inherit
-  code-scanning:
-    name: Code Scanning
-    if: github.event_name == 'pull_request'
-    uses: prisma/.github/.github/workflows/code_scanning.yml@main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Full history so gitleaks can scan the whole PR range.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # NOTE: the previous `code-scanning` job used GitHub CodeQL, which does not
+  # support Rust — so it never scanned this crate. Rust security/quality is
+  # already covered by `cargo-deny` (advisories/bans/sources in security.yml)
+  # and the strict clippy gate, so CodeQL is intentionally omitted here.
