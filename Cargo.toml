@@ -125,9 +125,7 @@ optional = true
 version = "0.8"
 optional = true
 
-# Pulled in transitively via tokio-rustls; declared directly only to hold the
-# floor at the RUSTSEC-2026-0104 fix so a downstream resolve cannot pick a
-# vulnerable pre-0.103.13 rustls-webpki.
+# Version-floor pin for RUSTSEC-2026-0104 (rustls-webpki < 0.103.13); pulled in via tokio-rustls.
 [dependencies.rustls-webpki]
 version = "0.103.13"
 optional = true
@@ -170,7 +168,6 @@ names = "0.14"
 anyhow = "1"
 env_logger = "0.9"
 azure_identity = "0.20.0"
-oauth2 = "5.0"
 url = "2.2.2"
 reqwest = "0.12"
 paste = "1.0"

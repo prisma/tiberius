@@ -100,8 +100,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
     pub(super) async fn new(config: &Config, stream: S) -> crate::Result<Self> {
         event!(Level::INFO, "Performing a TLS handshake");
 
-        // Negotiate the best available protocol version (TLS 1.2 or 1.3), the
-        // same policy as upstream's previous `with_safe_defaults()`.
+        // Negotiate TLS 1.2 or 1.3.
         let builder = ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
             .with_safe_default_protocol_versions()
             .map_err(|e| crate::Error::Tls(e.to_string()))?;
@@ -114,10 +113,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> TlsStream<S> {
                             if ext.eq_ignore_ascii_case("pem")
                                 || ext.eq_ignore_ascii_case("crt") =>
                         {
-                            let pem_certs: Vec<
-                                CertificateDer<'static>,
-                            > = CertificateDer::pem_slice_iter(&buf)
-                                .collect::<Result<Vec<_>, _>>()
+                            let pem_certs = CertificateDer::pem_slice_iter(&buf)
+                                .collect::<Result<Vec<CertificateDer<'static>>, _>>()
                                 .map_err(|e| crate::Error::Io {
                                     kind: IoErrorKind::InvalidData,
                                     message: format!(
@@ -232,8 +229,14 @@ impl ConfigBuilderExt for ConfigBuilder<ClientConfig, WantsVerifier> {
         let mut valid_count = 0;
         let mut invalid_count = 0;
 
-        for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs")
-        {
+        let native_certs = rustls_native_certs::load_native_certs();
+        for err in native_certs.errors {
+            event!(
+                Level::DEBUG,
+                "failed to load a native root certificate: {err}"
+            );
+        }
+        for cert in native_certs.certs {
             match roots.add(cert) {
                 Ok(_) => valid_count += 1,
                 Err(err) => {
