@@ -22,9 +22,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
-      # Run cargo-deny directly on the runner (not the musl container action,
-      # which trips over the repo's `rust-toolchain` file) and fetch a fresh
-      # advisory DB each run.
+      # Run cargo-deny on the runner directly (the musl container action conflicts with the repo's rust-toolchain file).
       - name: Install cargo-deny
         uses: taiki-e/install-action@cargo-deny
       - name: Check advisories, bans, sources

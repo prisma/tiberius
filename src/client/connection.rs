@@ -485,9 +485,6 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Connection<S> {
         feature = "vendored-openssl"
     )))]
     async fn tls_handshake(self, config: &Config, _: EncryptionLevel) -> crate::Result<Self> {
-        // Without a TLS backend compiled in, we cannot encrypt anything. If the
-        // user asked for encryption, fail loudly instead of silently sending
-        // traffic (including login credentials) in the clear.
         check_tls_backend_available(config.encryption)?;
 
         event!(

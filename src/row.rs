@@ -261,11 +261,7 @@ where
 
 impl QueryIdx for usize {
     fn idx(&self, row: &Row) -> Option<usize> {
-        if *self < row.columns.len() {
-            Some(*self)
-        } else {
-            None
-        }
+        (*self < row.columns.len()).then_some(*self)
     }
 }
 
