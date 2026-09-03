@@ -257,8 +257,7 @@ impl BaseMetaDataColumn {
                 VarLenType::Xml => ColumnData::Xml(None),
                 // A null CLR UDT carries no payload; surface it as a null
                 // binary, matching `udt::decode` (which yields
-                // `ColumnData::Binary`). Previously this panicked via `todo!()`,
-                // which a bulk insert of a NULL UDT column could reach.
+                // `ColumnData::Binary`).
                 VarLenType::Udt => ColumnData::Binary(None),
                 VarLenType::Text => ColumnData::String(None),
                 VarLenType::Image => ColumnData::Binary(None),
@@ -293,8 +292,7 @@ impl BaseMetaDataColumn {
                 VarLenType::Xml => ColumnData::Xml(None),
                 // A null CLR UDT carries no payload; surface it as a null
                 // binary, matching `udt::decode` (which yields
-                // `ColumnData::Binary`). Previously this panicked via `todo!()`,
-                // which a bulk insert of a NULL UDT column could reach.
+                // `ColumnData::Binary`).
                 VarLenType::Udt => ColumnData::Binary(None),
                 VarLenType::Text => ColumnData::String(None),
                 VarLenType::Image => ColumnData::Binary(None),
@@ -410,7 +408,7 @@ fn encode_us_varchar(dst: &mut BytesMut, s: &str) -> crate::Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnFlag {
     /// The column can be null.
-    Nullable = 1,
+    Nullable = 1 << 0,
     /// Set for string columns with binary collation and always for the XML data
     /// type.
     CaseSensitive = 1 << 1,
@@ -528,7 +526,9 @@ impl BaseMetaDataColumn {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
     use crate::tds::codec::type_info::VarLenContext;
+    use crate::tds::Collation;
 
     // Build the on-wire bytes a US_VARCHAR should produce for `s`.
     fn us_varchar_bytes(s: &str) -> Vec<u8> {
@@ -833,20 +833,13 @@ mod tests {
     fn display_leaves_plain_column_name_unchanged() {
         assert_eq!(format!("{}", column("foo")), "[foo] int");
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
-    use crate::tds::Collation;
-    use crate::VarLenContext;
 
     fn meta(ty: TypeInfo, name: &'static str) -> MetaDataColumn<'static> {
         MetaDataColumn {
             base: BaseMetaDataColumn {
                 flags: ColumnFlag::Nullable.into(),
                 ty,
+                table_name: None,
             },
             col_name: Cow::Borrowed(name),
         }
@@ -1031,12 +1024,14 @@ mod tests {
         let fixed = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::FixedLen(FixedLenType::Int4),
+            table_name: None,
         };
         assert_eq!(fixed.null_value(), ColumnData::I32(None));
 
         let varlen = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 2, None)),
+            table_name: None,
         };
         assert_eq!(varlen.null_value(), ColumnData::I16(None));
 
@@ -1045,18 +1040,21 @@ mod tests {
         let tinyint = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 1, None)),
+            table_name: None,
         };
         assert_eq!(tinyint.null_value(), ColumnData::U8(None));
 
         let int4 = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 4, None)),
+            table_name: None,
         };
         assert_eq!(int4.null_value(), ColumnData::I32(None));
 
         let int8 = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Intn, 8, None)),
+            table_name: None,
         };
         assert_eq!(int8.null_value(), ColumnData::I64(None));
 
@@ -1064,18 +1062,21 @@ mod tests {
         let real = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 4, None)),
+            table_name: None,
         };
         assert_eq!(real.null_value(), ColumnData::F32(None));
 
         let double = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Floatn, 8, None)),
+            table_name: None,
         };
         assert_eq!(double.null_value(), ColumnData::F64(None));
 
         let guid = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Guid, 16, None)),
+            table_name: None,
         };
         assert_eq!(guid.null_value(), ColumnData::Guid(None));
     }
@@ -1090,6 +1091,7 @@ mod tests {
                 precision: 18,
                 scale: 2,
             },
+            table_name: None,
         };
         assert_eq!(precision.null_value(), ColumnData::Numeric(None));
 
@@ -1099,6 +1101,7 @@ mod tests {
                 schema: None,
                 size: 0,
             },
+            table_name: None,
         };
         assert_eq!(xml.null_value(), ColumnData::Xml(None));
 
@@ -1111,6 +1114,7 @@ mod tests {
                 type_name: "T".into(),
                 assembly_qualified_name: "A".into(),
             }),
+            table_name: None,
         };
         assert_eq!(udt.null_value(), ColumnData::Binary(None));
     }
@@ -1120,6 +1124,7 @@ mod tests {
         let base = BaseMetaDataColumn {
             flags: ColumnFlag::Nullable | ColumnFlag::Identity | ColumnFlag::Updateable,
             ty: TypeInfo::FixedLen(FixedLenType::Int4),
+            table_name: None,
         };
 
         assert!(base.is_nullable());
@@ -1131,6 +1136,7 @@ mod tests {
         let base2 = BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::FixedLen(FixedLenType::Int4),
+            table_name: None,
         };
         assert!(!base2.is_nullable());
         assert!(!base2.is_identity());
@@ -1346,6 +1352,7 @@ mod tests {
             let base = BaseMetaDataColumn {
                 flags: BitFlags::empty(),
                 ty: TypeInfo::FixedLen(ty),
+                table_name: None,
             };
             assert_eq!(base.null_value(), expected);
         }
@@ -1355,6 +1362,7 @@ mod tests {
         BaseMetaDataColumn {
             flags: BitFlags::empty(),
             ty: TypeInfo::VarLenSized(VarLenContext::new(ty, len, None)),
+            table_name: None,
         }
         .null_value()
     }
@@ -1404,6 +1412,7 @@ mod tests {
                 precision: 18,
                 scale: 2,
             },
+            table_name: None,
         }
         .null_value()
     }
