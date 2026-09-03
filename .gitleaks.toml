@@ -1,11 +1,5 @@
-# gitleaks configuration for the PR Code Security secret scan.
-#
-# Start from gitleaks' full default rule set, then allowlist only the
-# self-signed TLS material under `docker/certs/`. Those keys and
-# certificates exist solely to bring up the local SQL Server container the
-# integration tests connect to over TLS; they are throwaway test fixtures
-# (committed upstream in 2022), never production secrets. Everything else
-# in the tree and its history is still scanned.
+# gitleaks config for the PR secret scan: full default rule set, with the
+# self-signed TLS test fixtures under docker/certs/ allowlisted.
 [extend]
 useDefault = true
 

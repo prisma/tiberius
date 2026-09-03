@@ -35,8 +35,3 @@ jobs:
           gitleaks version
       - name: Scan git history for secrets
         run: gitleaks git --no-banner --redact --exit-code 1 --config .gitleaks.toml .
-
-  # NOTE: the previous `code-scanning` job used GitHub CodeQL, which does not
-  # support Rust — so it never scanned this crate. Rust security/quality is
-  # already covered by `cargo-deny` (advisories/bans/sources in security.yml)
-  # and the strict clippy gate, so CodeQL is intentionally omitted here.
