@@ -317,6 +317,11 @@ impl Row {
         self.result_index
     }
 
+    /// The raw column data
+    pub fn data(&self) -> &TokenRow<'static> {
+        &self.data
+    }
+
     /// Returns the number of columns in the row.
     ///
     /// # Example

@@ -25,9 +25,14 @@ pub struct MetaDataColumn<'a> {
 
 impl<'a> Display for MetaDataColumn<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ", self.col_name)?;
+        write!(f, "[{}] {}", self.col_name, self.base.ty)?;
 
-        match &self.base.ty {
+        Ok(())
+    }
+}
+impl Display for TypeInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
             TypeInfo::FixedLen(fixed) => match fixed {
                 FixedLenType::Int1 => write!(f, "tinyint")?,
                 FixedLenType::Bit => write!(f, "bit")?,
@@ -265,9 +270,9 @@ pub enum ColumnFlag {
     /// If column is writeable.
     Updateable = 1 << 3,
     /// Column modification status unknown.
-    UpdateableUnknown = 1 << 4,
+    UpdateableUnknown = 1 << 2,
     /// Column is an identity.
-    Identity = 1 << 5,
+    Identity = 1 << 4,
     /// Coulumn is computed.
     Computed = 1 << 7,
     /// Column is a fixed-length common language runtime user-defined type (CLR
