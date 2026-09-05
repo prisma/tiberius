@@ -31,6 +31,7 @@ use crate::{
 };
 use bytes::BufMut;
 pub(crate) use bytes_mut_with_type_info::BytesMutWithTypeInfo;
+use chrono::{Duration, NaiveDate};
 use std::borrow::{BorrowMut, Cow};
 use uuid::Uuid;
 
@@ -604,6 +605,25 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
             (ColumnData::Time(Some(time)), None) => {
                 dst.extend_from_slice(&[VarLenType::Timen as u8, time.scale(), time.len()?]);
                 time.encode(&mut *dst)?;
+            }
+            #[cfg(feature = "tds73")]
+            (ColumnData::DateTime2(opt), Some(TypeInfo::VarLenSized(vlc)))
+                if vlc.r#type() == VarLenType::Datetimen =>
+            {
+                if let Some(dt2) = opt {
+                    dst.put_u8(8);
+                    let dt2_days = dt2.date().days();
+                    let dt2_date =
+                        NaiveDate::from_ymd_opt(1, 1, 1).unwrap() + Duration::days(dt2_days.into());
+                    let dt1_days = dt2_days.checked_sub(693595).ok_or_else(|| crate::Error::Conversion(
+                        format!("invalid datetime, expecting datetime not earlier than 1900-01-01 but got {:?}", dt2_date)
+                            .into()))?; // minus days gap between year 1 and year 1900
+                    let seconds_fragments = dt2.time().increments() * 100 * 300 / 1e9 as u64; // degrade second's precision
+                    dst.put_u32_le(dt1_days as u32);
+                    dst.put_u32_le(seconds_fragments as u32);
+                } else {
+                    dst.put_u8(0);
+                }
             }
             #[cfg(feature = "tds73")]
             (ColumnData::DateTime2(opt), Some(TypeInfo::VarLenSized(vlc)))
