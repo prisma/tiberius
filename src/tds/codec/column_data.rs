@@ -27,7 +27,7 @@ use super::{Encode, FixedLenType, TypeInfo, VarLenType};
 use crate::tds::time::{Date, DateTime2, DateTimeOffset, Time};
 use crate::{
     tds::{time::DateTime, time::SmallDateTime, xml::XmlData, Numeric},
-    SqlReadBytes,
+    FromSql, FromSqlOwned, IntoSql, SqlReadBytes, ToSql,
 };
 use bytes::BufMut;
 pub(crate) use bytes_mut_with_type_info::BytesMutWithTypeInfo;
@@ -698,6 +698,30 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
         }
 
         Ok(())
+    }
+}
+
+impl<'a> FromSql<'a> for ColumnData<'a> {
+    fn from_sql(value: &'a ColumnData<'a>) -> crate::Result<Option<Self>> {
+        Ok(Some(value.clone()))
+    }
+}
+
+impl<'a> FromSqlOwned for ColumnData<'a> {
+    fn from_sql_owned(value: ColumnData<'a>) -> crate::Result<Option<Self>> {
+        Ok(Some(value))
+    }
+}
+
+impl<'a> ToSql for ColumnData<'a> {
+    fn to_sql(&self) -> ColumnData<'a> {
+        self.clone()
+    }
+}
+
+impl<'a> IntoSql<'a> for ColumnData<'a> {
+    fn into_sql(self) -> ColumnData<'a> {
+        self
     }
 }
 
