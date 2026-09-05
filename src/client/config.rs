@@ -32,6 +32,7 @@ pub struct Config {
     pub(crate) trust: TrustConfig,
     pub(crate) auth: AuthMethod,
     pub(crate) readonly: bool,
+    pub(crate) multi_subnet_failover: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +66,7 @@ impl Default for Config {
             trust: TrustConfig::Default,
             auth: AuthMethod::None,
             readonly: false,
+            multi_subnet_failover: false,
         }
     }
 }
@@ -171,6 +173,13 @@ impl Config {
         self.readonly = readnoly;
     }
 
+    /// Sets multiSubnetFailover flag.
+    ///
+    /// - Defaults to `false`.
+    pub fn multi_subnet_failover(&mut self, multi_subnet_failover: bool) {
+        self.multi_subnet_failover = multi_subnet_failover;
+    }
+
     pub(crate) fn get_host(&self) -> &str {
         self.host
             .as_deref()
@@ -268,6 +277,8 @@ impl Config {
         builder.encryption(s.encrypt()?);
 
         builder.readonly(s.readonly());
+
+        builder.multi_subnet_failover(s.multi_subnet_failover()?);
 
         Ok(builder)
     }
@@ -387,5 +398,12 @@ pub(crate) trait ConfigString {
             .get("applicationintent")
             .filter(|val| *val == "ReadOnly")
             .is_some()
+    }
+
+    fn multi_subnet_failover(&self) -> crate::Result<bool> {
+        self.dict()
+            .get("multisubnetfailover")
+            .map(Self::parse_bool)
+            .unwrap_or(Ok(false))
     }
 }
