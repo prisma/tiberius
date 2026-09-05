@@ -423,3 +423,9 @@ impl IntoIterator for Row {
         self.data.into_iter()
     }
 }
+
+impl Into<TokenRow<'static>> for Row {
+    fn into(self) -> TokenRow<'static> {
+        self.data
+    }
+}
