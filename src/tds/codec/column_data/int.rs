@@ -24,3 +24,28 @@ where
 
     Ok(res)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn invalid_intn_length_is_protocol_error() {
+        // First byte is the received length prefix; 3 is not a valid Intn
+        // length (only 0, 1, 2, 4, 8 are accepted).
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&[3u8, 0, 0, 0]);
+
+        let reader = &mut buf.into_sql_read_bytes();
+        let err = decode(reader, 4).await.unwrap_err();
+
+        match err {
+            Error::Protocol(msg) => {
+                assert!(msg.to_string().contains("invalid integer length"));
+            }
+            other => panic!("expected Error::Protocol, got {:?}", other),
+        }
+    }
+}

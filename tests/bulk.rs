@@ -291,6 +291,40 @@ where
     Ok(())
 }
 
+#[test_on_runtimes]
+async fn bulk_ntext_value_roundtrips<S>(mut conn: tiberius::Client<S>) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send,
+{
+    let table = format!("##{}", random_table().await);
+
+    conn.execute(
+        &format!("CREATE TABLE {} (content NTEXT NOT NULL)", table),
+        &[],
+    )
+    .await?;
+
+    let expected = "héllo bulk ñtext";
+    let mut req = conn.bulk_insert(&table).await?;
+    let mut row = TokenRow::new();
+    row.push(expected.into_sql());
+    req.send(row).await?;
+    let res = req.finalize().await?;
+    assert_eq!(1, res.total());
+
+    let row = conn
+        .query(&format!("SELECT content FROM {}", table), &[])
+        .await?
+        .into_row()
+        .await?
+        .unwrap();
+    let value: &str = row.get(0).unwrap();
+
+    assert_eq!(value, expected);
+
+    Ok(())
+}
+
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2(
     "DATETIME2",

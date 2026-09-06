@@ -60,3 +60,45 @@ impl TokenFeatureExtAck {
         Ok(TokenFeatureExtAck { features })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sql_read_bytes::test_utils::IntoSqlReadBytes;
+    use bytes::BytesMut;
+
+    #[tokio::test]
+    async fn invalid_fedauth_data_length_is_protocol_error() {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&[FEA_EXT_FEDAUTH]);
+        // A data length that is neither 0 (no nonce) nor 32 (nonce) bytes.
+        buf.extend_from_slice(&5u32.to_le_bytes());
+
+        let reader = &mut buf.into_sql_read_bytes();
+        let err = TokenFeatureExtAck::decode(reader).await.unwrap_err();
+
+        match err {
+            Error::Protocol(msg) => {
+                assert!(msg.to_string().contains("invalid data length"));
+            }
+            other => panic!("expected Error::Protocol, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_feature_id_is_protocol_error() {
+        let mut buf = BytesMut::new();
+        // Neither the terminator nor the fedauth feature id.
+        buf.extend_from_slice(&[0x01u8]);
+
+        let reader = &mut buf.into_sql_read_bytes();
+        let err = TokenFeatureExtAck::decode(reader).await.unwrap_err();
+
+        match err {
+            Error::Protocol(msg) => {
+                assert!(msg.to_string().contains("unsupported feature"));
+            }
+            other => panic!("expected Error::Protocol, got {:?}", other),
+        }
+    }
+}
