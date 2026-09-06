@@ -12,14 +12,23 @@ const MONEY_SCALE_FACTOR: f64 = 1e4;
 
 /// Range-check an already-scaled money value (`value * 10^MONEY_SCALE`, held in
 /// an `i128` so no rounding or overflow can occur here) against the target
-/// column's integer range and, if it fits, emit the length-prefixed on-wire
-/// bytes. `max_len` is the column's declared length (8 for `money`, 4 for
-/// `smallmoney`). `value` is only used to build a descriptive error message.
+/// column's integer range and, if it fits, emit the on-wire bytes. `max_len` is
+/// the column's declared length (8 for `money`, 4 for `smallmoney`). `value` is
+/// only used to build a descriptive error message.
+///
+/// `length_prefixed` selects the wire framing. A nullable `MONEYN` column
+/// (`TypeInfo::VarLenSized(Money)`) is a BYTELEN variable-length type whose row
+/// value is preceded by a single length byte, so pass `true`. A NOT-NULL `MONEY`
+/// / `SMALLMONEY` column arrives as `TypeInfo::FixedLen(Money/Money4)`, a
+/// FIXEDLENTYPE whose row value is the raw fixed-width bytes with NO length
+/// prefix (mirroring `fixed_len::decode`, which reads exactly `max_len` raw
+/// bytes for money) — pass `false`.
 fn put_scaled<B>(
     dst: &mut B,
     max_len: usize,
     scaled: i128,
     value: &dyn Display,
+    length_prefixed: bool,
 ) -> crate::Result<()>
 where
     B: BufMut,
@@ -35,7 +44,9 @@ where
                 .into(),
             ));
         }
-        dst.put_u8(4);
+        if length_prefixed {
+            dst.put_u8(4);
+        }
         dst.put_i32_le(scaled as i32);
     } else {
         // money: scaled value must fit in an i64.
@@ -48,7 +59,9 @@ where
                 .into(),
             ));
         }
-        dst.put_u8(8);
+        if length_prefixed {
+            dst.put_u8(8);
+        }
         let scaled = scaled as i64;
         // money is transmitted as two 32-bit words, high word first.
         dst.put_i32_le((scaled >> 32) as i32);
@@ -58,11 +71,13 @@ where
     Ok(())
 }
 
-/// Encode an `f64` as a money/smallmoney value into `dst`, prefixed with a
-/// single length byte (as expected for a nullable `Money`/`Moneyn` column in a
-/// bulk-load row). `max_len` is the column's declared length (8 for `money`,
-/// 4 for `smallmoney`). Money is stored on the wire as a scaled integer
-/// (value * 10_000).
+/// Encode an `f64` as a length-prefixed money/smallmoney value into `dst` (the
+/// framing a nullable `MONEYN`/`VarLenSized` column expects in a bulk-load row).
+/// For a NOT-NULL `MONEY`/`SMALLMONEY` column, which arrives as
+/// `TypeInfo::FixedLen` and takes the raw fixed-width bytes with no length
+/// prefix, use [`encode_fixed`]. `max_len` is the column's declared length (8
+/// for `money`, 4 for `smallmoney`). Money is stored on the wire as a scaled
+/// integer (value * 10_000).
 ///
 /// Returns an error (rather than silently corrupting the value) when `val` is
 /// not finite (`NaN`/`±Inf`) or when the scaled value falls outside the range
@@ -81,6 +96,29 @@ pub(crate) fn encode<B>(dst: &mut B, max_len: usize, val: f64) -> crate::Result<
 where
     B: BufMut,
 {
+    encode_inner(dst, max_len, val, true)
+}
+
+/// Like [`encode`], but writes the raw fixed-width money bytes with NO length
+/// prefix, as a NOT-NULL `MONEY`/`SMALLMONEY` column (`TypeInfo::FixedLen`)
+/// expects in a bulk-load row (mirroring `fixed_len::decode`, which reads exactly
+/// `max_len` raw bytes for money).
+pub(crate) fn encode_fixed<B>(dst: &mut B, max_len: usize, val: f64) -> crate::Result<()>
+where
+    B: BufMut,
+{
+    encode_inner(dst, max_len, val, false)
+}
+
+fn encode_inner<B>(
+    dst: &mut B,
+    max_len: usize,
+    val: f64,
+    length_prefixed: bool,
+) -> crate::Result<()>
+where
+    B: BufMut,
+{
     if !val.is_finite() {
         return Err(Error::BulkInput(
             format!("money: value {val} is not finite (NaN/Inf cannot be encoded)").into(),
@@ -93,11 +131,12 @@ where
     // by the range-check in `put_scaled`).
     let scaled = (val * MONEY_SCALE_FACTOR).round() as i128;
 
-    put_scaled(dst, max_len, scaled, &val)
+    put_scaled(dst, max_len, scaled, &val, length_prefixed)
 }
 
-/// Encode a [`Numeric`] into a money/smallmoney value into `dst`, prefixed with
-/// a single length byte, using exact integer arithmetic.
+/// Encode a [`Numeric`] into a length-prefixed money/smallmoney value into
+/// `dst`, using exact integer arithmetic (the `MONEYN`/`VarLenSized` framing).
+/// For a NOT-NULL `FixedLen` money column, use [`encode_numeric_fixed`].
 ///
 /// Money is a fixed-point decimal with scale 4 stored as a scaled integer
 /// (`value * 10_000`). Going via `f64` (as the plain `f64` path does) is lossy
@@ -115,6 +154,31 @@ pub(crate) fn encode_numeric<B>(
     dst: &mut B,
     max_len: usize,
     num: &crate::tds::Numeric,
+) -> crate::Result<()>
+where
+    B: BufMut,
+{
+    encode_numeric_inner(dst, max_len, num, true)
+}
+
+/// Like [`encode_numeric`], but writes the raw fixed-width money bytes with NO
+/// length prefix, for a NOT-NULL `FixedLen` money/smallmoney column.
+pub(crate) fn encode_numeric_fixed<B>(
+    dst: &mut B,
+    max_len: usize,
+    num: &crate::tds::Numeric,
+) -> crate::Result<()>
+where
+    B: BufMut,
+{
+    encode_numeric_inner(dst, max_len, num, false)
+}
+
+fn encode_numeric_inner<B>(
+    dst: &mut B,
+    max_len: usize,
+    num: &crate::tds::Numeric,
+    length_prefixed: bool,
 ) -> crate::Result<()>
 where
     B: BufMut,
@@ -146,7 +210,7 @@ where
         }
     };
 
-    put_scaled(dst, max_len, scaled, &num)
+    put_scaled(dst, max_len, scaled, &num, length_prefixed)
 }
 
 pub(crate) async fn decode<R>(src: &mut R, len: u8) -> crate::Result<ColumnData<'static>>
@@ -411,6 +475,55 @@ mod tests {
         let mut buf = Vec::new();
         let err = encode_numeric(&mut buf, 8, &num).unwrap_err();
         assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
+    }
+
+    // `encode_fixed` writes the raw fixed-width bytes with NO length prefix (the
+    // `FixedLen`/NOT-NULL money framing), unlike `encode` which prefixes a length
+    // byte. Assert the byte count and that the raw bytes decode to the value.
+    #[test]
+    fn encode_fixed_has_no_length_prefix() {
+        // smallmoney: 4 raw bytes, scaled i32.
+        let mut buf = Vec::new();
+        encode_fixed(&mut buf, 4, 1234.5678).unwrap();
+        assert_eq!(buf.len(), 4, "smallmoney fixed len must be exactly 4 bytes");
+        let scaled = i32::from_le_bytes(buf[..4].try_into().unwrap());
+        assert_eq!(scaled, 12_345_678);
+
+        // money: 8 raw bytes, two 32-bit words high-first.
+        let mut buf = Vec::new();
+        encode_fixed(&mut buf, 8, 1234.5678).unwrap();
+        assert_eq!(buf.len(), 8, "money fixed len must be exactly 8 bytes");
+        let high = i32::from_le_bytes(buf[0..4].try_into().unwrap()) as i64;
+        let low = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as i64;
+        assert_eq!((high << 32) | low, 12_345_678);
+    }
+
+    // `encode_numeric_fixed` mirrors `encode_fixed`: raw bytes, no length prefix.
+    #[test]
+    fn encode_numeric_fixed_has_no_length_prefix() {
+        let num = crate::tds::Numeric::new_with_scale(12_345_678, 4); // 1234.5678
+
+        let mut buf = Vec::new();
+        encode_numeric_fixed(&mut buf, 4, &num).unwrap();
+        assert_eq!(buf.len(), 4);
+        assert_eq!(i32::from_le_bytes(buf[..4].try_into().unwrap()), 12_345_678);
+
+        let mut buf = Vec::new();
+        encode_numeric_fixed(&mut buf, 8, &num).unwrap();
+        assert_eq!(buf.len(), 8);
+        let high = i32::from_le_bytes(buf[0..4].try_into().unwrap()) as i64;
+        let low = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as i64;
+        assert_eq!((high << 32) | low, 12_345_678);
+    }
+
+    // The fixed path still range-checks: an out-of-range value is rejected and
+    // nothing is written (no partial/desyncing bytes).
+    #[test]
+    fn encode_fixed_out_of_range_is_rejected() {
+        let mut buf = Vec::new();
+        let err = encode_fixed(&mut buf, 4, 214_749.0).unwrap_err();
+        assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
+        assert!(buf.is_empty());
     }
 
     // Boundary money/smallmoney values encode exactly through the integer path.

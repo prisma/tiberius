@@ -284,6 +284,20 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                     dst.put_u8(0);
                 }
             }
+            // A NOT-NULL `money` column arrives as `FixedLen(Money)` (8-byte) and
+            // a NOT-NULL `smallmoney` as `FixedLen(Money4)` (4-byte). These are
+            // FIXEDLENTYPEs: the row value is the raw fixed-width scaled bytes
+            // with NO length prefix (unlike the `MONEYN`/`VarLenSized` path
+            // above), matching `fixed_len::decode` and the sibling `FixedLen`
+            // arms (e.g. `Float8`, `Datetime`). A `None` here would mean a null
+            // into a NOT-NULL column, so — like the other `FixedLen` arms — only
+            // `Some` matches and a null falls through to the `BulkInput` error.
+            (ColumnData::F64(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Money))) => {
+                money::encode_fixed(dst, 8, val)?;
+            }
+            (ColumnData::F64(Some(val)), Some(TypeInfo::FixedLen(FixedLenType::Money4))) => {
+                money::encode_fixed(dst, 4, val)?;
+            }
             (ColumnData::Guid(opt), Some(TypeInfo::VarLenSized(vlc)))
                 if vlc.r#type() == VarLenType::Guid =>
             {
@@ -731,6 +745,15 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 } else {
                     dst.put_u8(0);
                 }
+            }
+            // NOT-NULL `money`/`smallmoney` supplied as a `Numeric`: encoded as
+            // the raw fixed-width bytes (no length prefix), same framing rationale
+            // as the `F64` `FixedLen` money arms above.
+            (ColumnData::Numeric(Some(num)), Some(TypeInfo::FixedLen(FixedLenType::Money))) => {
+                money::encode_numeric_fixed(dst, 8, &num)?;
+            }
+            (ColumnData::Numeric(Some(num)), Some(TypeInfo::FixedLen(FixedLenType::Money4))) => {
+                money::encode_numeric_fixed(dst, 4, &num)?;
             }
             (ColumnData::Numeric(opt), Some(TypeInfo::VarLenSizedPrecision { ty, scale, .. }))
                 if ty == &VarLenType::Numericn || ty == &VarLenType::Decimaln =>
@@ -1476,5 +1499,23 @@ mod tests {
                 panic!("Expected: Error::BulkInput, got: {:?}", err);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn f64_with_fixedlen_money() {
+        test_round_trip(
+            TypeInfo::FixedLen(FixedLenType::Money),
+            ColumnData::F64(Some(3.5)),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn f64_with_fixedlen_smallmoney() {
+        test_round_trip(
+            TypeInfo::FixedLen(FixedLenType::Money4),
+            ColumnData::F64(Some(3.5)),
+        )
+        .await;
     }
 }
