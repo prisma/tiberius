@@ -727,7 +727,7 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 if vlc.r#type() == VarLenType::Money =>
             {
                 if let Some(num) = opt {
-                    money::encode(dst, vlc.len(), f64::from(num))?;
+                    money::encode_numeric(dst, vlc.len(), &num)?;
                 } else {
                     dst.put_u8(0);
                 }
