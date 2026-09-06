@@ -116,6 +116,12 @@ impl<'a> Display for MetaDataColumn<'a> {
 pub struct BaseMetaDataColumn {
     pub flags: BitFlags<ColumnFlag>,
     pub ty: TypeInfo,
+    /// Destination table name, used only on the *encode* (bulk-load) path. Per
+    /// MS-TDS §2.2.7.4, `text`/`ntext`/`image` columns carry a `TableName`
+    /// element in COLMETADATA; the bulk-insert code sets this to the target
+    /// table so [`BaseMetaDataColumn::encode`] can emit it. It is always `None`
+    /// on the decode (server→client) path, which never needs it.
+    pub table_name: Option<String>,
 }
 
 impl BaseMetaDataColumn {
@@ -246,10 +252,84 @@ impl<'a> Encode<BytesMut> for MetaDataColumn<'a> {
 impl Encode<BytesMut> for BaseMetaDataColumn {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         dst.put_u16_le(BitFlags::bits(self.flags));
+
+        // Per MS-TDS §2.2.7.4, `text`/`ntext`/`image` columns carry a TableName
+        // element (NumParts BYTE, then NumParts US_VARCHARs) after the TYPE_INFO.
+        // This mirrors the decode side and is required for a well-formed bulk
+        // COLMETADATA; other column types must not emit anything extra. Capture
+        // whether this is such a column before `encode` consumes `self.ty`.
+        let emits_table_name = matches!(
+            &self.ty,
+            TypeInfo::VarLenSized(cx)
+                if matches!(cx.r#type(), VarLenType::Text | VarLenType::NText | VarLenType::Image)
+        );
+
         self.ty.encode(dst)?;
+
+        if emits_table_name {
+            let table_name = self.table_name.as_deref().unwrap_or("");
+            let parts = split_table_name(table_name);
+
+            dst.put_u8(parts.len() as u8);
+            for part in parts {
+                encode_us_varchar(dst, &part);
+            }
+        }
 
         Ok(())
     }
+}
+
+/// Encode a US_VARCHAR: a `u16` length in UTF-16 code units followed by the
+/// UTF-16LE characters.
+fn encode_us_varchar(dst: &mut BytesMut, s: &str) {
+    let len_pos = dst.len();
+    dst.put_u16_le(0);
+
+    let mut units: u16 = 0;
+    for chr in s.encode_utf16() {
+        units += 1;
+        dst.put_u16_le(chr);
+    }
+
+    let bytes: &mut [u8] = dst.borrow_mut();
+    bytes[len_pos..len_pos + 2].copy_from_slice(&units.to_le_bytes());
+}
+
+/// Split a (possibly multi-part) table name such as `dbo.MyTable` or
+/// `[db].[schema].[tbl]` into its constituent parts, honoring `[ ]` quoting
+/// (where `]]` is an escaped `]`). An unqualified name yields a single part.
+///
+/// Names quoted with double quotes are not specially handled; callers relying on
+/// quoted-identifier mode for `.`-containing names should pass bracket-quoted
+/// identifiers instead.
+fn split_table_name(name: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_brackets = false;
+    let mut chars = name.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '[' if !in_brackets => in_brackets = true,
+            ']' if in_brackets => {
+                // `]]` inside brackets is an escaped `]`.
+                if chars.peek() == Some(&']') {
+                    current.push(']');
+                    chars.next();
+                } else {
+                    in_brackets = false;
+                }
+            }
+            '.' if !in_brackets => {
+                parts.push(std::mem::take(&mut current));
+            }
+            other => current.push(other),
+        }
+    }
+    parts.push(current);
+
+    parts
 }
 
 /// A setting a column can hold.
@@ -344,6 +424,111 @@ impl BaseMetaDataColumn {
             };
         };
 
-        Ok(BaseMetaDataColumn { flags, ty })
+        Ok(BaseMetaDataColumn {
+            flags,
+            ty,
+            table_name: None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tds::codec::type_info::VarLenContext;
+
+    // Build the on-wire bytes a US_VARCHAR should produce for `s`.
+    fn us_varchar_bytes(s: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        let units: Vec<u16> = s.encode_utf16().collect();
+        out.extend_from_slice(&(units.len() as u16).to_le_bytes());
+        for u in units {
+            out.extend_from_slice(&u.to_le_bytes());
+        }
+        out
+    }
+
+    fn text_column(table_name: Option<&str>) -> BaseMetaDataColumn {
+        BaseMetaDataColumn {
+            flags: ColumnFlag::Nullable.into(),
+            ty: TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Text, 2147483647, None)),
+            table_name: table_name.map(str::to_string),
+        }
+    }
+
+    // A `text` column's metadata must end with a valid TableName element:
+    // NumParts BYTE followed by NumParts US_VARCHARs.
+    #[test]
+    fn text_column_emits_multipart_table_name() {
+        let mut buf = BytesMut::new();
+        text_column(Some("dbo.MyTable")).encode(&mut buf).unwrap();
+
+        let mut expected_tail = vec![2u8]; // NumParts
+        expected_tail.extend(us_varchar_bytes("dbo"));
+        expected_tail.extend(us_varchar_bytes("MyTable"));
+
+        assert!(
+            buf.ends_with(&expected_tail),
+            "buffer {:02x?} did not end with TableName {:02x?}",
+            &buf[..],
+            expected_tail
+        );
+    }
+
+    // A single, unqualified name yields NumParts=1 with one US_VARCHAR, and the
+    // encoded name round-trips through the decode-side reader.
+    #[test]
+    fn text_column_single_part_table_name() {
+        let mut buf = BytesMut::new();
+        text_column(Some("##bulk_test"))
+            .encode(&mut buf)
+            .unwrap();
+
+        let mut expected_tail = vec![1u8];
+        expected_tail.extend(us_varchar_bytes("##bulk_test"));
+        assert!(buf.ends_with(&expected_tail), "got {:02x?}", &buf[..]);
+    }
+
+    // Non-text columns must not emit any TableName, even if one is set: the bytes
+    // must be identical with and without a table name.
+    #[test]
+    fn non_text_column_never_emits_table_name() {
+        let with = {
+            let mut buf = BytesMut::new();
+            BaseMetaDataColumn {
+                flags: ColumnFlag::Nullable.into(),
+                ty: TypeInfo::FixedLen(FixedLenType::Int4),
+                table_name: Some("dbo.MyTable".to_string()),
+            }
+            .encode(&mut buf)
+            .unwrap();
+            buf.to_vec()
+        };
+        let without = {
+            let mut buf = BytesMut::new();
+            BaseMetaDataColumn {
+                flags: ColumnFlag::Nullable.into(),
+                ty: TypeInfo::FixedLen(FixedLenType::Int4),
+                table_name: None,
+            }
+            .encode(&mut buf)
+            .unwrap();
+            buf.to_vec()
+        };
+        assert_eq!(with, without);
+    }
+
+    #[test]
+    fn split_table_name_handles_quoting() {
+        assert_eq!(split_table_name("MyTable"), vec!["MyTable"]);
+        assert_eq!(split_table_name("dbo.MyTable"), vec!["dbo", "MyTable"]);
+        assert_eq!(
+            split_table_name("[db].[schema].[tbl]"),
+            vec!["db", "schema", "tbl"]
+        );
+        // A dot inside brackets is part of the identifier, not a separator.
+        assert_eq!(split_table_name("[weird.name]"), vec!["weird.name"]);
+        // `]]` is an escaped `]` inside a bracketed identifier.
+        assert_eq!(split_table_name("[a]]b]"), vec!["a]b"]);
     }
 }

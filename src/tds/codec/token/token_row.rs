@@ -198,6 +198,7 @@ mod tests {
             base: BaseMetaDataColumn {
                 flags: ColumnFlag::Nullable.into(),
                 ty: TypeInfo::FixedLen(FixedLenType::Bit),
+                table_name: None,
             },
             col_name: Default::default(),
         }];
