@@ -148,6 +148,36 @@ test_bulk_type!(varchar_limited(
     vec!["aaaaaaaaaaaaaaaaaaaaaaa"; 1000].into_iter()
 ));
 
+// Column types added by 97bbbfd (bulk support for #352/#358) that previously
+// had no bulk coverage. `text`/`ntext` exercise the COLMETADATA TableName path
+// (MS-TDS §2.2.7.4): without emitting TableName for these types the server
+// rejects the bulk COLMETADATA, so these tests only pass with that fix in place.
+test_bulk_type!(text(
+    "TEXT",
+    1000,
+    vec!["some text value"; 1000].into_iter()
+));
+test_bulk_type!(ntext(
+    "NTEXT",
+    1000,
+    vec!["some ntext välue"; 1000].into_iter()
+));
+
+// `money`/`smallmoney` exercise the f64 money encoder.
+test_bulk_type!(money("MONEY", 1000, vec![1234.5678f64; 1000].into_iter()));
+test_bulk_type!(smallmoney(
+    "SMALLMONEY",
+    1000,
+    vec![12.3456f64; 1000].into_iter()
+));
+
+// `numeric(p,s)` exercises the exact Numeric->wire path.
+test_bulk_type!(numeric_28_4(
+    "NUMERIC(28,4)",
+    1000,
+    vec![tiberius::numeric::Numeric::new_with_scale(12345, 4); 1000].into_iter()
+));
+
 #[cfg(all(feature = "tds73", feature = "chrono"))]
 test_bulk_type!(datetime2(
     "DATETIME2",
