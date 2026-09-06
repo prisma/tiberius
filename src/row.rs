@@ -509,10 +509,7 @@ mod tests {
     // itself via the exact match; the fallback is never needed.
     #[test]
     fn literal_raw_prefixed_column_exact_match() {
-        let columns = Arc::new(vec![Column::new(
-            "r#foo".to_string(),
-            ColumnType::Int4,
-        )]);
+        let columns = Arc::new(vec![Column::new("r#foo".to_string(), ColumnType::Int4)]);
 
         let mut data = TokenRow::new();
         data.push(ColumnData::I32(Some(1)));

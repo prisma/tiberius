@@ -555,23 +555,29 @@ mod tests {
         // MONEY/SMALLMONEY reach the Display impl both as FixedLen (Money /
         // Money4) and as VarLenSized (Money with len 8 / 4). A money column
         // must never fall through to a catch-all; each renders its exact SQL
-        // type name for the bulk `INSERT` column list.
+        // type name for the bulk `INSERT` column list. Assert the rendered type
+        // token (with a leading space so `money` can't match `smallmoney`) so
+        // the test is agnostic to how the column-name prefix is quoted.
         let cases = vec![
-            (TypeInfo::FixedLen(FixedLenType::Money), "c money"),
-            (TypeInfo::FixedLen(FixedLenType::Money4), "c smallmoney"),
+            (TypeInfo::FixedLen(FixedLenType::Money), " money"),
+            (TypeInfo::FixedLen(FixedLenType::Money4), " smallmoney"),
             (
                 TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Money, 8, None)),
-                "c money",
+                " money",
             ),
             (
                 TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Money, 4, None)),
-                "c smallmoney",
+                " smallmoney",
             ),
         ];
 
-        for (ty, expected) in cases {
-            // Must not panic, and must produce the expected string.
-            assert_eq!(format!("{}", meta(ty, "c")), expected);
+        for (ty, expected_suffix) in cases {
+            // Must not panic, and must end with the expected SQL type token.
+            let rendered = format!("{}", meta(ty, "c"));
+            assert!(
+                rendered.ends_with(expected_suffix),
+                "expected {rendered:?} to end with {expected_suffix:?}"
+            );
         }
     }
 }
