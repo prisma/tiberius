@@ -1,40 +1,35 @@
 use crate::{error::Error, sql_read_bytes::SqlReadBytes, ColumnData};
 use bytes::BufMut;
+use std::fmt::Display;
 
-/// Encode an `f64` as a money/smallmoney value into `dst`, prefixed with a
-/// single length byte (as expected for a nullable `Money`/`Moneyn` column in a
-/// bulk-load row). `max_len` is the column's declared length (8 for `money`,
-/// 4 for `smallmoney`). Money is stored on the wire as a scaled integer
-/// (value * 10_000).
-///
-/// Returns an error (rather than silently corrupting the value) when `val` is
-/// not finite (`NaN`/`±Inf`) or when the scaled value falls outside the range
-/// representable by the target column. Rust's `as` cast from float to integer
-/// saturates, so without this check `NaN` would encode as `0` and out-of-range
-/// values would clamp to `i32::MAX`/`i64::MAX`, both of which would be
-/// undetectably wrong on the wire.
-pub(crate) fn encode<B>(dst: &mut B, max_len: usize, val: f64) -> crate::Result<()>
+/// Money is a fixed-point decimal with this many fractional digits; it is stored
+/// on the wire as the value multiplied by `10^MONEY_SCALE`.
+const MONEY_SCALE: u32 = 4;
+
+/// `10^MONEY_SCALE`, as an `f64`, used to scale an `f64` value into the on-wire
+/// fixed-point integer domain.
+const MONEY_SCALE_FACTOR: f64 = 1e4;
+
+/// Range-check an already-scaled money value (`value * 10^MONEY_SCALE`, held in
+/// an `i128` so no rounding or overflow can occur here) against the target
+/// column's integer range and, if it fits, emit the length-prefixed on-wire
+/// bytes. `max_len` is the column's declared length (8 for `money`, 4 for
+/// `smallmoney`). `value` is only used to build a descriptive error message.
+fn put_scaled<B>(
+    dst: &mut B,
+    max_len: usize,
+    scaled: i128,
+    value: &dyn Display,
+) -> crate::Result<()>
 where
     B: BufMut,
 {
-    if !val.is_finite() {
-        return Err(Error::BulkInput(
-            format!("money: value {val} is not finite (NaN/Inf cannot be encoded)").into(),
-        ));
-    }
-
-    // Scale into money's fixed-point (4 decimal places) domain. Rounding is done
-    // in f64 for parity with the previous behaviour, then range-checked in f64
-    // (comparing against the target integer bounds) before narrowing, so an
-    // out-of-range value is rejected instead of saturating on the `as` cast.
-    let scaled = (val * 1e4).round();
-
     if max_len == 4 {
         // smallmoney: scaled value must fit in an i32.
-        if scaled < f64::from(i32::MIN) || scaled > f64::from(i32::MAX) {
+        if scaled < i32::MIN as i128 || scaled > i32::MAX as i128 {
             return Err(Error::BulkInput(
                 format!(
-                    "money: value {val} is out of range for smallmoney \
+                    "money: value {value} is out of range for smallmoney \
                      (-214_748.3648 ..= 214_748.3647)"
                 )
                 .into(),
@@ -44,10 +39,10 @@ where
         dst.put_i32_le(scaled as i32);
     } else {
         // money: scaled value must fit in an i64.
-        if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
+        if scaled < i64::MIN as i128 || scaled > i64::MAX as i128 {
             return Err(Error::BulkInput(
                 format!(
-                    "money: value {val} is out of range for money \
+                    "money: value {value} is out of range for money \
                      (-922_337_203_685_477.5808 ..= 922_337_203_685_477.5807)"
                 )
                 .into(),
@@ -61,6 +56,44 @@ where
     }
 
     Ok(())
+}
+
+/// Encode an `f64` as a money/smallmoney value into `dst`, prefixed with a
+/// single length byte (as expected for a nullable `Money`/`Moneyn` column in a
+/// bulk-load row). `max_len` is the column's declared length (8 for `money`,
+/// 4 for `smallmoney`). Money is stored on the wire as a scaled integer
+/// (value * 10_000).
+///
+/// Returns an error (rather than silently corrupting the value) when `val` is
+/// not finite (`NaN`/`±Inf`) or when the scaled value falls outside the range
+/// representable by the target column. The range-check is performed in `i128`,
+/// not `f64`: `i64::MAX` is not representable in `f64` (it rounds up to 2^63), so
+/// comparing the scaled `f64` against `i64::MAX as f64` would let a value one
+/// hundredth-of-a-cent past the maximum slip through and then saturate on the
+/// `as i64` cast. Casting the rounded value to `i128` first is exact for every
+/// in-range magnitude and rejects the 2^63 boundary correctly.
+///
+/// Note: money's exact extremes (`±922_337_203_685_477.5807/.5808`) are not
+/// representable in `f64`, so values within ~0.05 of the maximum may round to
+/// 2^63 and be rejected by this path. Callers needing exact extreme values
+/// should use [`encode_numeric`], whose arithmetic is exact.
+pub(crate) fn encode<B>(dst: &mut B, max_len: usize, val: f64) -> crate::Result<()>
+where
+    B: BufMut,
+{
+    if !val.is_finite() {
+        return Err(Error::BulkInput(
+            format!("money: value {val} is not finite (NaN/Inf cannot be encoded)").into(),
+        ));
+    }
+
+    // Scale into money's fixed-point domain, rounding in f64 for parity with the
+    // previous behaviour, then narrow to i128 (exact for every finite in-range
+    // magnitude; a huge finite value saturates to i128::MIN/MAX and is rejected
+    // by the range-check in `put_scaled`).
+    let scaled = (val * MONEY_SCALE_FACTOR).round() as i128;
+
+    put_scaled(dst, max_len, scaled, &val)
 }
 
 /// Encode a [`Numeric`] into a money/smallmoney value into `dst`, prefixed with
@@ -86,63 +119,34 @@ pub(crate) fn encode_numeric<B>(
 where
     B: BufMut,
 {
-    let scale = num.scale();
+    let scale = num.scale() as u32;
     let mantissa = num.value();
 
-    // Rescale the mantissa to money's fixed scale of 4, in i128.
-    let scaled: i128 = if scale == 4 {
-        mantissa
-    } else if scale < 4 {
-        let factor = 10i128.pow((4 - scale) as u32);
-        mantissa.checked_mul(factor).ok_or_else(|| {
-            Error::BulkInput(
-                format!("money: numeric value {num} overflows while rescaling to money").into(),
-            )
-        })?
-    } else {
-        // scale > 4: divide, rounding half away from zero.
-        let divisor = 10i128.pow((scale - 4) as u32);
-        let quotient = mantissa / divisor;
-        let remainder = (mantissa % divisor).abs();
-        if remainder * 2 >= divisor {
-            quotient + mantissa.signum()
-        } else {
-            quotient
+    // Rescale the mantissa to money's fixed scale, in i128.
+    let scaled: i128 = match scale.cmp(&MONEY_SCALE) {
+        std::cmp::Ordering::Equal => mantissa,
+        std::cmp::Ordering::Less => {
+            let factor = 10i128.pow(MONEY_SCALE - scale);
+            mantissa.checked_mul(factor).ok_or_else(|| {
+                Error::BulkInput(
+                    format!("money: value {num} overflows while rescaling to money").into(),
+                )
+            })?
+        }
+        std::cmp::Ordering::Greater => {
+            // finer than money's scale: divide, rounding half away from zero.
+            let divisor = 10i128.pow(scale - MONEY_SCALE);
+            let quotient = mantissa / divisor;
+            let remainder = (mantissa % divisor).abs();
+            if remainder * 2 >= divisor {
+                quotient + mantissa.signum()
+            } else {
+                quotient
+            }
         }
     };
 
-    if max_len == 4 {
-        // smallmoney: scaled value must fit in an i32.
-        if scaled < i32::MIN as i128 || scaled > i32::MAX as i128 {
-            return Err(Error::BulkInput(
-                format!(
-                    "money: numeric value {num} is out of range for smallmoney \
-                     (-214_748.3648 ..= 214_748.3647)"
-                )
-                .into(),
-            ));
-        }
-        dst.put_u8(4);
-        dst.put_i32_le(scaled as i32);
-    } else {
-        // money: scaled value must fit in an i64.
-        if scaled < i64::MIN as i128 || scaled > i64::MAX as i128 {
-            return Err(Error::BulkInput(
-                format!(
-                    "money: numeric value {num} is out of range for money \
-                     (-922_337_203_685_477.5808 ..= 922_337_203_685_477.5807)"
-                )
-                .into(),
-            ));
-        }
-        dst.put_u8(8);
-        let scaled = scaled as i64;
-        // money is transmitted as two 32-bit words, high word first.
-        dst.put_i32_le((scaled >> 32) as i32);
-        dst.put_u32_le(scaled as u32);
-    }
-
-    Ok(())
+    put_scaled(dst, max_len, scaled, &num)
 }
 
 pub(crate) async fn decode<R>(src: &mut R, len: u8) -> crate::Result<ColumnData<'static>>
@@ -272,16 +276,17 @@ mod tests {
     // and round-trip correctly.
     #[test]
     fn encode_boundaries_are_accepted() {
-        // smallmoney min/max.
-        for val in [214_748.3647_f64, -214_748.3648_f64] {
+        // smallmoney min/max: both are exactly representable and must pass.
+        for val in [214748.3647_f64, -214748.3648_f64] {
             let mut buf = Vec::new();
             encode(&mut buf, 4, val).unwrap();
             assert_eq!(buf[0], 4);
             assert!((decode_bytes(&buf) - val).abs() < 1e-3, "val={val}");
         }
 
-        // money min/max.
-        for val in [922_337_203_685_477.5807_f64, -922_337_203_685_477.5808_f64] {
+        // money: `f64` cannot represent the exact money extremes, so use values
+        // comfortably inside the range (still far beyond f64's 2^53 exact range).
+        for val in [922337203685477.5_f64, -922337203685477.5_f64] {
             let mut buf = Vec::new();
             encode(&mut buf, 8, val).unwrap();
             assert_eq!(buf[0], 8);
@@ -289,6 +294,31 @@ mod tests {
             // proportional to the magnitude (~0.1 currency units here).
             assert!((decode_bytes(&buf) - val).abs() < 1.0, "val={val}");
         }
+    }
+
+    // The scaled money max (i64::MAX = 9_223_372_036_854_775_807) is not
+    // representable in f64. The earlier `scaled as f64 > i64::MAX as f64` check
+    // let a value one hundredth-of-a-cent past the max through, then saturated
+    // on the cast, silently writing i64::MAX. The i128 range-check must reject it.
+    #[test]
+    fn encode_rejects_float_boundary_just_past_max() {
+        // smallmoney: 214748.3648 is exactly one ten-thousandth past i32::MAX.
+        let mut buf = Vec::new();
+        let err = encode(&mut buf, 4, 214748.3648).unwrap_err();
+        assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
+        assert!(buf.is_empty());
+
+        // smallmoney accepts the exact max.
+        let mut buf = Vec::new();
+        encode(&mut buf, 4, 214748.3647).unwrap();
+        assert_eq!(decode_bytes_scaled(&buf), i32::MAX as i64);
+
+        // money: a value just past the max scales (in f64) to 2^63, one past
+        // i64::MAX; it must be rejected, not saturated to i64::MAX.
+        let mut buf = Vec::new();
+        let err = encode(&mut buf, 8, 922337203685477.6).unwrap_err();
+        assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
+        assert!(buf.is_empty());
     }
 
     // Reconstruct the exact scaled integer from the on-wire bytes without going
