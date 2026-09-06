@@ -270,9 +270,21 @@ impl Encode<BytesMut> for BaseMetaDataColumn {
             let table_name = self.table_name.as_deref().unwrap_or("");
             let parts = split_table_name(table_name);
 
+            // NumParts is a single byte; reject a pathological name rather than
+            // wrapping the count.
+            if parts.len() > u8::MAX as usize {
+                return Err(Error::BulkInput(
+                    format!(
+                        "table name {table_name:?} has too many parts ({}) for COLMETADATA",
+                        parts.len()
+                    )
+                    .into(),
+                ));
+            }
+
             dst.put_u8(parts.len() as u8);
             for part in parts {
-                encode_us_varchar(dst, &part);
+                encode_us_varchar(dst, &part)?;
             }
         }
 
@@ -281,19 +293,22 @@ impl Encode<BytesMut> for BaseMetaDataColumn {
 }
 
 /// Encode a US_VARCHAR: a `u16` length in UTF-16 code units followed by the
-/// UTF-16LE characters.
-fn encode_us_varchar(dst: &mut BytesMut, s: &str) {
-    let len_pos = dst.len();
-    dst.put_u16_le(0);
+/// UTF-16LE characters. The length field is a `u16`, so a part longer than
+/// `u16::MAX` code units cannot be represented and is rejected.
+fn encode_us_varchar(dst: &mut BytesMut, s: &str) -> crate::Result<()> {
+    let units = s.encode_utf16().count();
+    if units > u16::MAX as usize {
+        return Err(Error::BulkInput(
+            format!("table name part is too long ({units} UTF-16 code units, max 65535)").into(),
+        ));
+    }
 
-    let mut units: u16 = 0;
+    dst.put_u16_le(units as u16);
     for chr in s.encode_utf16() {
-        units += 1;
         dst.put_u16_le(chr);
     }
 
-    let bytes: &mut [u8] = dst.borrow_mut();
-    bytes[len_pos..len_pos + 2].copy_from_slice(&units.to_le_bytes());
+    Ok(())
 }
 
 /// Split a (possibly multi-part) table name such as `dbo.MyTable` or
@@ -480,9 +495,7 @@ mod tests {
     #[test]
     fn text_column_single_part_table_name() {
         let mut buf = BytesMut::new();
-        text_column(Some("##bulk_test"))
-            .encode(&mut buf)
-            .unwrap();
+        text_column(Some("##bulk_test")).encode(&mut buf).unwrap();
 
         let mut expected_tail = vec![1u8];
         expected_tail.extend(us_varchar_bytes("##bulk_test"));
@@ -530,5 +543,26 @@ mod tests {
         assert_eq!(split_table_name("[weird.name]"), vec!["weird.name"]);
         // `]]` is an escaped `]` inside a bracketed identifier.
         assert_eq!(split_table_name("[a]]b]"), vec!["a]b"]);
+    }
+
+    // A US_VARCHAR length field is a u16; an over-long part must error rather
+    // than wrap the length (which would desync the wire).
+    #[test]
+    fn text_column_rejects_over_long_table_name_part() {
+        let long = "a".repeat(u16::MAX as usize + 1);
+        let mut buf = BytesMut::new();
+        let err = text_column(Some(&long)).encode(&mut buf).unwrap_err();
+        assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
+    }
+
+    // NumParts is a single byte; a name with more than 255 parts must error
+    // rather than wrap the count.
+    #[test]
+    fn text_column_rejects_too_many_table_name_parts() {
+        // 300 dot-separated parts -> 300 parts.
+        let many = vec!["a"; 300].join(".");
+        let mut buf = BytesMut::new();
+        let err = text_column(Some(&many)).encode(&mut buf).unwrap_err();
+        assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
     }
 }
