@@ -93,7 +93,23 @@ impl<'a> Display for MetaDataColumn<'a> {
                     8 => write!(f, "float")?,
                     _ => unreachable!(),
                 },
-                _ => unreachable!(),
+                VarLenType::Money => {
+                    if ctx.len() == 4 {
+                        write!(f, "smallmoney")?
+                    } else {
+                        write!(f, "money")?
+                    }
+                }
+                VarLenType::SSVariant => write!(f, "sql_variant")?,
+                // Any other var-len type (e.g. Decimaln/Numericn arriving
+                // without the precision/scale they need, or Xml/Udt appearing
+                // in a sized context) has no valid SQL type name we can emit
+                // here. Emitting a bogus name (such as the Debug name) would
+                // produce an invalid `INSERT BULK` statement, so return a
+                // formatting error instead. This keeps the library from ever
+                // panicking on server-supplied metadata while refusing to emit
+                // invalid SQL.
+                _ => return Err(std::fmt::Error),
             },
             TypeInfo::VarLenSizedPrecision {
                 ty,
@@ -501,5 +517,61 @@ mod tests {
         let mut buf = BytesMut::new();
         let err = text_column(Some(&long)).encode(&mut buf).unwrap_err();
         assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
+    }
+
+    fn meta(ty: TypeInfo, name: &'static str) -> MetaDataColumn<'static> {
+        MetaDataColumn {
+            base: BaseMetaDataColumn {
+                flags: ColumnFlag::Nullable.into(),
+                ty,
+                table_name: None,
+            },
+            col_name: Cow::Borrowed(name),
+        }
+    }
+
+    #[test]
+    fn display_var_len_unknown_type_yields_err_not_panic() {
+        use std::fmt::Write as _;
+
+        // A VarLenSized carrying a type with no valid sized SQL representation
+        // (e.g. Decimaln/Numericn without precision/scale) must NOT panic and
+        // must NOT emit a bogus SQL type name. Formatting it returns a
+        // `std::fmt::Error` so the caller gets an `Err`, never a panic and
+        // never invalid SQL.
+        for ty in [VarLenType::Decimaln, VarLenType::Numericn] {
+            let col = meta(TypeInfo::VarLenSized(VarLenContext::new(ty, 17, None)), "c");
+            let mut out = String::new();
+            let result = write!(out, "{col}");
+            assert!(
+                result.is_err(),
+                "expected Err for unhandled var-len type {ty:?}, got Ok({out:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn display_money_columns_never_panic_and_render_expected() {
+        // MONEY/SMALLMONEY reach the Display impl both as FixedLen (Money /
+        // Money4) and as VarLenSized (Money with len 8 / 4). A money column
+        // must never fall through to a catch-all; each renders its exact SQL
+        // type name for the bulk `INSERT` column list.
+        let cases = vec![
+            (TypeInfo::FixedLen(FixedLenType::Money), "c money"),
+            (TypeInfo::FixedLen(FixedLenType::Money4), "c smallmoney"),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Money, 8, None)),
+                "c money",
+            ),
+            (
+                TypeInfo::VarLenSized(VarLenContext::new(VarLenType::Money, 4, None)),
+                "c smallmoney",
+            ),
+        ];
+
+        for (ty, expected) in cases {
+            // Must not panic, and must produce the expected string.
+            assert_eq!(format!("{}", meta(ty, "c")), expected);
+        }
     }
 }
