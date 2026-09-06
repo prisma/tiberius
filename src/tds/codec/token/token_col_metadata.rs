@@ -253,11 +253,26 @@ impl Encode<BytesMut> for BaseMetaDataColumn {
     fn encode(self, dst: &mut BytesMut) -> crate::Result<()> {
         dst.put_u16_le(BitFlags::bits(self.flags));
 
-        // Per MS-TDS §2.2.7.4, `text`/`ntext`/`image` columns carry a TableName
-        // element (NumParts BYTE, then NumParts US_VARCHARs) after the TYPE_INFO.
-        // This mirrors the decode side and is required for a well-formed bulk
-        // COLMETADATA; other column types must not emit anything extra. Capture
-        // whether this is such a column before `encode` consumes `self.ty`.
+        // `text`/`ntext`/`image` columns carry a TableName element after the
+        // TYPE_INFO. The client->server INSERT BULK COLMETADATA uses a DIFFERENT
+        // TableName shape than the server->client result COLMETADATA the decode
+        // side reads:
+        //
+        //   * READ  (server->client): NumParts BYTE, then NumParts US_VARCHARs
+        //     (see `BaseMetaDataColumn::decode` below and MS-TDS §2.2.7.4).
+        //   * WRITE (client->server bulk): a single bare US_VARCHAR carrying the
+        //     whole destination table name, with NO NumParts byte and no
+        //     splitting on `.`.
+        //
+        // This asymmetry matches Microsoft's own go-mssqldb bulk-copy path
+        // (`createColMetadata` in bulkcopy.go), verified against real SQL Server:
+        // a `uint16` code-unit count + UTF-16LE bytes, no NumParts. Emitting the
+        // spec/result-style `NumParts` byte here inserts one extra leading 0x01
+        // the server does not expect, mis-parsing the column and overrunning the
+        // row stream (TDS error 4804). Only these three types carry a TableName,
+        // so the desync hits text/ntext/image bulk exclusively.
+        //
+        // Capture whether this is such a column before `encode` consumes `self.ty`.
         let emits_table_name = matches!(
             &self.ty,
             TypeInfo::VarLenSized(cx)
@@ -268,24 +283,7 @@ impl Encode<BytesMut> for BaseMetaDataColumn {
 
         if emits_table_name {
             let table_name = self.table_name.as_deref().unwrap_or("");
-            let parts = split_table_name(table_name);
-
-            // NumParts is a single byte; reject a pathological name rather than
-            // wrapping the count.
-            if parts.len() > u8::MAX as usize {
-                return Err(Error::BulkInput(
-                    format!(
-                        "table name {table_name:?} has too many parts ({}) for COLMETADATA",
-                        parts.len()
-                    )
-                    .into(),
-                ));
-            }
-
-            dst.put_u8(parts.len() as u8);
-            for part in parts {
-                encode_us_varchar(dst, &part)?;
-            }
+            encode_us_varchar(dst, table_name)?;
         }
 
         Ok(())
@@ -299,7 +297,7 @@ fn encode_us_varchar(dst: &mut BytesMut, s: &str) -> crate::Result<()> {
     let units = s.encode_utf16().count();
     if units > u16::MAX as usize {
         return Err(Error::BulkInput(
-            format!("table name part is too long ({units} UTF-16 code units, max 65535)").into(),
+            format!("table name is too long ({units} UTF-16 code units, max 65535)").into(),
         ));
     }
 
@@ -309,42 +307,6 @@ fn encode_us_varchar(dst: &mut BytesMut, s: &str) -> crate::Result<()> {
     }
 
     Ok(())
-}
-
-/// Split a (possibly multi-part) table name such as `dbo.MyTable` or
-/// `[db].[schema].[tbl]` into its constituent parts, honoring `[ ]` quoting
-/// (where `]]` is an escaped `]`). An unqualified name yields a single part.
-///
-/// Names quoted with double quotes are not specially handled; callers relying on
-/// quoted-identifier mode for `.`-containing names should pass bracket-quoted
-/// identifiers instead.
-fn split_table_name(name: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_brackets = false;
-    let mut chars = name.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '[' if !in_brackets => in_brackets = true,
-            ']' if in_brackets => {
-                // `]]` inside brackets is an escaped `]`.
-                if chars.peek() == Some(&']') {
-                    current.push(']');
-                    chars.next();
-                } else {
-                    in_brackets = false;
-                }
-            }
-            '.' if !in_brackets => {
-                parts.push(std::mem::take(&mut current));
-            }
-            other => current.push(other),
-        }
-    }
-    parts.push(current);
-
-    parts
 }
 
 /// A setting a column can hold.
@@ -471,34 +433,34 @@ mod tests {
         }
     }
 
-    // A `text` column's metadata must end with a valid TableName element:
-    // NumParts BYTE followed by NumParts US_VARCHARs.
+    // On the client->server INSERT BULK path a `text` column's metadata must end
+    // with the TableName as a SINGLE bare US_VARCHAR carrying the whole name --
+    // NO NumParts byte and no splitting on `.` -- matching go-mssqldb's verified
+    // bulkcopy `createColMetadata`. A dotted name is sent verbatim as one part.
     #[test]
-    fn text_column_emits_multipart_table_name() {
+    fn text_column_emits_dotted_name_as_bare_us_varchar() {
         let mut buf = BytesMut::new();
         text_column(Some("dbo.MyTable")).encode(&mut buf).unwrap();
 
-        let mut expected_tail = vec![2u8]; // NumParts
-        expected_tail.extend(us_varchar_bytes("dbo"));
-        expected_tail.extend(us_varchar_bytes("MyTable"));
+        // Whole name as one US_VARCHAR, with no leading NumParts byte.
+        let expected_tail = us_varchar_bytes("dbo.MyTable");
 
         assert!(
             buf.ends_with(&expected_tail),
-            "buffer {:02x?} did not end with TableName {:02x?}",
+            "buffer {:02x?} did not end with bare US_VARCHAR TableName {:02x?}",
             &buf[..],
             expected_tail
         );
     }
 
-    // A single, unqualified name yields NumParts=1 with one US_VARCHAR, and the
-    // encoded name round-trips through the decode-side reader.
+    // A single, unqualified name is likewise a single bare US_VARCHAR (no
+    // NumParts byte).
     #[test]
-    fn text_column_single_part_table_name() {
+    fn text_column_single_name_is_bare_us_varchar() {
         let mut buf = BytesMut::new();
         text_column(Some("##bulk_test")).encode(&mut buf).unwrap();
 
-        let mut expected_tail = vec![1u8];
-        expected_tail.extend(us_varchar_bytes("##bulk_test"));
+        let expected_tail = us_varchar_bytes("##bulk_test");
         assert!(buf.ends_with(&expected_tail), "got {:02x?}", &buf[..]);
     }
 
@@ -531,38 +493,13 @@ mod tests {
         assert_eq!(with, without);
     }
 
-    #[test]
-    fn split_table_name_handles_quoting() {
-        assert_eq!(split_table_name("MyTable"), vec!["MyTable"]);
-        assert_eq!(split_table_name("dbo.MyTable"), vec!["dbo", "MyTable"]);
-        assert_eq!(
-            split_table_name("[db].[schema].[tbl]"),
-            vec!["db", "schema", "tbl"]
-        );
-        // A dot inside brackets is part of the identifier, not a separator.
-        assert_eq!(split_table_name("[weird.name]"), vec!["weird.name"]);
-        // `]]` is an escaped `]` inside a bracketed identifier.
-        assert_eq!(split_table_name("[a]]b]"), vec!["a]b"]);
-    }
-
-    // A US_VARCHAR length field is a u16; an over-long part must error rather
+    // A US_VARCHAR length field is a u16; an over-long name must error rather
     // than wrap the length (which would desync the wire).
     #[test]
-    fn text_column_rejects_over_long_table_name_part() {
+    fn text_column_rejects_over_long_table_name() {
         let long = "a".repeat(u16::MAX as usize + 1);
         let mut buf = BytesMut::new();
         let err = text_column(Some(&long)).encode(&mut buf).unwrap_err();
-        assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
-    }
-
-    // NumParts is a single byte; a name with more than 255 parts must error
-    // rather than wrap the count.
-    #[test]
-    fn text_column_rejects_too_many_table_name_parts() {
-        // 300 dot-separated parts -> 300 parts.
-        let many = vec!["a"; 300].join(".");
-        let mut buf = BytesMut::new();
-        let err = text_column(Some(&many)).encode(&mut buf).unwrap_err();
         assert!(matches!(err, Error::BulkInput(_)), "got {err:?}");
     }
 }
