@@ -170,7 +170,7 @@ where
         let change = TokenEnvChange::decode(self.conn).await?;
 
         match change {
-            TokenEnvChange::PacketSize(new_size, _) => {
+            TokenEnvChange::PacketSize { new: new_size, .. } => {
                 self.conn.context_mut().set_packet_size(new_size);
             }
             TokenEnvChange::BeginTransaction(desc) => {
