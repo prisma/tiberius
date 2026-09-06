@@ -279,7 +279,7 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 if vlc.r#type() == VarLenType::Money =>
             {
                 if let Some(val) = opt {
-                    money::encode(dst, vlc.len(), val);
+                    money::encode(dst, vlc.len(), val)?;
                 } else {
                     dst.put_u8(0);
                 }
@@ -727,7 +727,7 @@ impl<'a> Encode<BytesMutWithTypeInfo<'a>> for ColumnData<'a> {
                 if vlc.r#type() == VarLenType::Money =>
             {
                 if let Some(num) = opt {
-                    money::encode(dst, vlc.len(), f64::from(num));
+                    money::encode(dst, vlc.len(), f64::from(num))?;
                 } else {
                     dst.put_u8(0);
                 }
